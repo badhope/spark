@@ -32,7 +32,7 @@ dependencies = [
     "mcp>=1.0,<2.0; python_version>=\"3.10\"",
     "pydantic>=2.7,<3.0",
     "pydantic-settings>=2.0,<3.0",
-    "textual>=0.80,<1.0",
+    "textual>=0.80,<9.0",
     "tomlkit>=0.13,<1.0",
     "tree-sitter>=0.25,<0.27",
     "tree-sitter-javascript>=0.23,<0.26",
