@@ -28,7 +28,7 @@
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^5.0.0",
     "js-yaml": "^4.3.2",
-    "orval": "^7.0.0",
+    "orval": "^8.22.0",
     "tailwindcss": "^4.1.0",
     "typescript": "~5.9.0",
     "vite": "^7.0.0"
