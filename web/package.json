@@ -31,7 +31,7 @@
     "orval": "^7.0.0",
     "tailwindcss": "^4.1.0",
     "typescript": "~5.9.0",
-    "vite": "^7.0.0"
+    "vite": "^7.3.7"
   },
   "overrides": {
     "js-yaml": "^4.3.2"
