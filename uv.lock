@@ -1119,6 +1119,23 @@ wheels = [
 ]
 
 [[package]]
+name = "fastapi"
+version = "0.161.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "annotated-doc" },
+    { name = "opentelemetry-api" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ed/3d/2cc1a0dbc2dac6e157b4ef12bac063e1016cb7c6d7395f76665e439cf1aa/fastapi-0.161.1.tar.gz", hash = "sha256:4076b88434452e20289379068e976c4a04c65ffc8e6be31510106e150a422f0f", size = 527406, upload-time = "2026-10-22T22:22:07.757Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/45/2a/101012d82931d9de3855384e1667e49c0e07a0048e3868f9fec1697293a9/fastapi-0.161.1-py3-none-any.whl", hash = "sha256:a1363080cf9aeedecd99f4e1a23669d7e77542227f6536f4d7bbd59f07ecaa94", size = 149049, upload-time = "2026-10-22T22:22:06.139Z" },
+]
+
+[[package]]
 name = "fastuuid"
 version = "0.14.0"
 source = { registry = "https://pypi.org/simple" }
@@ -5000,7 +5017,7 @@ wheels = [
 
 [[package]]
 name = "spark-agent"
-version = "0.9.10"
+version = "0.9.11"
 source = { editable = "." }
 dependencies = [
     { name = "agent-client-protocol" },
@@ -5039,6 +5056,9 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
+openapi = [
+    { name = "fastapi" },
+]
 pty = [
     { name = "ptyprocess", marker = "sys_platform != 'win32'" },
 ]
@@ -5054,6 +5074,7 @@ requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20,<0.22" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7" },
     { name = "chromadb", specifier = ">=1.0" },
+    { name = "fastapi", marker = "extra == 'openapi'", specifier = ">=0.110" },
     { name = "httpx", specifier = ">=0.27,<1.0" },
     { name = "import-linter", marker = "extra == 'dev'", specifier = ">=2.0" },
     { name = "instructor", specifier = ">=1.4,<2.0" },
@@ -5084,7 +5105,7 @@ requires-dist = [
     { name = "tree-sitter-typescript", specifier = ">=0.23,<0.24" },
     { name = "typer", specifier = ">=0.12,<1.0" },
 ]
-provides-extras = ["dev", "telemetry", "pty", "desktop"]
+provides-extras = ["dev", "openapi", "telemetry", "pty", "desktop"]
 
 [[package]]
 name = "sqlalchemy"
@@ -5758,7 +5779,7 @@ wheels = [
 
 [[package]]
 name = "virtualenv"
-version = "21.14.7"
+version = "21.14.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "distlib" },
@@ -5767,9 +5788,9 @@ dependencies = [
     { name = "platformdirs" },
     { name = "python-discovery" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dc/3f/935cf1757643381fb7f7cc98197b4bc119223d9c2cf37dc3b03ad2a4455f/virtualenv-21.14.7.tar.gz", hash = "sha256:5f427d56f39eb7e7447d641dd4b7ab1e9c92793f498f35f26da2e4972c5546ae", size = 5471741, upload-time = "2026-10-12T01:27:31.842Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d0/04/2f69ba1207ce59630ecea8ebfdaf5c8f9a14726f2408ccd145a18d1ef619/virtualenv-21.14.9.tar.gz", hash = "sha256:4d1bee354cd81c820da3bee56e38be3426490f8d1fc54e10ea5b2072ebad8ef8", size = 5500672, upload-time = "2026-10-17T16:09:42.345Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/52/5b/799c3e5b8e04d5fa1c9b61a4c1f5079603e747205c7311b92abd30283df5/virtualenv-21.14.7-py3-none-any.whl", hash = "sha256:3769219a308c5d2f093e7729621ad12a6346b5767a7ec4338414e2a0fb0c526b", size = 5487587, upload-time = "2026-10-12T01:27:29.37Z" },
+    { url = "https://files.pythonhosted.org/packages/64/e5/9a3918219745e8bdd64fe0fd9a2d7ce4fffde9268fbc791634b7d4779de9/virtualenv-21.14.9-py3-none-any.whl", hash = "sha256:ac51744da66ae56ff814b087d65096c94de698ec520adc624b108b679655809b", size = 5494452, upload-time = "2026-10-17T16:09:40.584Z" },
 ]
 
 [[package]]
