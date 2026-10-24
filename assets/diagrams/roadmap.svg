@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="400" viewBox="0 0 920 400" font-family="PingFang SC, Microsoft YaHei, sans-serif">
+  <rect width="920" height="400" fill="#faf9f7"/>
+  <text x="460" y="40" text-anchor="middle" font-size="22" font-weight="700" fill="#242320">路线图（P0–P5）· 2026-10-18</text>
+  <line x1="60" y1="200" x2="870" y2="200" stroke="#c7bfa9" stroke-width="3"/>
+  <g font-size="12.5">
+    <circle cx="100" cy="200" r="9" fill="#3e7951"/><text x="100" y="180" text-anchor="middle" font-weight="700" fill="#242320">P0 ✓</text>
+    <text x="100" y="228" text-anchor="middle" fill="#5a564d">卫生周 v0.9.3</text>
+    <text x="100" y="246" text-anchor="middle" fill="#86847c">3×P0 + 镜像 CI</text>
+    <circle cx="240" cy="200" r="9" fill="#3e7951"/><text x="240" y="180" text-anchor="middle" font-weight="700" fill="#242320">P1 ✓</text>
+    <text x="240" y="228" text-anchor="middle" fill="#5a564d">韧性/合同/发布 v0.9.4-5</text>
+    <text x="240" y="246" text-anchor="middle" fill="#86847c">分层契约 · OpenAPI · 文档站 · PyPI</text>
+    <circle cx="385" cy="200" r="9" fill="#3e7951"/><text x="385" y="180" text-anchor="middle" font-weight="700" fill="#242320">P2 ◐</text>
+    <text x="385" y="228" text-anchor="middle" fill="#5a564d">座舱+协议 v0.9.6</text>
+    <text x="385" y="246" text-anchor="middle" fill="#86847c">profiles · 火焰图 · MCP 首批已入</text>
+    <text x="385" y="262" text-anchor="middle" fill="#a45c55">余：LangGraph 迁入 / ACP / 时间轴 UI</text>
+    <circle cx="540" cy="200" r="9" fill="#c7bfa9"/><text x="540" y="180" text-anchor="middle" font-weight="700" fill="#242320">P3</text>
+    <text x="540" y="228" text-anchor="middle" fill="#5a564d">信任链+AEF</text>
+    <text x="540" y="246" text-anchor="middle" fill="#86847c">证据标准 · 出网审计 · PR 证据包</text>
+    <circle cx="680" cy="200" r="9" fill="#c7bfa9"/><text x="680" y="180" text-anchor="middle" font-weight="700" fill="#242320">P4</text>
+    <text x="680" y="228" text-anchor="middle" fill="#5a564d">横向扩展全量</text>
+    <text x="680" y="246" text-anchor="middle" fill="#86847c">H1-H18 · IM 审批卡 · 技能注册表</text>
+    <circle cx="815" cy="200" r="9" fill="#c7bfa9"/><text x="815" y="180" text-anchor="middle" font-weight="700" fill="#242320">P5</text>
+    <text x="815" y="228" text-anchor="middle" fill="#5a564d">标准与生态</text>
+    <text x="815" y="246" text-anchor="middle" fill="#86847c">AEF 推广 · 合规包 · 企业版</text>
+  </g>
+  <g font-size="12" fill="#5a564d">
+    <text x="60" y="320">图例：绿 = 已交付并远端全绿 · 灰 = 待开工 · ◐ = 进行中</text>
+    <text x="60" y="344">当前基线：v0.9.6 @ ba622a8 系（五平台同步 · PyPI 已上线 · 主仓 10/10 检查绿）</text>
+    <text x="60" y="368">详细 DoD 与风险登记册：docs/reviews/2026-10-17-master-plan.md §9–10</text>
+  </g>
+</svg>

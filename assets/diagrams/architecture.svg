@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="560" viewBox="0 0 880 560" font-family="PingFang SC, Microsoft YaHei, sans-serif">
+  <rect width="880" height="560" fill="#faf9f7"/>
+  <text x="440" y="42" text-anchor="middle" font-size="22" font-weight="700" fill="#242320">Spark 分层架构（import-linter 强制）</text>
+  <g font-size="13">
+    <rect x="60" y="70" width="760" height="66" rx="8" fill="#e8e7e2" stroke="#c7bfa9"/>
+    <text x="80" y="95" font-weight="700" fill="#242320">L4 表面（Surfaces）</text>
+    <text x="80" y="118" fill="#5a564d">Web UI（React+Vite） · TUI（textual） · CLI（typer） · Desktop EXE · ACP/IDE 模式</text>
+    <rect x="60" y="148" width="760" height="66" rx="8" fill="#efeee9" stroke="#c7bfa9"/>
+    <text x="80" y="173" font-weight="700" fill="#242320">L3 引擎（core）</text>
+    <text x="80" y="196" fill="#5a564d">AgentLoop(LangGraph) · 审批策略 · 检查点/回滚 · 压缩 · 上下文合同 · 火焰图</text>
+    <rect x="60" y="226" width="760" height="66" rx="8" fill="#f3f2ee" stroke="#c7bfa9"/>
+    <text x="80" y="251" font-weight="700" fill="#242320">L2 支撑（Support）</text>
+    <text x="80" y="274" fill="#5a564d">33 内置工具 + diagnostics · MCP 桥（tools/resources/prompts） · 子代理 · skills · hooks · git_memory · repo_map · 记忆</text>
+    <rect x="60" y="304" width="760" height="66" rx="8" fill="#f7f6f2" stroke="#c7bfa9"/>
+    <text x="80" y="329" font-weight="700" fill="#242320">L1 供应商（providers）</text>
+    <text x="80" y="352" fill="#5a564d">litellm 兼容层 · fallback 链 · 凭据池 · usage 真实回填 · small_model 分工 · models.dev 目录</text>
+    <rect x="60" y="382" width="760" height="66" rx="8" fill="#fbfaf8" stroke="#c7bfa9"/>
+    <text x="80" y="407" font-weight="700" fill="#242320">L0 基础（foundation）</text>
+    <text x="80" y="430" fill="#5a564d">models · errors · config（四作用域/项目清洗） · platform_compat · asyncutil · sanitize · structured</text>
+  </g>
+  <g stroke="#a28b48" stroke-width="2" fill="none" marker-end="url(#a)">
+    <defs><marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6" fill="none" stroke="#a28b48" stroke-width="1.5"/></marker></defs>
+    <line x1="440" y1="70" x2="440" y2="448" stroke-dasharray="6 4" opacity="0.35"/>
+  </g>
+  <text x="440" y="480" text-anchor="middle" font-size="13" fill="#86847c">依赖方向：只准向下 import（lint-imports 5 条契约，CI quality 强制执行）</text>
+  <text x="440" y="506" text-anchor="middle" font-size="12" fill="#a45c55">座舱自研五件套：审批签名 · 出网审计 · 上下文回放 · 双粒度回滚 · 成本台账（AEF 证据流）</text>
+  <text x="440" y="534" text-anchor="middle" font-size="11" fill="#86847c">badhope/spark · MIT · 2026-10</text>
+</svg>
