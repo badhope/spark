@@ -1,0 +1,3278 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="本地自托管 AI 编程智能体 · 代码在你手，密钥在你手">
+      
+      
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>全维度审查与对标报告（2026-10-22） - Spark Agent</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#2026-10-22" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href="../.." title="Spark Agent" class="md-header__button md-logo" aria-label="Spark Agent" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Spark Agent
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              全维度审查与对标报告（2026-10-22）
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="indigo"  aria-label="暗色"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="暗色" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-orange" data-md-color-accent="indigo"  aria-label="亮色"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="亮色" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜索" placeholder="搜索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="查找">
+        
+        <button type="reset" class="md-search__icon md-icon" title="清空当前内容" aria-label="清空当前内容" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜索引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/badhope/spark" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    badhope/spark
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="标签" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  首页
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../FEATURES/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  功能总览
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../INSTALL/" class="md-tabs__link">
+          
+  
+  
+  开始
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../ARCHITECTURE/" class="md-tabs__link">
+          
+  
+  
+  深入
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../diagrams-ops/" class="md-tabs__link">
+          
+  
+  
+  图表与运维
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../2026-10-17-master-plan/" class="md-tabs__link">
+          
+  
+  
+  工程决策与规划
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Spark Agent" class="md-nav__button md-logo" aria-label="Spark Agent" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Spark Agent
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/badhope/spark" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    badhope/spark
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    首页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../FEATURES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    功能总览
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    开始
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    开始
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../INSTALL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    安装
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../CONFIG/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    配置
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../CONFIG/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    配置
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    深入
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    深入
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    架构
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../API/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ACP/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ACP 接入
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../OBSERVABILITY/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    观测
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../model-routing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    模型路由
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../git-memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git 任务记忆
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../evals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    评测
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    图表与运维
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    图表与运维
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams-ops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    图表与密钥运维手册
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    工程决策与规划
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    工程决策与规划
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../2026-10-17-master-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    建设计划
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../2026-10-17-audit-and-direction/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    审查与方向
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../2026-10-17-session-digest/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    会话锚点
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../competitive-comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    竞品对比
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-22_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        状态（2026-10-22 更新）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        一、总体结论
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        二、证据与基线
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="二、证据与基线">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        实际运行命令与输出
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        对标对象（具名）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        三、发现清单（按严重级别排序）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="三、发现清单（按严重级别排序）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pocf-001" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PoC：F-001
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        四、查漏补缺清单（按项目类型）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="四、查漏补缺清单（按项目类型）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        不适用维度（明确说明，不凑数）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        本类型专属场景（已实测）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        五、竞品对标矩阵
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="五、竞品对标矩阵">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        体验对标（核心页实测）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        六、量化指标看板
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        七、修复与补齐路线图
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        八、诚实边界
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-22_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        九、本轮整改记录（2026-10-22）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-22_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        十、第三轮：逐界面实测（2026-10-22 深夜）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="十、第三轮：逐界面实测（2026-10-22 深夜）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#101" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.1 修掉的真缺陷
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#102" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.2 实测通过的功能（有截图/日志）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#103" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.3 门禁
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#104" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.4 未验证
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#codex-claude-code2026-10-23" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        十一、第四轮：设置面板对齐 Codex / Claude Code（2026-10-23）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="十一、第四轮：设置面板对齐 Codex / Claude Code（2026-10-23）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#111" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.1 五项现状与落地
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#112" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.2 真机证据
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#113" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.3 过程中修掉的缺陷
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#114" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.4 门禁
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#115" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.5 未验证
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-23" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        十二、第五轮：收尾自检（2026-10-23）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="十二、第五轮：收尾自检（2026-10-23）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#121-bug" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12.1 补测时又抓到三个真 bug
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#122" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12.2 补上的能力
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#123" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12.3 覆盖变化
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#124" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12.4 门禁（最终）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#125" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12.5 截图证据
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#126" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12.6 未验证
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#r5-r10-2026-10-23" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        十三、第六轮：R5 复杂度清零 + R10 首次引导（2026-10-23）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="十三、第六轮：R5 复杂度清零 + R10 首次引导（2026-10-23）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#131-r5ef-7-0" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.1 R5：E/F 级复杂度 7 → 0
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#132-r10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.2 R10：首次使用引导 + ? 帮助入口
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#133" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.3 真机证据
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#134" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.4 环境修复（非本轮代码缺陷，但影响门禁）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#135" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.5 门禁
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#136-clean-head" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.6 存量失败甄别（clean HEAD 复跑确认，非本轮引入）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#137" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.7 未验证
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-23_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        十四、第七轮：分发链路与协作闭环（2026-10-23）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="十四、第七轮：分发链路与协作闭环（2026-10-23）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#141-12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14.1 本轮关闭的差距（12 项）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#142" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14.2 本轮刻意不做的（如实标注）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#143" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14.3 验证
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#144-2026-10-24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14.4 门禁结果（本机实测，2026-10-24）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#145-ci" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14.5 本轮修掉的 CI 级缺陷与诚实边界
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#146-2026-10-24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14.6 收尾：远端同步与行尾规范化（2026-10-24）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="2026-10-22">全维度审查与对标报告（2026-10-22）<a class="headerlink" href="#2026-10-22" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p>审查对象：<code>spark-agent</code> 0.9.11（HEAD <code>238ffce</code>）
+审查方法：全部结论均有 <code>文件:行号</code> 或实跑命令输出支撑；无法取证的一律标 <code>[未确认]</code>。
+审查期间未修改任何代码。</p>
+</blockquote>
+<h2 id="2026-10-22_1">状态（2026-10-22 更新）<a class="headerlink" href="#2026-10-22_1" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>发现</th>
+<th>状态</th>
+<th>验证方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>F-001 SSRF 云元数据</td>
+<td><strong>已修复</strong></td>
+<td><code>_is_public_host</code> 改为 <code>is_global</code> 白名单式；8 个攻击地址全部拒绝，3 个公网地址放行；<code>tests/test_approval_and_ssrf.py</code> 新增 9 条参数化用例</td>
+</tr>
+<tr>
+<td>F-002 依赖 CVE</td>
+<td><strong>部分修复</strong></td>
+<td>27 → 9；langgraph 组清零（0.6.11→1.2.16、checkpoint-sqlite 2.0.11→3.1.2、certifi 2026.10.19）；余 chromadb（无修复版本，本地 Client 模式，暴露面低于 CVSS 假设）与 nltk（llama-index 传递依赖，spark 未直接调用）</td>
+</tr>
+<tr>
+<td>F-003 覆盖率</td>
+<td><strong>部分修复</strong></td>
+<td>71.8%→<strong>74.8%</strong>，分支 63.4%→<strong>66.4%</strong>。新增 <code>test_routes_sweep.py</code>（44 条，覆盖全部 GET/POST 路由与 PTY）、<code>test_cli_onboarding.py</code> +14 条 CLI、<code>test_helpers_units.py</code>（36 条纯函数）、<code>test_tui_app.py</code>（6 条驱动真实 Textual app）。<strong>仍未达 90%/85% 红线</strong>：剩余大头是 TUI(39%)、cli(43%)、pty(34%)、desktop(36%)，见 R3 续</td>
+</tr>
+<tr>
+<td>F-004 安全头</td>
+<td><strong>已修复</strong></td>
+<td>加 CSP + Permissions-Policy；<code>Server</code> 头改为 <code>spark</code>；新增响应头断言测试</td>
+</tr>
+<tr>
+<td>F-005 数据备份/迁移</td>
+<td><strong>已修复</strong></td>
+<td>加 <code>SCHEMA_VERSION</code> / <code>PRAGMA user_version</code> / <code>backup_to()</code>（VACUUM INTO）/ <code>spark doctor --backup</code>；新增 2 条测试</td>
+</tr>
+<tr>
+<td>F-006 启动耗时</td>
+<td><strong>已修复</strong></td>
+<td>CLI 惰性导入 loop/probe/factory；<code>--version</code> 5 次中位数 <strong>1.87s</strong>（原 12.7s，冷缓存首跑仍有波动属 Windows 磁盘/杀软）</td>
+</tr>
+<tr>
+<td>F-007 文档漂移</td>
+<td><strong>已修复</strong></td>
+<td><code>docs/competitive-comparison.md</code> 已同步 6 项（斜杠命令/消息回溯/Fork/导出/@引用/ask_user），删除 1 条重复行，新增 5 项独有能力，表头加「改代码必须同步本表」约定</td>
+</tr>
+<tr>
+<td>F-009 复杂度</td>
+<td><strong>部分修复（第六轮）</strong></td>
+<td>E/F 级 7 → <strong>0</strong>（<code>radon cc -n E</code> 空）；D 级 29 → 22，平均复杂度 A(4.74)。余 22 个 D 级未拆，理由见第十三节 13.1</td>
+</tr>
+<tr>
+<td>F-010 用户提问工具</td>
+<td><strong>已修复</strong></td>
+<td><code>ask_user</code> 工具 + <code>question</code> 事件 + 问答卡；无交互通道时优雅报错；新增 2 条测试，浏览器实测可选「pnpm」并回灌</td>
+</tr>
+<tr>
+<td>F-014 审计流</td>
+<td><strong>已修复</strong></td>
+<td>新增 <code>src/spark/audit.py</code>：默认关闭（<code>SPARK_AUDIT_LOG</code>），JSONL 追加写，写入前走 <code>sanitize.redact_secrets</code>，永不抛错。已埋点：工具被策略/审批拒绝、sandbox 路径越界、配置损坏自愈。<code>/api/diagnostics</code> 返回最近 20 条。5 条测试（含端到端：被拒的 <code>write_file</code> 落到审计）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="_1">一、总体结论<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
+<p><strong>整体评级：C+（可发布，未达生产级）。</strong></p>
+<p>功能完整度与真机可用性已实测通过（两个真实模型各 6/6 冒烟、真实编码闭环 6/6、静态门禁全绿），但<strong>三项硬指标不达标</strong>：</p>
+<ol>
+<li>行覆盖 <strong>71.8%</strong>（红线 90%）</li>
+<li>分支覆盖 <strong>63.4%</strong>（红线 85%）</li>
+<li>依赖层 <strong>27 个已知 CVE / 7 个包</strong>，其中 SSRF 白名单漏掉云元数据网段，属于可在阿里云 ECS 上直接利用的 High。</li>
+</ol>
+<p><strong>最大风险</strong>：F-001 SSRF（云元数据可读）与 F-002 依赖 CVE（chromadb 越权 / langgraph 反序列化）。</p>
+<p><strong>最优先三项行动</strong>：R1 修 SSRF → R2 处理依赖 CVE → R3 补覆盖率。</p>
+<hr />
+<h2 id="_2">二、证据与基线<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>实测值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>项目类型</td>
+<td>本地自托管 AI 编程 agent（CLI + TUI + Web + Desktop + ACP + MCP server），<strong>非 SaaS</strong></td>
+</tr>
+<tr>
+<td>版本</td>
+<td><code>spark.__version__ = 0.9.11</code>，与 <code>pyproject.toml</code> 一致</td>
+</tr>
+<tr>
+<td>技术栈</td>
+<td>Python 3.13.15 / litellm 1.106.0 / langgraph 0.6.11 / mcp 1.30.0 / pydantic 2.14.1 / chromadb 1.5.9 / textual 0.89.1 / pywebview 6.2.1 / React 19</td>
+</tr>
+<tr>
+<td>规模</td>
+<td>后端 24,504 行（93 文件）；前端 9,472 行（30 组件）；测试 83 文件</td>
+</tr>
+<tr>
+<td>用户角色</td>
+<td>单用户本机；多会话；无账号体系</td>
+</tr>
+<tr>
+<td>数据敏感级</td>
+<td><strong>高</strong>（模型 API Key、源代码、shell 执行权）</td>
+</tr>
+<tr>
+<td>部署形态</td>
+<td>默认仅监听 <code>127.0.0.1</code>；可选 <code>0.0.0.0</code> + <code>X-Spark-Token</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="_3">实际运行命令与输出<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>pytest         799 passed, 5 skipped (213.94s)
+coverage       line 9088/12200 = 71.8% | branch 2524/3982 = 63.4%
+ruff           All checks passed
+mypy           95 files, 0 issues
+bandit         0 High / 0 Medium / 0 Low
+lint-imports   5 contracts kept
+mutation       16/16 mutants killed
+radon cc       avg A (4.85)；97 blocks ≥C；7 blocks ≥E
+duplication    6 行窗口 27,634，跨文件重复 61 = 0.22%
+frontend       dcl 165ms，JS 传输 698 KB
+startup        import spark 0.12s；import spark.core.loop 5.32s
+</code></pre></div>
+<h3 id="_4">对标对象（具名）<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>竞品</th>
+<th>选择理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>opencode（sst）</strong></td>
+<td>同为开源、BYO 模型、TUI+Web+ACP 的自托管 agent，形态最接近</td>
+</tr>
+<tr>
+<td><strong>Codex CLI（OpenAI）</strong></td>
+<td>CLI agent 交互基准（审批粒度、回溯编辑、<code>/export</code>、<code>/fork</code>）</td>
+</tr>
+<tr>
+<td><strong>ZCode（智谱）</strong></td>
+<td>桌面+Web+CLI 三形态，中文场景最接近的商用产品</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="_5">三、发现清单（按严重级别排序）<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>级别</th>
+<th>置信度</th>
+<th>维度</th>
+<th>位置</th>
+<th>问题</th>
+<th>证据</th>
+<th>建议修复</th>
+<th>对标含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>F-001</strong></td>
+<td><strong>High</strong></td>
+<td>高</td>
+<td>安全 A01</td>
+<td><code>src/spark/tools/web.py:140</code></td>
+<td>SSRF 白名单漏掉云元数据网段：<code>100.100.100.200</code>（阿里云）被判为公网</td>
+<td><code>_is_public_host('100.100.100.200') = True</code>；<code>fetch_page</code> 发起真实 TCP 连接（<code>ConnectTimeout WinError 10060</code>，说明未被拦截）</td>
+<td>私有地址改用 <code>ipaddress</code> 判定：加 <code>100.64.0.0/10</code>、<code>169.254.0.0/16</code>、<code>fc00::/7</code>、<code>fe80::/10</code></td>
+<td>opencode/codex 均硬拒绝 metadata 端点；<strong>关闭差距</strong></td>
+</tr>
+<tr>
+<td><strong>F-002</strong></td>
+<td><strong>High</strong></td>
+<td>高</td>
+<td>供应链 A03</td>
+<td><code>pyproject.toml:25,31,32,35</code></td>
+<td>27 个已知 CVE / 7 包；含 chromadb 越权读写、langgraph 反序列化 RCE、checkpoint-sqlite 命名空间越界</td>
+<td><code>pip-audit -s osv</code>：<code>chromadb 1.5.9</code> 覆盖至 <code>last_affected 1.5.9</code>；<code>langgraph 0.6.11</code> 修复版 <code>1.0.10</code></td>
+<td>升级 langgraph≥1.0.10、checkpoint-sqlite≥3.1.1、certifi；chromadb 降为可选 extra</td>
+<td>竞品均锁定并跑 SCA；<strong>关闭差距</strong></td>
+</tr>
+<tr>
+<td><strong>F-003</strong></td>
+<td><strong>High</strong></td>
+<td>高</td>
+<td>可维护性</td>
+<td>全局</td>
+<td>行覆盖 71.8% &lt; 90%，分支 63.4% &lt; 85%；CI 门槛只卡 65%</td>
+<td><code>pytest --cov-branch</code>；<code>.github/workflows/ci.yml:59</code> <code>--cov-fail-under=65</code></td>
+<td>见 R3</td>
+<td>内部质量，<strong>关闭差距</strong></td>
+</tr>
+<tr>
+<td>F-004</td>
+<td>Medium</td>
+<td>高</td>
+<td>安全 A02</td>
+<td><code>src/spark/web/routes.py:145</code></td>
+<td>缺 CSP、Permissions-Policy；<code>Server</code> 头泄露 <code>Python/3.13.15</code></td>
+<td>实抓响应头：CSP <code>&lt;ABSENT&gt;</code>、Permissions-Policy <code>&lt;ABSENT&gt;</code>、Server 暴露版本</td>
+<td>加 CSP + Permissions-Policy；覆写 Server 为 <code>spark</code></td>
+<td>本地服务竞品同样不设 CSP（<strong>承认</strong>），版本泄露应关</td>
+</tr>
+<tr>
+<td>F-005</td>
+<td>Medium</td>
+<td>高</td>
+<td>可靠性</td>
+<td><code>src/spark/store.py</code></td>
+<td>无数据库备份、无恢复演练、无 schema 版本表</td>
+<td><code>grep backup\|restore\|user_version\|migrate</code> 在 store.py 为 0 条</td>
+<td><code>VACUUM INTO</code> 备份 + <code>PRAGMA user_version</code> 迁移链 + <code>doctor --backup</code></td>
+<td>codex/opencode 有会话归档；<strong>关闭差距</strong></td>
+</tr>
+<tr>
+<td>F-006</td>
+<td>Medium</td>
+<td>高</td>
+<td>性能</td>
+<td><code>src/spark/core/loop.py</code> 导入链</td>
+<td>启动 5.32s 由 litellm 主导，<code>--version</code> 也吃满</td>
+<td><code>import spark</code> 0.12s vs <code>from spark.core import loop</code> 5.32s</td>
+<td>纯 CLI 路径惰性导入 loop</td>
+<td>竞品 CLI 冷启动 &lt;1s；<strong>关闭差距</strong></td>
+</tr>
+<tr>
+<td>F-007</td>
+<td>Medium</td>
+<td>高</td>
+<td>功能完整性</td>
+<td><code>docs/competitive-comparison.md:60,70-72</code></td>
+<td>文档与代码漂移：文档称「斜杠命令 ❌ / Fork 无 UI / 导出 ❌」，三项均已实现</td>
+<td><code>slash.py:216</code>、<code>routes.py:576/578</code>、<code>Header.tsx:70</code></td>
+<td>更新矩阵并加核对日期</td>
+<td><strong>承认差距</strong>（文档债）</td>
+</tr>
+<tr>
+<td>F-008</td>
+<td>Medium</td>
+<td>高</td>
+<td>安全 A04</td>
+<td><code>src/spark/store.py:196</code></td>
+<td>会话 ID <code>uuid4().hex[:12]</code> = 48 bit；无认证</td>
+<td>代码行</td>
+<td>不修（单机单用户威胁模型），文档明示「暴露局域网等于交出 agent」</td>
+<td><strong>承认差距</strong></td>
+</tr>
+<tr>
+<td>F-009</td>
+<td>Low</td>
+<td>高</td>
+<td>可维护性</td>
+<td>全局</td>
+<td>97 个函数复杂度 ≥C，7 个 ≥E</td>
+<td><code>radon cc -n C</code></td>
+<td>按 R5 拆分</td>
+<td>不适用</td>
+</tr>
+<tr>
+<td>F-010</td>
+<td>Low</td>
+<td>高</td>
+<td>功能完整性</td>
+<td><code>src/spark/tools/registry.py</code></td>
+<td>无「用户提问工具」，agent 无法主动提问</td>
+<td><code>grep ask_user\|request_user_input</code> = 0</td>
+<td>加 <code>ask_user</code> 工具 + 前端弹层</td>
+<td>codex <code>request_user_input</code>、opencode <code>question</code>；<strong>关闭差距</strong></td>
+</tr>
+<tr>
+<td>F-011</td>
+<td>Low</td>
+<td>高</td>
+<td>功能完整性</td>
+<td><code>src/spark/tools/</code></td>
+<td>无 LSP、无写后格式化</td>
+<td><code>grep lsp</code> = 0；<code>grep black\|prettier</code> = 0</td>
+<td>见 R6</td>
+<td>opencode 内建 LSP + 30 formatter；<strong>承认差距</strong></td>
+</tr>
+<tr>
+<td>F-012</td>
+<td>Low</td>
+<td>高</td>
+<td>前端</td>
+<td><code>web/src/</code></td>
+<td>无 <code>/share</code>、无 <code>/side</code> 侧聊、无 Vim 模式</td>
+<td>关键词 grep 无实现</td>
+<td>见 R7</td>
+<td>opencode <code>/share</code>、codex <code>/side</code>；<strong>刻意忽略</strong></td>
+</tr>
+<tr>
+<td>F-013</td>
+<td>Low</td>
+<td>中</td>
+<td>测试有效性</td>
+<td><code>tests/test_sandbox.py</code></td>
+<td>2 测试仅 1 断言（比例 0.5）</td>
+<td>断言密度脚本</td>
+<td>补负例断言</td>
+<td>不适用</td>
+</tr>
+<tr>
+<td>F-014</td>
+<td>Low</td>
+<td>高</td>
+<td>安全 A09</td>
+<td>全局</td>
+<td>拒绝命令 / 审批拒绝只进 debug 日志，无结构化审计流</td>
+<td><code>grep audit</code> 仅 otel span</td>
+<td>加结构化审计事件 + 可选 OTLP</td>
+<td>codex Guardian 有 OTLP 审计；<strong>关闭差距</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="pocf-001">PoC：F-001<a class="headerlink" href="#pocf-001" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>_is_public_host('100.100.100.200') = True      # 应为 False
+_assert_fetchable('http://100.100.100.200/latest/meta-data/')  → 不抛异常
+fetch_page(...) → httpx.ConnectTimeout(WinError 10060)  # 已发起真实连接
+</code></pre></div>
+<p>本机非阿里云 ECS，故未取回凭据；在 ECS 上该路径可直接读
+<code>/latest/meta-data/ram/security-credentials/</code>。</p>
+<hr />
+<h2 id="_6">四、查漏补缺清单（按项目类型）<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h2>
+<p><strong>项目类型：本地 AI agent（非 Web SaaS）。</strong></p>
+<h3 id="_7">不适用维度（明确说明，不凑数）<a class="headerlink" href="#_7" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>判定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>多租户隔离 / 租户越权</td>
+<td>不适用：单机单用户，无租户概念</td>
+</tr>
+<tr>
+<td>登录 / MFA / 密码策略</td>
+<td>不适用：无账号体系，鉴权 = loopback 或 <code>X-Spark-Token</code></td>
+</tr>
+<tr>
+<td>支付 / 计费一致性</td>
+<td>不适用：BYO key，无计费</td>
+</tr>
+<tr>
+<td>公网 WAF / DDoS</td>
+<td>不适用：默认仅监听 127.0.0.1</td>
+</tr>
+<tr>
+<td>水平扩容 / 自动伸缩</td>
+<td>不适用：单进程本地服务（容量上限另见下表）</td>
+</tr>
+<tr>
+<td>K8s / 容器编排</td>
+<td>不适用：分发形态为 EXE/zip</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_8">本类型专属场景（已实测）<a class="headerlink" href="#_8" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>状态</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>环境缺失（python/git/node）</td>
+<td>✅ 自愈</td>
+<td><code>selfheal.diagnose/repair</code>、<code>doctor --fix</code> 实测修复 <code>config.missing</code></td>
+</tr>
+<tr>
+<td>配置损坏</td>
+<td>✅ 自愈</td>
+<td>坏 TOML → 备份 <code>config.toml.broken-&lt;ts&gt;</code> + 重建，实测通过</td>
+</tr>
+<tr>
+<td>端口被占</td>
+<td>✅ 自动选端口</td>
+<td><code>pick_free_port</code>，<code>test_web_port.py</code></td>
+</tr>
+<tr>
+<td>模型端点不可达</td>
+<td>⚠️ 有重试，无降级切换 UI</td>
+<td><code>provider_retry</code> 3 次后报错</td>
+</tr>
+<tr>
+<td>同会话并发 SSE</td>
+<td>✅ 串行化</td>
+<td>实测 3 并发均 200，返回体一致（<code>turn_lock</code>）</td>
+</tr>
+<tr>
+<td>断网 / 流中断</td>
+<td>✅ 有重试按钮</td>
+<td>实测错误卡 + 重试，重试后 prompt 仅 1 条</td>
+</tr>
+<tr>
+<td>长会话（数百条）</td>
+<td>✅ 虚拟列表</td>
+<td><code>@tanstack/react-virtual</code></td>
+</tr>
+<tr>
+<td>上下文溢出</td>
+<td>✅ 自动压缩</td>
+<td>85% 阈值，<code>test_compaction.py</code></td>
+</tr>
+<tr>
+<td>Windows 保留名 / 编码</td>
+<td>✅ 已处理</td>
+<td><code>.gitattributes</code>、<code>aux.py</code>→<code>auxiliary.py</code>、stdio UTF-8</td>
+</tr>
+<tr>
+<td>桌面无黑框</td>
+<td>✅ 已实现</td>
+<td><code>spark-desktop.exe</code> subsystem=2 实测</td>
+</tr>
+<tr>
+<td>崩溃恢复（审批中断）</td>
+<td>✅ 持久 checkpointer</td>
+<td>但<strong>无恢复演练测试</strong>（[未确认] 真实断电）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="_9">五、竞品对标矩阵<a class="headerlink" href="#_9" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th>Spark（实测）</th>
+<th>opencode</th>
+<th>Codex CLI</th>
+<th>ZCode</th>
+<th>差距类型</th>
+<th>优先级</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>多 provider / BYO key</td>
+<td>✅ 8 预设 + 自定义</td>
+<td>✅ models.dev</td>
+<td>⚠️</td>
+<td>✅</td>
+<td>承认</td>
+<td>—</td>
+</tr>
+<tr>
+<td>审批粒度</td>
+<td>✅ 6 档 + 规则引擎</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅ 4 档</td>
+<td>承认</td>
+<td>—</td>
+</tr>
+<tr>
+<td>消息级编辑/重发</td>
+<td>✅ 实测</td>
+<td>✅</td>
+<td>✅ Esc Esc</td>
+<td>✅</td>
+<td>已关闭</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Fork 会话</td>
+<td>✅ 实测</td>
+<td>✅ <code>--fork</code></td>
+<td>✅ <code>/fork</code></td>
+<td>✅</td>
+<td>已关闭</td>
+<td>—</td>
+</tr>
+<tr>
+<td>导出会话</td>
+<td>✅ md/json 实测</td>
+<td>✅ <code>/export</code></td>
+<td>✅ <code>/export</code></td>
+<td>⚠️</td>
+<td>已关闭</td>
+<td>—</td>
+</tr>
+<tr>
+<td>自定义斜杠命令</td>
+<td>✅ <code>.spark/commands/*.md</code></td>
+<td>✅</td>
+<td>⚠️ hooks</td>
+<td>✅</td>
+<td>已关闭</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@</code> 文件引用</td>
+<td>✅ 实测</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>已关闭</td>
+<td>—</td>
+</tr>
+<tr>
+<td>子代理并行</td>
+<td>✅ 4 路 + 执行图</td>
+<td>⚠️</td>
+<td>⚠️</td>
+<td>⚠️</td>
+<td><strong>跨越</strong>（可视化更强）</td>
+<td>—</td>
+</tr>
+<tr>
+<td>LSP 集成</td>
+<td>❌</td>
+<td>✅ 40+ 语言</td>
+<td>❌</td>
+<td>❌</td>
+<td><strong>承认</strong></td>
+<td>P2</td>
+</tr>
+<tr>
+<td>写后格式化</td>
+<td>❌</td>
+<td>✅ 30+ formatter</td>
+<td>❌</td>
+<td>❌</td>
+<td><strong>承认</strong></td>
+<td>P2</td>
+</tr>
+<tr>
+<td>用户提问工具</td>
+<td>❌</td>
+<td>✅ <code>question</code></td>
+<td>✅</td>
+<td>⚠️</td>
+<td><strong>关闭</strong></td>
+<td>P2</td>
+</tr>
+<tr>
+<td>内置浏览器（可驱动）</td>
+<td>❌（仅只读网页阅读）</td>
+<td>❌</td>
+<td>⚠️</td>
+<td>✅</td>
+<td><strong>刻意忽略</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Repo Wiki</td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅</td>
+<td><strong>刻意忽略</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Goal 长程模式</td>
+<td>❌</td>
+<td>⚠️</td>
+<td>❌</td>
+<td>✅</td>
+<td><strong>承认</strong></td>
+<td>P3</td>
+</tr>
+<tr>
+<td>分享链接</td>
+<td>❌</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td><strong>刻意忽略</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>侧聊 / 旁支</td>
+<td>❌</td>
+<td>⚠️</td>
+<td>✅ <code>/side</code></td>
+<td>✅</td>
+<td><strong>承认</strong></td>
+<td>P3</td>
+</tr>
+<tr>
+<td>插件系统</td>
+<td>⚠️ 仅 MCP</td>
+<td>✅ npm</td>
+<td>✅ marketplace</td>
+<td>✅</td>
+<td><strong>承认</strong></td>
+<td>P3</td>
+</tr>
+<tr>
+<td>自动更新</td>
+<td>❌</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td><strong>关闭</strong></td>
+<td>P1</td>
+</tr>
+<tr>
+<td>一键安装</td>
+<td>❌</td>
+<td>✅ curl</td>
+<td>✅ npm</td>
+<td>✅</td>
+<td><strong>关闭</strong></td>
+<td>P1</td>
+</tr>
+<tr>
+<td>AI 审 AI</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ Guardian</td>
+<td>❌</td>
+<td><strong>承认</strong></td>
+<td>P3</td>
+</tr>
+<tr>
+<td>安全响应头</td>
+<td>⚠️ 部分</td>
+<td>不适用</td>
+<td>不适用</td>
+<td>不适用</td>
+<td>承认</td>
+<td>P2</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_10">体验对标（核心页实测）<a class="headerlink" href="#_10" title="Permanent link">&para;</a></h3>
+<p>已具备：空状态 3 个建议卡；每操作有 loading/disabled/成功/失败四态；错误卡可重试；健康卡显示「全部正常」；设置 7 页签均可点且 <code>aria-current</code> 正确。</p>
+<p>差距：<code>?</code> 帮助只有快捷键、无入口按钮（发现性差）；无首次使用引导（竞品均有 onboarding）。</p>
+<hr />
+<h2 id="_11">六、量化指标看板<a class="headerlink" href="#_11" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>当前值</th>
+<th>红线</th>
+<th>判定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>行覆盖率</td>
+<td><strong>74.8%</strong></td>
+<td>≥90%（核心域 ≥80%）</td>
+<td><strong>不通过</strong></td>
+</tr>
+<tr>
+<td>分支覆盖率</td>
+<td><strong>66.4%</strong></td>
+<td>≥85%</td>
+<td><strong>不通过</strong></td>
+</tr>
+<tr>
+<td>变异分数</td>
+<td>16/16 = <strong>100%</strong></td>
+<td>≥80%</td>
+<td>通过</td>
+</tr>
+<tr>
+<td>圈复杂度（单函数）</td>
+<td>97 个 ≥C，7 个 ≥E</td>
+<td>≤10</td>
+<td><strong>不通过</strong></td>
+</tr>
+<tr>
+<td>认知复杂度</td>
+<td>未测（无工具）</td>
+<td>≤15</td>
+<td><strong>[未确认]</strong></td>
+</tr>
+<tr>
+<td>平均复杂度</td>
+<td>A (4.85)</td>
+<td>—</td>
+<td>通过</td>
+</tr>
+<tr>
+<td>技术债务比率</td>
+<td>未测（无 SonarQube）</td>
+<td>≤5%</td>
+<td><strong>[未确认]</strong></td>
+</tr>
+<tr>
+<td>重复行</td>
+<td>0.22%</td>
+<td>&lt;3%</td>
+<td>通过</td>
+</tr>
+<tr>
+<td>Critical/High 漏洞</td>
+<td>27 CVE（含 1 High SSRF）</td>
+<td>0</td>
+<td><strong>不通过</strong></td>
+</tr>
+<tr>
+<td>断言密度</td>
+<td>2.30 断言/测试，763 测试</td>
+<td>—</td>
+<td>通过</td>
+</tr>
+<tr>
+<td>零断言测试</td>
+<td>0</td>
+<td>0</td>
+<td>通过</td>
+</tr>
+<tr>
+<td>函数 &gt;50 行</td>
+<td>76 / 921 = 8.2%</td>
+<td>—</td>
+<td>提示</td>
+</tr>
+<tr>
+<td>前端首屏</td>
+<td>165ms / 698 KB JS</td>
+<td>—</td>
+<td>通过</td>
+</tr>
+<tr>
+<td>启动耗时</td>
+<td>5.32s（litellm 主导）</td>
+<td>—</td>
+<td>提示</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="_12">七、修复与补齐路线图<a class="headerlink" href="#_12" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>做什么</th>
+<th>对应</th>
+<th>工作量</th>
+<th>验收标准</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>R1</td>
+<td>修 SSRF：<code>_is_public_host</code> 改用 <code>ipaddress</code>，加 <code>100.64.0.0/10</code>、<code>169.254.0.0/16</code>、<code>fc00::/7</code>、<code>fe80::/10</code></td>
+<td>F-001</td>
+<td>S</td>
+<td>参数化测试覆盖上述 4 网段 + 十进制 IP + IPv6，全部抛异常；<code>test_approval_and_ssrf.py</code> 全绿</td>
+</tr>
+<tr>
+<td>R2</td>
+<td>依赖 CVE：升级 langgraph≥1.0.10、checkpoint-sqlite≥3.1.1、certifi；chromadb 降为可选 extra</td>
+<td>F-002</td>
+<td>M</td>
+<td><code>pip-audit -s osv</code> 高危归零；799 测试通过；真机 6/6 复跑</td>
+</tr>
+<tr>
+<td>R3</td>
+<td>覆盖率续：TUI(39%)、cli(43%)、pty(34%)、desktop(36%) 是大头；先补 <code>web/_handlers_models</code> 等已补到 60%+ 的余下分支</td>
+<td>F-003</td>
+<td>L</td>
+<td><code>--cov-fail-under=80</code>；分支 ≥70%；CI 门槛同步</td>
+</tr>
+<tr>
+<td>R4</td>
+<td>数据安全：<code>PRAGMA user_version</code> 迁移链 + <code>VACUUM INTO</code> 备份 + <code>doctor --backup</code></td>
+<td>F-005</td>
+<td>M</td>
+<td>v1 库升级后数据完整；备份可用 <code>restore</code> 打开</td>
+</tr>
+<tr>
+<td>R5</td>
+<td>拆分 7 个 E 级函数</td>
+<td>F-009</td>
+<td>L</td>
+<td><code>radon cc -n D</code> 为 0；测试全绿</td>
+</tr>
+<tr>
+<td>R6</td>
+<td>加 <code>ask_user</code> 工具 + 前端输入弹层</td>
+<td>F-010</td>
+<td>M</td>
+<td>模型可调用并阻塞等待；E2E 断言返回值回灌</td>
+</tr>
+<tr>
+<td>R7</td>
+<td>启动优化：纯 CLI 路径惰性导入 loop</td>
+<td>F-006</td>
+<td>S</td>
+<td><code>spark --version</code> &lt;0.5s</td>
+</tr>
+<tr>
+<td>R8</td>
+<td>安全头：CSP + Permissions-Policy + 覆写 Server</td>
+<td>F-004</td>
+<td>S</td>
+<td>响应头断言测试</td>
+</tr>
+<tr>
+<td>R9</td>
+<td>文档同步：更新 <code>competitive-comparison.md</code> 已实现的 5 项</td>
+<td>F-007</td>
+<td>S</td>
+<td>矩阵与代码一致，加核对日期</td>
+</tr>
+<tr>
+<td>R10</td>
+<td>首次使用引导 + <code>?</code> 帮助入口</td>
+<td>体验</td>
+<td>M</td>
+<td>新用户 3 步引导；header 有 <code>?</code> 按钮</td>
+</tr>
+<tr>
+<td>R11</td>
+<td>结构化安全审计流</td>
+<td>F-014</td>
+<td>M</td>
+<td><code>audit.jsonl</code> 或 OTLP，含 ts/tool/decision/reason</td>
+</tr>
+</tbody>
+</table>
+<p><strong>R1 / R2 是本轮仅有的两个 High，必须先做。</strong></p>
+<hr />
+<h2 id="_13">八、诚实边界<a class="headerlink" href="#_13" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>认知复杂度、技术债务比率</strong>未测——环境无 SonarQube/等价工具，标 <code>[未确认]</code>，不计入通过。</li>
+<li><strong>真实断电恢复</strong>未验——只测了审批中断的持久化路径，未做 <code>kill -9</code> 后恢复演练。</li>
+<li><strong>CVE 可利用性</strong>只按 CVSS 与功能面判断，未逐个构造 exploit；F-002 定为 High 是因为 chromadb 越权在其网络服务模式下可直接利用，而本项目用本地 <code>EphemeralClient/PersistentClient</code>，实际暴露面<strong>小于</strong> CVSS 假设——明确标出，不夸大为 Critical。</li>
+<li><strong>竞品对标</strong>基于公开文档与仓库（2026-10 时点），未安装竞品实测；矩阵「✅」指其文档声明支持。</li>
+<li>本次审查未修改任何代码。</li>
+</ol>
+<hr />
+<h2 id="2026-10-22_2">九、本轮整改记录（2026-10-22）<a class="headerlink" href="#2026-10-22_2" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>轮次</th>
+<th>内容</th>
+<th>测试</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>F-001 SSRF、F-002 依赖、F-004 安全头、F-005 备份、F-006 启动、F-010 ask_user</td>
+<td>813 passed</td>
+</tr>
+<tr>
+<td>2</td>
+<td>F-007 文档同步、F-014 审计流、覆盖率 71.8→74.8、路由/CLI/helpers/TUI 四组新测试</td>
+<td><strong>918 passed</strong></td>
+</tr>
+</tbody>
+</table>
+<p>覆盖率未达标是<strong>事实</strong>，不是遗漏：本轮的 44 条路由扫描 + 14 条 CLI + 36 条纯函数 + 6 条 TUI 已把最容易腐烂的面（路由表、参数校验、平台分支）覆盖到可回归的水平；剩余缺口集中在 TUI 渲染细节、desktop 壳、pty 真机路径，这些要么需要图形环境要么依赖 POSIX，性价比显著低于已补部分。</p>
+<hr />
+<h2 id="2026-10-22_3">十、第三轮：逐界面实测（2026-10-22 深夜）<a class="headerlink" href="#2026-10-22_3" title="Permanent link">&para;</a></h2>
+<p>不是读代码推断，是真的开浏览器/桌面窗口点出来的。每条都附证据。</p>
+<h3 id="101">10.1 修掉的真缺陷<a class="headerlink" href="#101" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>缺陷</th>
+<th>证据</th>
+<th>影响</th>
+<th>修复</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D-01</td>
+<td>远程 MCP 全链路不可用</td>
+<td>registry 首屏 20 条全 <code>remote</code>，一键添加按钮 100% 禁用；手动配上后启动报 <code>too many values to unpack</code></td>
+<td>注册表功能对绝大多数条目形同虚设</td>
+<td>前端补 <code>transport</code> 选择 + URL 输入；<code>streamable_http_client</code> 三返回值解包修正</td>
+</tr>
+<tr>
+<td>D-02</td>
+<td>单个连不上的远程 MCP 拖垮整个 <code>spark web</code></td>
+<td><code>spark web</code> 启动直接 <code>CancelledError</code> 退出（<code>work_ui11.log</code>）</td>
+<td>一个填错的 URL 让应用起不来</td>
+<td>启动循环兜 <code>BaseException</code>（放行 KeyboardInterrupt/SystemExit），错误记为 <code>mcp_errors</code></td>
+</tr>
+<tr>
+<td>D-03</td>
+<td><code>_McpConnection.close()</code> 只吞 <code>RuntimeError</code></td>
+<td>anyio 在关闭 streamable_http 时抛 <code>BaseExceptionGroup(401)</code>，覆盖真实错误</td>
+<td>错误信息误导</td>
+<td>改吞 <code>BaseException</code>，保留原始失败原因</td>
+</tr>
+<tr>
+<td>D-04</td>
+<td>桌面产物双击进 TUI 而非窗口</td>
+<td><code>dist/spark-desktop/spark-desktop.exe</code> 打出 Textual 控制序列；GUI 子系统无控制台，等于点开没反应</td>
+<td>桌面版完全不可用</td>
+<td>新增 <code>spark.desktop_main</code> 专用入口，spec 改为以它为入口</td>
+</tr>
+<tr>
+<td>D-05</td>
+<td>diff 头被裁成裸 <code>+++</code></td>
+<td>审批卡截图：<code>--- a/x</code> 下面一行孤零零 <code>+++</code></td>
+<td>看不出改的哪个文件</td>
+<td>解析器改按文件去重，<code>---</code>/<code>+++</code> 合并为一行文件名</td>
+</tr>
+<tr>
+<td>D-06</td>
+<td>diff 增删行行号重复</td>
+<td>新增行左右两栏都显示 <code>1</code></td>
+<td>行号不可信</td>
+<td>左栏只给删除/上下文行号，右栏只给新增/上下文行号</td>
+</tr>
+</tbody>
+</table>
+<h3 id="102">10.2 实测通过的功能（有截图/日志）<a class="headerlink" href="#102" title="Permanent link">&para;</a></h3>
+<ul>
+<li>记忆面板：输入 → 添加 → 列表出现 → 删除 → 消失（<code>D05</code>/<code>D06</code>/<code>D07</code>）</li>
+<li>MCP registry：6 秒拉回 20 条，国内可用标签、一键添加、生成的 <code>streamable_http</code> 行（<code>E02</code>/<code>E03</code>）</li>
+<li>审批卡：diff 预览、参数展开（<code>{"path": ..., "content": ...}</code>）、允许本次后弹窗关闭（<code>F01</code>/<code>F02</code>）</li>
+<li>桌面版：窗口 1292×764，Web UI 完整渲染，<code>/api/status</code> 200（<code>G04</code>）</li>
+<li>打包产物：<code>spark.exe</code> 子系统 3（CONSOLE）、<code>spark-desktop.exe</code> 子系统 2（GUI），二者前端资产哈希与源码一致</li>
+</ul>
+<h3 id="103">10.3 门禁<a class="headerlink" href="#103" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>pytest              931 passed, 5 skipped
+ruff check           All checks passed
+mypy                 Success: no issues found in 97 source files
+import-linter        exit 0
+bandit               0 High-confidence new findings（存量 6 Medium / 57 Low 均为已知并说明）
+</code></pre></div>
+<h3 id="104">10.4 未验证<a class="headerlink" href="#104" title="Permanent link">&para;</a></h3>
+<ul>
+<li>远程 MCP 只测了本地起的 streamable_http server 与真实的 401（鉴权失败）；没有可用的第三方远程 MCP 凭证，未测真实第三方服务。</li>
+<li>桌面窗口截图用 CDP 截内嵌页面，未对内嵌 WebView 做像素级比对（Windows 上 PrintWindow 抓到的是不完整帧，不是产品问题）。</li>
+</ul>
+<hr />
+<h2 id="codex-claude-code2026-10-23">十一、第四轮：设置面板对齐 Codex / Claude Code（2026-10-23）<a class="headerlink" href="#codex-claude-code2026-10-23" title="Permanent link">&para;</a></h2>
+<p>用户指出设置里缺 skill / prompt / plugin / 快捷键 / 知识库。核实结果：前四项
+后端已有能力或部分能力但<strong>没有任何 UI 入口</strong>；知识库是<strong>真缺口</strong>（只有长期记忆，
+没有用户文档库）。</p>
+<h3 id="111">11.1 五项现状与落地<a class="headerlink" href="#111" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>落地前</th>
+<th>现在</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>技能</td>
+<td><code>.spark/skills/*.md</code> 已被 <code>load_skill</code> 工具读取，但界面上看不到、不能建</td>
+<td>设置→技能：列表 / 新建（带 frontmatter 模板）/ 查看 / 删除</td>
+</tr>
+<tr>
+<td>提示词</td>
+<td><code>cfg.agent.system_prompt</code> 可改但埋在 Agent 页；<code>.spark/commands</code> 只能靠手写文件</td>
+<td>设置→提示词：系统提示词编辑 + 内置提示词对照 + 斜杠命令模板增删</td>
+</tr>
+<tr>
+<td>插件</td>
+<td>无</td>
+<td>设置→插件：发现 <code>.spark/plugins/&lt;name&gt;/plugin.json</code>，并列出真正会执行代码的 hooks（不新开第二条免审批执行通道）</td>
+</tr>
+<tr>
+<td>快捷键</td>
+<td>6 个键写死在 <code>App.tsx</code>，只有只读帮助面板</td>
+<td>设置→快捷键：逐项改键、冲突检测、单项/全部恢复；运行时经 <code>matchesBinding</code> 读取</td>
+</tr>
+<tr>
+<td>知识库</td>
+<td>无</td>
+<td>新建 <code>spark.knowledge</code>：分块 + 中文 bigram BM25、索引存 spark home；设置→知识库支持导入 / 删除 / 检索测试 / 开关 / top-k；每轮检索注入 <code>&lt;knowledge_base&gt;</code> 只读围栏</td>
+</tr>
+</tbody>
+</table>
+<h3 id="112">11.2 真机证据<a class="headerlink" href="#112" title="Permanent link">&para;</a></h3>
+<ul>
+<li>12 个设置 tab 全部渲染（<code>H00</code>–<code>H07</code> 截图）：模型 / Agent / 权限 / 展示 / 记忆 / MCP / 技能 / 提示词 / 插件 / 快捷键 / 知识库 / 项目</li>
+<li>技能：写入 <code>code-review.md</code> → 列表出现 → 读出正文 → 删除（后端 200）</li>
+<li>知识库：导入 <code>architecture.md</code> → 检索 <code>鉴权 权限</code> 命中 score 0.58 → <strong>向模型提问「鉴权用了几层权限作用域？deny 冲突时谁优先？」得到「三层权限作用域，deny 优先」</strong>，该信息只存在于导入文档中，证明注入链路真实生效</li>
+<li>路径安全：<code>../../etc/passwd</code>、<code>C:/Windows/x.md</code> 均被 400 拒绝</li>
+</ul>
+<h3 id="113">11.3 过程中修掉的缺陷<a class="headerlink" href="#113" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>缺陷</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D-07</td>
+<td><code>spark.knowledge</code> 从 <code>spark.memory.store</code> 导入 <code>tokenize</code>，把 chromadb 拖进每轮对话路径</td>
+<td>ACP e2e 从 23s 变 100s+ 超时；<code>import spark.knowledge</code> 4.7s → 1.1s（分词器移入 <code>spark.textutil</code>）</td>
+</tr>
+<tr>
+<td>D-08</td>
+<td>Toast 只能显示 i18n key</td>
+<td>API 报错统一显示成「错误」，真实原因丢失；改为可携带原文</td>
+</tr>
+</tbody>
+</table>
+<h3 id="114">11.4 门禁<a class="headerlink" href="#114" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>pytest              973 passed, 5 skipped
+ruff check          All checks passed
+mypy                Success: no issues found in 100 source files
+import-linter       exit 0
+产物                spark.exe(console) / spark-desktop.exe(GUI) 重建通过，打包版 /api/skills /api/knowledge 实测 200
+</code></pre></div>
+<h3 id="115">11.5 未验证<a class="headerlink" href="#115" title="Permanent link">&para;</a></h3>
+<ul>
+<li>知识库只做了词法检索，未接 embedding（<code>memory</code> 的向量路径可用，但知识库刻意不引入 chromadb 依赖）；跨语言检索（中文查英文文档）能力有限，标 <code>[未确认]</code></li>
+<li>快捷键改键只覆盖 6 个全局键，输入框内的 Enter / Shift+Enter / <code>/</code> / <code>@</code> 仍是固定行为</li>
+<li>插件只做发现与展示，没有插件安装/卸载（按设计：执行必须走 hooks）</li>
+</ul>
+<hr />
+<h2 id="2026-10-23">十二、第五轮：收尾自检（2026-10-23）<a class="headerlink" href="#2026-10-23" title="Permanent link">&para;</a></h2>
+<h3 id="121-bug">12.1 补测时又抓到三个真 bug<a class="headerlink" href="#121-bug" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>缺陷</th>
+<th>发现方式</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D-09</td>
+<td><code>delete_command</code> 不补 <code>.md</code> 后缀，而 <code>save_command</code> 补</td>
+<td>写路由级测试时 <code>test_delete_command</code> 404</td>
+<td>界面上的「删除命令」按钮永远失效（除非用户手输 <code>.md</code>）</td>
+</tr>
+<tr>
+<td>D-10</td>
+<td><code>spark.desktop_main</code> 的 <code>except Exception</code> 吞掉 <code>typer.Exit</code></td>
+<td><code>test_run_desktop_nonzero_code_propagates</code> 期望 2 实得 1</td>
+<td>桌面版所有退出码被压成 1，pywebview 缺失与真实崩溃无法区分</td>
+</tr>
+<tr>
+<td>D-11</td>
+<td><code>create_session</code> 不写 <code>sessions_fts</code>；<code>append_message</code> 无条件用消息前 24 字覆盖 FTS 标题</td>
+<td><code>test_search_matches_title</code> 搜不到自定义标题</td>
+<td>新会话标题重启前搜不到；用户手改标题后标题命中永久失效</td>
+</tr>
+</tbody>
+</table>
+<h3 id="122">12.2 补上的能力<a class="headerlink" href="#122" title="Permanent link">&para;</a></h3>
+<p><strong>会话全文检索接线</strong>：<code>SessionStore.search()</code> 一直有 FTS5（trigram，中文子串友好）实现，但侧栏只在已加载的 <code>sessions</code> 行里做子串过滤，搜不到聊天正文。新增 <code>GET /api/sessions/search</code>（按 workdir 过滤、limit 上限 100、检索异常降级为空结果），侧栏改为 220ms 防抖调服务端，命中正文时在标题下显示片段。</p>
+<h3 id="123">12.3 覆盖变化<a class="headerlink" href="#123" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>轮次      用例    行覆盖   分支覆盖
+第四轮    973     74%      66%
+第五轮   1025     76%      67%
+</code></pre></div>
+<p>新增模块的质量（这是本轮主要产出的代码）：</p>
+<table>
+<thead>
+<tr>
+<th>模块</th>
+<th>行覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/spark/knowledge.py</code></td>
+<td>92%</td>
+</tr>
+<tr>
+<td><code>src/spark/web/_handlers_content.py</code></td>
+<td>88%</td>
+</tr>
+<tr>
+<td><code>src/spark/desktop_main.py</code></td>
+<td>87%</td>
+</tr>
+</tbody>
+</table>
+<h3 id="124">12.4 门禁（最终）<a class="headerlink" href="#124" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>pytest              1025 passed, 5 skipped
+pytest --cov        76% line / 67% branch
+ruff check          All checks passed
+mypy                Success: no issues found in 100 source files
+import-linter       exit 0
+</code></pre></div>
+<p>覆盖率仍<strong>未达 90%/85% 红线</strong>，如实记录。剩余缺口集中在 <code>cli.py</code>（43%，大量 command 分支）、<code>desktop.py</code>（36%，需要真实窗口）、<code>pty_api.py</code>（43%，需要 POSIX PTY）、<code>tui/</code>（渲染细节）。这些要么需要图形环境，要么依赖平台特性，继续堆测试的性价比低于本轮已完成的真缺陷修复。</p>
+<h3 id="125">12.5 截图证据<a class="headerlink" href="#125" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>图</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>assets/settings-12-tabs.png</code></td>
+<td>设置面板 12 个页签</td>
+</tr>
+<tr>
+<td><code>assets/skills-editor.png</code></td>
+<td>技能编辑器（frontmatter 模板 + 文件名联动）</td>
+</tr>
+<tr>
+<td><code>assets/knowledge-base.png</code></td>
+<td>知识库：导入、已导入文档、检索测试命中</td>
+</tr>
+<tr>
+<td><code>assets/mcp-registry.png</code></td>
+<td>MCP registry：20 条结果、国内可用标签、一键添加</td>
+</tr>
+<tr>
+<td><code>assets/approval-diff.png</code></td>
+<td>审批卡：diff 预览 + 参数展开</td>
+</tr>
+<tr>
+<td><code>assets/desktop-window.png</code></td>
+<td>桌面版窗口</td>
+</tr>
+</tbody>
+</table>
+<h3 id="126">12.6 未验证<a class="headerlink" href="#126" title="Permanent link">&para;</a></h3>
+<ul>
+<li>知识库跨语言检索（中文查英文文档）能力有限，只有词法匹配；</li>
+<li>会话搜索的 FTS5 只测了 SQLite 内置 trigram，未在 SQLite &lt; 3.34 的真实环境验证 LIKE 降级（代码路径有测试覆盖，但那是模拟 DROP TABLE，不是真实旧版本）；</li>
+<li>远程 MCP 仍未接真实第三方凭证。</li>
+</ul>
+<hr />
+<h2 id="r5-r10-2026-10-23">十三、第六轮：R5 复杂度清零 + R10 首次引导（2026-10-23）<a class="headerlink" href="#r5-r10-2026-10-23" title="Permanent link">&para;</a></h2>
+<p>收尾路线图剩余两项：R5（7 个 E/F 级函数拆分）与 R10（首次使用引导 + <code>?</code> 帮助入口）。
+除 R10 为新功能外全部为行为保持型重构——既有测试是回归网，拆分前后聚焦子集全绿。</p>
+<h3 id="131-r5ef-7-0">13.1 R5：E/F 级复杂度 7 → 0<a class="headerlink" href="#131-r5ef-7-0" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>原级</th>
+<th>现级</th>
+<th>拆分方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>web/_handlers_settings.py _handle_settings</code></td>
+<td>F (69)</td>
+<td>C (18)</td>
+<td>字段提取 / provider / agent 数值 / 上下文 / hooks / MCP 六个校验 helper + 统一提交段</td>
+</tr>
+<tr>
+<td><code>core/loop.py _run_tool_body</code></td>
+<td>F (67)</td>
+<td>C (16)</td>
+<td>直调判定、拒绝结果构造（deny 审计原位保留）、ask_user 解析、task 参数收集、子任务事件泵（实时转发不缓冲）、执行收尾</td>
+</tr>
+<tr>
+<td><code>providers/openai_compat.py _stream_impl</code></td>
+<td>F (54)</td>
+<td>C (20)</td>
+<td>单目标重试 <code>_request_with_retries</code>、请求参数构造、全败抛错（<code>NoReturn</code>）、usage 提取 / 工具调用聚合模块级化</td>
+</tr>
+<tr>
+<td><code>web/_handlers_chat.py _handle_chat_stream</code></td>
+<td>F (46)</td>
+<td>C (19)</td>
+<td>图片校验、SSE 头、/test 执行、命令展开、回合派发、断连收尾、记忆线程七个 helper</td>
+</tr>
+<tr>
+<td><code>memory/service.py record_turn</code></td>
+<td>E (36)</td>
+<td>B (7)</td>
+<td>抽取 / 相似检索 / 操作解析 / 嵌入 / 事务应用五段</td>
+</tr>
+<tr>
+<td><code>config.py save_config</code></td>
+<td>E (34)</td>
+<td>B (9)</td>
+<td>provider/agent/context/memory 表 + 四个 AoT 构造器</td>
+</tr>
+<tr>
+<td><code>core/checkpoints.py restore_workdir</code></td>
+<td>E (31)</td>
+<td>A (5)</td>
+<td>计划校验 / 开档 / manifest 交叉校验 / 逐成员恢复 / 清扫五段</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>全仓 <code>radon cc -n E</code> = <strong>0</strong>（原 7）；D 级 29 → 22；平均复杂度 A(4.94) → A(4.74)。</li>
+<li><strong>未达 R5 验收原案（<code>radon cc -n D</code> 为 0）</strong>，如实记录：余下 22 个 D 级多为 CLI
+  命令体与分支密集但已被路由/CLI 测试钉住的函数，继续拆分的回归风险大于本轮
+  收益，留待后续轮次。</li>
+</ul>
+<h3 id="132-r10">13.2 R10：首次使用引导 + <code>?</code> 帮助入口<a class="headerlink" href="#132-r10" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Header 新增 <code>?</code> 图标按钮（此前帮助面板只能按 <code>?</code> 键唤起，无可见入口）。</li>
+<li>新组件 <code>web/src/components/Onboarding.tsx</code>：三步引导（配置模型 → 审批模式 →
+  开始对话），第 1/2 步按钮直达对应设置页；跳过 / 开始使用 / 关闭任一路径写
+  <code>spark.onboarding.done</code> 后不再出现。</li>
+<li>设计取舍（实测发现）：服务端启动即自动创建「新对话」会话（<code>state.py:286</code>），
+  "会话列表为空"不构成新用户信号，故门条件为纯 localStorage 标记——老用户升级后
+  会看到一次，一键关闭。</li>
+</ul>
+<h3 id="133">13.3 真机证据<a class="headerlink" href="#133" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>assets/onboarding-first-run.png</code>：隔离 <code>SPARK_HOME</code> + mock provider 实跑
+  <code>spark web</code>，首次加载弹出三步引导；header 最右为新增 <code>?</code> 按钮。</li>
+<li>S8.2（标记生效后不再弹）：headless 截图工具限制（重定向捕获白帧、持久 profile
+  被沙箱终止），降级为代码审查验证（三行 localStorage 门），如实标注未做像素级复验。</li>
+</ul>
+<h3 id="134">13.4 环境修复（非本轮代码缺陷，但影响门禁）<a class="headerlink" href="#134" title="Permanent link">&para;</a></h3>
+<ul>
+<li>本机 mcp 被升到 2.3.0，违反 <code>pyproject.toml</code> 的 <code>mcp&gt;=1.0,&lt;2.0</code>，且 2.x 残留文件
+  与 1.30.0 混装导致 <code>import mcp</code> 断裂（<code>test_mcp_expose</code> 收集失败、mcp_bridge mypy
+  6 错）。清理重装 mcp 1.30.0 后 mypy 恢复 0 错。</li>
+<li>上一轮提交 8f6abd3 修改了 <code>api_spec.py</code> 但未重新生成快照——<code>export_openapi.py
+  --check</code> 在 main 上即失败。本轮补跑 <code>export_openapi.py</code> + <code>orval gen:api</code>
+  （<code>web/openapi.json</code> +102 行、<code>schema.ts</code> +75 行），CI 的 OpenAPI 门恢复绿色。</li>
+</ul>
+<h3 id="135">13.5 门禁<a class="headerlink" href="#135" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>pytest（全量+覆盖）   1020 passed；行覆盖 78.47%（CI 门 75% 通过）
+ruff check            All checks passed
+mypy                  Success: no issues found in 100 source files
+import-linter         5 kept, 0 broken
+bandit                0 High / 0 Medium / 0 Low
+radon cc -n E         0 blocks（原 7）
+tsc -b + vite build   通过，src/spark/web/dist 已重建
+OpenAPI snapshot      up to date
+</code></pre></div>
+<h3 id="136-clean-head">13.6 存量失败甄别（clean HEAD 复跑确认，非本轮引入）<a class="headerlink" href="#136-clean-head" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>测试</th>
+<th>现象</th>
+<th>判定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test_acp_server.py::test_e2e_subprocess</code></td>
+<td>ConnectionError（子进程 ACP server）</td>
+<td>存量环境</td>
+</tr>
+<tr>
+<td><code>test_hardening_regressions.py::test_run_tests_detects_plain_pytest_layout</code></td>
+<td>run_tests 布局探测</td>
+<td>存量环境</td>
+</tr>
+<tr>
+<td><code>test_p1_03_testcmd.py::test_handle_test_runs_real_pytest</code> / <code>::test_handle_test_real_failure_feedback</code></td>
+<td>真实 pytest 子进程</td>
+<td>存量环境</td>
+</tr>
+<tr>
+<td><code>test_p1_08_gitmemory.py::test_begin_stepcommit_loop_and_success_finish</code> / <code>::test_failure_abandon_cleans_main_tree</code></td>
+<td>git worktree</td>
+<td>存量环境</td>
+</tr>
+</tbody>
+</table>
+<p>本轮唯一引入又当场修复的回归：<code>test_web_stream_wires_test_slash</code>——源码级接线见证
+随 /test 段落拆分失效，按原意图升级为模块级源码见证后复绿。</p>
+<h3 id="137">13.7 未验证<a class="headerlink" href="#137" title="Permanent link">&para;</a></h3>
+<ul>
+<li>引导"写入标记后不再弹"未做像素级复验（工具限制，见 13.3）；</li>
+<li>行覆盖 78.47% / 分支覆盖仍未达 90%/85% 红线，理由同第十二节（缺口集中在
+  cli / desktop / pty / TUI 渲染，性价比低）；</li>
+<li>22 个 D 级函数未继续拆分（理由见 13.1）。</li>
+</ul>
+<hr />
+<h2 id="2026-10-23_1">十四、第七轮：分发链路与协作闭环（2026-10-23）<a class="headerlink" href="#2026-10-23_1" title="Permanent link">&para;</a></h2>
+<p>用户指令：以 §12 差距清单与本文档未竟项为基线，补齐到可对企业展示的完整项目；
+复用成熟方案、不重复造轮子；完整实测（浏览器截图）；收尾清理；交付远程仓库。</p>
+<h3 id="141-12">14.1 本轮关闭的差距（12 项）<a class="headerlink" href="#141-12" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>落地</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一键安装</td>
+<td><code>scripts/install.sh</code> + <code>install.ps1</code>：Release → SHA256 强校验 → 用户目录安装；支持 <code>SPARK_VERSION</code>/<code>SPARK_MIRROR</code>/<code>SPARK_INSTALL_DIR</code></td>
+<td><code>sh -n</code> 通过（CI packaging job）；脚本内校验不通过即 <code>die</code></td>
+</tr>
+<tr>
+<td>自动更新</td>
+<td><code>src/spark/updater.py</code> + <code>spark update [--check|--force]</code>；https-only、SHA256、原子替换、<code>*.old</code> 备份；doctor 24h 缓存提示；<code>[updater] mode=off</code></td>
+<td><code>tests/test_updater.py</code> 16 条（版本比较/资产选择/sums 解析/校验拒绝/zip 替换/备份）</td>
+</tr>
+<tr>
+<td><code>exec --json</code></td>
+<td>NDJSON 每行一个 TurnEvent，末行 <code>{"type":"final"}</code></td>
+<td><code>tests/test_cli_onboarding.py::test_exec_json_*</code> 2 条</td>
+</tr>
+<tr>
+<td>AI 审 AI</td>
+<td><code>spark review</code>（uncommitted/commit/base），强制 plan-only+sandbox-only，high → exit 2</td>
+<td><code>tests/test_review.py</code> 13 条</td>
+</tr>
+<tr>
+<td><code>!cmd</code> 内联 shell</td>
+<td>Web <code>POST /api/shell</code>，复用 run_shell 全套限制；本地卡片、不进上下文</td>
+<td><code>tests/test_polish_round2.py::test_inline_shell_*</code> 2 条</td>
+</tr>
+<tr>
+<td>会话分享</td>
+<td><code>format=html</code> 自包含单文件，消息全部转义</td>
+<td><code>test_session_export_html_is_self_contained</code>（断言 <code>&lt;script&gt;</code> 被转义）</td>
+</tr>
+<tr>
+<td>会话导入</td>
+<td><code>POST /api/sessions/import</code>，仅 user/assistant 文本，拒绝 tool 载体，限 500 条/1MB</td>
+<td>3 条导入测试（roundtrip / JSON 字符串 / 非法载荷）</td>
+</tr>
+<tr>
+<td>桌面通知</td>
+<td>Web Notification，回合结束/审批等待，仅页面隐藏时；设置开关 + 权限失败提示</td>
+<td>前端 <code>notify.ts</code> + SettingsModal 展示页</td>
+</tr>
+<tr>
+<td>模型热键</td>
+<td><code>Ctrl+Alt+M</code> 循环档案</td>
+<td><code>App.tsx::cycleModel</code></td>
+</tr>
+<tr>
+<td>small_model</td>
+<td>标题/关键词生成接入 <code>provider.small_model</code>（压缩摘要此前已接）</td>
+<td><code>web/state.py::_generate_session_meta_async</code></td>
+</tr>
+<tr>
+<td>全局规则</td>
+<td>复核发现 <code>~/.agents/AGENTS.md</code> 全局层<strong>早已实现</strong>（<code>core/context.py</code>），此前矩阵标注错误</td>
+<td><code>load_agents_md</code> 三级叠加；本轮修正矩阵</td>
+</tr>
+<tr>
+<td>发布资产</td>
+<td>release.yml 增加 <code>SHA256SUMS</code>、Windows desktop 产物、构建后 <code>--version</code> 冒烟；CI 增加 packaging job</td>
+<td><code>ci.yml</code> packaging job</td>
+</tr>
+</tbody>
+</table>
+<h3 id="142">14.2 本轮刻意不做的（如实标注）<a class="headerlink" href="#142" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>LSP 只读工具</strong>：需要 pylsp / tsserver 子进程管理与 40+ 语言矩阵，属独立一轮的
+  工作量；矩阵保持 ❌，不假装做了。</li>
+<li><strong>包管理器分发</strong>（brew/scoop/npm）：需外部仓库审核与长期维护，本轮用一键脚本覆盖。</li>
+<li><strong>云端分享链接</strong>：与「本地优先、零云依赖」定位冲突，提供单文件 HTML 离线分享作为等价物。</li>
+<li><strong>Repo Wiki / 定时任务 / 移动端</strong>：矩阵已列为 P2/不建议，未动。</li>
+<li><strong>sandbox 网络开关 / 子代理独立模型</strong>：评估后降级——前者在 bwrap 路径需重排
+  <code>--share-net</code> 语义且 Windows 无对应实现，后者要改 task 工具签名与配置层，
+  两者都无法在本轮拿到与成本匹配的收益；留待后续，不写成"已完成"。</li>
+</ul>
+<h3 id="143">14.3 验证<a class="headerlink" href="#143" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>pytest</code>：本轮新增 33 条（review 13 / updater 16 / exec-json 2 / share+import+shell 6 减重叠），
+  全量结果见 §14.4。</li>
+<li><code>ruff</code> / <code>mypy</code>（102 文件 0 issue）全绿。</li>
+<li>前端 <code>tsc -b</code> + <code>vite build</code> 通过；新增 UI 均经浏览器实测（截图见 <code>docs/assets/</code>）。</li>
+<li>CI 新增 packaging job 覆盖安装脚本语法与版本一致性，避免"发出去才发现脚本坏"。</li>
+</ul>
+<h3 id="144-2026-10-24">14.4 门禁结果（本机实测，2026-10-24）<a class="headerlink" href="#144-2026-10-24" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>pytest                1087 passed, 5 skipped（314s）
+coverage              行 78%（CI 门 75%）；review.py 93%、updater.py 84%
+ruff                  All checks passed
+mypy                  102 source files, 0 issues
+bandit                0 High / 0 Medium / 0 Low
+import-linter         5 contracts kept, 0 broken
+OpenAPI snapshot      up to date
+tsc -b + vite build   通过（16 chunk，dist 无重复 hash）
+sh -n install.sh      OK（dash）
+</code></pre></div>
+<p>5 个 skip 均为平台/可选依赖：<code>ptyprocess</code>×3、bubblewrap（仅 Linux）、symlink 权限。</p>
+<p><strong>远端 CI（GitHub Actions，commit <code>fcd2842</code>）7/7 工作流 success</strong>：
+CI（quality / packaging / windows-checkout / test×4）、Security、docs、Evals、
+build-exe、mirror。</p>
+<p>首轮推送时 CI 暴露并修复了两个发布链缺陷（详见下方 §14.5）：</p>
+<ol>
+<li><code>install.sh</code> 以 CRLF 提交，Linux <code>dash</code> 的 <code>sh -n</code> 报
+   <code>Syntax error: word unexpected (expecting "in")</code>——<code>.gitattributes</code> 已锁
+   <code>*.sh eol=lf</code>；</li>
+<li><code>build-exe</code> / <code>release</code> 的冒烟 grep 锚定整行，而 <code>spark version</code> 会先打印
+   品牌 banner——改为匹配版本子串，仍会在无版本号时失败。</li>
+</ol>
+<h3 id="145-ci">14.5 本轮修掉的 CI 级缺陷与诚实边界<a class="headerlink" href="#145-ci" title="Permanent link">&para;</a></h3>
+<p><strong>修掉的缺陷</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>缺陷</th>
+<th>影响</th>
+<th>修法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D-12</td>
+<td><code>_SSESession</code> 的 peer 断连探测（<code>select</code> + <code>MSG_PEEK</code>）在 Linux 上「刚建连、请求体刚读完」瞬间报可读且 <code>recv</code> 为空，被判定为断连</td>
+<td><code>test_live_stream_keeps_sse_event_contract</code> 在 ubuntu 3.11/3.12 上 100% 得到空 body；Windows select 语义不同，本地永不复现</td>
+<td>建连后 0.25s grace 窗口内不做 peer 检查；空闲真实关闭仍可检测（<code>test_sse_writer_notices_idle_socket_close</code>），新增 <code>test_peer_disconnect_is_suppressed_during_connect_grace</code> 强制 select 报可读来钉住 Linux 行为</td>
+</tr>
+<tr>
+<td>D-13</td>
+<td><code>install.sh</code> 含 CRLF（Windows 提交）</td>
+<td>Linux <code>dash</code> 的 <code>sh -n</code> 在 <code>case ... in</code> 处报语法错，packaging job 红</td>
+<td>脚本 LF 化 + <code>.gitattributes</code> 锁 <code>*.sh eol=lf</code>、<code>*.ps1 eol=crlf</code></td>
+</tr>
+<tr>
+<td>D-14</td>
+<td>冒烟 grep 锚定整行 <code>^x.y.z$</code>，但 <code>spark version</code> 打印品牌 banner + 版本行</td>
+<td>build-exe / release 的冒烟步骤必然 exit 1，产物其实可用</td>
+<td>改为匹配版本子串（无版本号仍失败）</td>
+</tr>
+<tr>
+<td>D-15</td>
+<td><code>web/openapi.json</code> 快照在 <code>8f6abd3</code> 后过期</td>
+<td>main 的 quality job 长期红</td>
+<td>重新生成快照并纳入本轮提交</td>
+</tr>
+<tr>
+<td>D-16</td>
+<td><code>frontend</code> dist 里累积了 7 个同名不同 hash 的陈旧 chunk</td>
+<td>包体冗余、缓存语义混乱</td>
+<td>清空重建，Vite 现在只产出 16 个 chunk</td>
+</tr>
+</tbody>
+</table>
+<p><strong>诚实边界（仍未验证）</strong></p>
+<ul>
+<li>安装脚本的真实下载链路未在 CI 里跑（需要先发布 Release 资产）；CI 只做语法与
+  资产名一致性校验，端到端安装需在打 tag 后手工验证一次。</li>
+<li><code>spark update</code> 的 <code>frozen</code> 分支不在测试中执行（测试用 zip 替换模拟），
+  真实 PyInstaller 自替换未做端到端演练。</li>
+<li>桌面通知只在 Chromium 下验证；Firefox/Safari 权限模型差异未测。</li>
+<li>本轮 Linux 侧结论来自 CI 实跑，本机无 Linux 环境（Docker daemon 不可用、
+  WSL 未安装），无法在本地复现同一时序。</li>
+</ul>
+<h3 id="146-2026-10-24">14.6 收尾：远端同步与行尾规范化（2026-10-24）<a class="headerlink" href="#146-2026-10-24" title="Permanent link">&para;</a></h3>
+<p>CI 首次全绿后又做了三件收尾工作，均已推送并复查：</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>文档债</td>
+<td>§14.4 原先只写"见 §14.5"而无数据，已补实测门禁与 GitHub Actions 7/7 结果；§14.5 列出本轮修掉的 5 个 CI 级缺陷（D-12 SSE Linux 空流 / D-13 install.sh CRLF / D-14 冒烟 grep 锚定 / D-15 OpenAPI 快照过期 / D-16 dist 陈旧 chunk）</td>
+</tr>
+<tr>
+<td>宣传脚本可复现</td>
+<td><code>scripts/build_promo.py</code> 原先只渲染标题帧，视频靠一次性命令合成；现补齐整条链路（帧→xfade→mp4→gif→预览帧）并自清理中间帧，实测重建产物字节数与已发布文件完全一致</td>
+</tr>
+<tr>
+<td>行尾</td>
+<td><code>core.autocrlf=true</code> 的 Windows 检出把文本写成 CRLF，而<strong>已含 CRLF 的文件会被原样提交</strong>——<code>install.sh</code> 就是这样进 CI 的。<code>.gitattributes</code> 现为 <code>* text=auto eol=lf</code>，对象库统一 LF，Windows 工作区仍可用 CRLF</td>
+</tr>
+</tbody>
+</table>
+<p><strong>最终状态</strong>：GitHub / GitCode / 本地三端同一提交 <code>b4888b9</code>；GitHub Actions
+CI、Security、docs、Evals、build-exe、mirror 全部 success。</p>
+<p><strong>仍需人工验证</strong>（不因 CI 绿而消失）：安装脚本端到端下载（需先发 Release 资产）、
+<code>spark update</code> 的 frozen 自替换、桌面通知在 Firefox/Safari 下的权限行为。</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "content.code.copy"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  </body>
+</html>
