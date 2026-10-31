@@ -5,6 +5,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -347,9 +348,10 @@ def run_tests(sandbox: WorkdirSandbox, args: RunTestsArgs) -> ToolResult:
     if not argv:
         return ToolResult(ok=False, payload={"error": "detected test command is empty"})
     if os.name == "nt" and argv[0] in {"python", "python3"}:
-        resolved_python = shutil.which(argv[0])
-        if resolved_python:
-            argv[0] = resolved_python
+        # Run the same interpreter as Spark. Calling the ambient PATH Python
+        # makes an installed agent run a user's repository tests without its
+        # own pytest/venv, so task commit gates can fail for the wrong reason.
+        argv[0] = sys.executable
     elif (
         os.name != "nt"
         and argv[0] == "python"

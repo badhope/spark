@@ -1054,13 +1054,16 @@ def win_acl_restricted(f: Path) -> bool:
     if sys.platform != "win32":
         return False
     try:
-        out = subprocess.run(
+        completed = subprocess.run(
             ["icacls", str(f)],
             capture_output=True,
             text=True,
+            encoding="mbcs",
+            errors="replace",
             timeout=30,
             creationflags=CREATE_NO_WINDOW,
-        ).stdout
+        )
+        out = completed.stdout or ""
     except (OSError, subprocess.SubprocessError):
         return False
     aces = [ln for ln in out.splitlines() if ":(" in ln]

@@ -35,8 +35,9 @@ def test_save_config_hardens_acl(tmp_path, monkeypatch) -> None:
     save_config(cfg)
     f = default_config_path()
     out = subprocess.run(
-        ["icacls", str(f)], capture_output=True, text=True, timeout=30
-    ).stdout
+        ["icacls", str(f)], capture_output=True, text=True,
+        encoding="mbcs", errors="replace", timeout=30
+    ).stdout or ""
     # 安全目标：宽泛用户组必须全部不可见
     for group in _WIDE_GROUPS:
         assert group not in out, f"{group} 仍可访问：{out!r}"
@@ -48,8 +49,10 @@ def test_save_config_hardens_acl(tmp_path, monkeypatch) -> None:
         ["whoami", "/user", "/fo", "csv", "/nh"],
         capture_output=True,
         text=True,
+        encoding="mbcs",
+        errors="replace",
         timeout=30,
-    ).stdout
+    ).stdout or ""
     m = re.search(r"S-1-\d[\d-]*\d", who)
     assert m, f"whoami 未返回 SID：{who!r}"
     assert m.group(0) in out or _user_name() in aces[0]
