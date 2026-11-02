@@ -335,6 +335,7 @@ export async function saveModelProfile(payload: {
   base_url: string
   model: string
   api_key?: string
+  api_key_env?: string
 }): Promise<{ ok: boolean; id: string }> {
   return readJson(
     await fetchWithTimeout("/api/models/save", {

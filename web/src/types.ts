@@ -94,6 +94,9 @@ export interface FullConfig {
     keep_recent_messages?: number
     repo_map_enabled?: boolean
     repo_map_max_chars?: number
+    knowledge_enabled?: boolean
+    knowledge_top_k?: number
+    knowledge_max_chars?: number
   }
   mcp_servers: McpServer[]
   mcp_errors: string[]
@@ -104,8 +107,33 @@ export interface FullConfig {
     capacity: number
     embedding_model: string
     auto_extract: boolean
+    embedding_enabled?: boolean
+    embedding_base_url?: string
+    /** Masked echo only; the raw key never leaves the backend. */
+    embedding_api_key_masked?: string
+    has_embedding_api_key?: boolean
+    rerank_model?: string
   }
+  replay?: { enabled: boolean }
+  updater?: { mode: "notify" | "off" }
+  permission_rules?: PermissionRule[]
+  approval_profiles?: ApprovalProfile[]
   env_probe?: Array<{ name: string; path: string; version: string }>
+}
+
+export interface PermissionRule {
+  action: "allow" | "prompt" | "deny"
+  resource: string
+  tool?: string
+}
+
+export interface ApprovalProfile {
+  id: string
+  name: string
+  approval: string
+  tools?: string[]
+  system_prompt?: string
+  model_profile_id?: string
 }
 
 export interface HookEntry {
@@ -114,6 +142,8 @@ export interface HookEntry {
   args: string[]
   name: string
   timeout_sec: number
+  /** Optional until the hook API exposes it; omitted values keep the stored default. */
+  on_deny?: "warn" | "block"
 }
 
 export interface SettingsPayload {
@@ -125,6 +155,8 @@ export interface SettingsPayload {
     api_keys?: string[]
     fallback_models?: string[]
     small_model?: string
+    /** Only sent when the backend exposes it in /api/config. */
+    api_key_env?: string
   }
   agent: {
     approval: string
@@ -152,6 +184,11 @@ export interface SettingsPayload {
     history_budget_chars?: number
     max_fragment_chars?: number
     repo_map_enabled?: boolean
+    repo_map_max_chars?: number
+    knowledge_enabled?: boolean
+    knowledge_top_k?: number
+    knowledge_max_chars?: number
+    agents_md?: string
   }
   memory?: {
     enabled?: boolean
@@ -159,9 +196,16 @@ export interface SettingsPayload {
     capacity?: number
     embedding_model?: string
     auto_extract?: boolean
+    embedding_enabled?: boolean
+    embedding_base_url?: string
+    /** Empty string = keep the stored key. */
+    embedding_api_key?: string
+    rerank_model?: string
   }
   mcp_servers: McpServer[]
   hooks?: HookEntry[]
+  replay?: { enabled?: boolean }
+  updater?: { mode?: "notify" | "off" }
 }
 
 export interface ToolCall {

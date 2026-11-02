@@ -2,8 +2,24 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+const backendTarget = process.env.SPARK_DEV_BACKEND || 'http://127.0.0.1:8000'
+const backendOrigin = new URL(backendTarget).origin
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), {
+    name: 'validate-dev-api-origin',
+    configureServer(server) {
+      server.middlewares.use('/api', (req, res, next) => {
+        const origin = req.headers.origin
+        if (req.headers['sec-fetch-site'] === 'cross-site' || (origin && origin !== `http://${req.headers.host}`)) {
+          res.statusCode = 403
+          res.end('cross-origin request rejected')
+          return
+        }
+        next()
+      })
+    },
+  }],
   build: {
     outDir: '../src/spark/web/dist',
     emptyOutDir: true,
@@ -32,8 +48,13 @@ export default defineConfig({
     strictPort: false,
     proxy: {
       '/api': {
-        target: process.env.SPARK_DEV_BACKEND || 'http://127.0.0.1:8000',
+        target: backendTarget,
         changeOrigin: true,
+        configure(proxy) {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            if (req.headers.origin) proxyReq.setHeader('origin', backendOrigin)
+          })
+        },
       },
     },
   },

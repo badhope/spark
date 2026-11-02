@@ -48,6 +48,7 @@ type Tab =
   | "shortcuts"
   | "knowledge"
   | "project"
+  | "advanced"
 
 // 预装模型预设：国内可用优先，用户选一个自动填 provider/base_url/model，只需填 API Key
 const MODEL_PRESETS: { labelKey: TranslationKey; provider: string; base_url: string; model: string }[] = [
@@ -74,6 +75,7 @@ const TABS: { key: Tab; labelKey: TranslationKey; icon: React.ReactNode }[] = [
   { key: "shortcuts", labelKey: "tab.shortcuts", icon: <IconCommand size={14} /> },
   { key: "knowledge", labelKey: "tab.knowledge", icon: <IconBrain size={14} /> },
   { key: "project", labelKey: "tab.project", icon: <IconSettings size={14} /> },
+  { key: "advanced", labelKey: "tab.advanced", icon: <IconStethoscope size={14} /> },
 ]
 
 interface Props {
@@ -193,21 +195,28 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
   const [cfg, setCfg] = useState<FullConfig | null>(null)
   const [mcpRows, setMcpRows] = useState<McpServer[]>([])
   const [agentsMd, setAgentsMd] = useState<{ filename: string; content: string; chars: number; max_fragment_chars: number } | null>(null)
+  const [agentsMdName, setAgentsMdName] = useState("")
   const [probe, setProbe] = useState<ProbeResult | null>(null)
   const [apiKeyInput, setApiKeyInput] = useState("")
   const [notice, setNotice] = useState("")
   const [busy, setBusy] = useState<"save" | "test" | "profile" | null>(null)
   const [profiles, setProfiles] = useState<ModelProfile[]>([])
   const [showProfileForm, setShowProfileForm] = useState(false)
-  const [profileForm, setProfileForm] = useState({ id: "", name: "", provider: "openai_compat", base_url: "", model: "", api_key: "", api_keysText: "", fallbackModelsText: "", small_model: "" })
+  const [profileForm, setProfileForm] = useState({ id: "", name: "", provider: "openai_compat", base_url: "", model: "", api_key: "", api_key_env: "", api_keysText: "", fallbackModelsText: "", small_model: "" })
   const [protectedText, setProtectedText] = useState("")
   const [providerApiKeysText, setProviderApiKeysText] = useState("")
   const [providerFallbackText, setProviderFallbackText] = useState("")
   const [providerSmallModel, setProviderSmallModel] = useState("")
+  const resilienceDirty = useRef({ api_keys: false, fallback_models: false, small_model: false })
   const [hookRows, setHookRows] = useState<HookEntry[]>([])
   // Raw argument text per row, so quotes survive typing; rows are re-split on
   // every change but the input keeps what the user actually typed.
   const [argsText, setArgsText] = useState<Record<number, string>>({})
+  // Raw HTTP header text per MCP server (keyed by name), so a half-typed
+  // "Authorization:" line is not parsed away mid-keystroke.
+  const [headerText, setHeaderText] = useState<Record<string, string>>({})
+  // Empty = keep the stored embedding key (same contract as provider.api_key).
+  const [embeddingKeyInput, setEmbeddingKeyInput] = useState("")
   // Single source of truth is the UI store: a local copy left the command
   // palette computing "next theme" from a stale value.
   const theme = useUiStore((s) => s.theme)
@@ -218,9 +227,18 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
   const [notifyOn, setNotifyOn] = useState(() => notificationsEnabled())
   const [notifyPerm, setNotifyPerm] = useState(() => notificationPermission())
   const [showRegistry, setShowRegistry] = useState(false)
-  const dirtyRef = useRef({ cfg: false, mcp: false, md: false, memory: false })
+  const dirtyRef = useRef({ cfg: false, mcp: false, md: false, memory: false, advanced: false })
+  // Baseline of the Project context block as loaded from the backend. The new
+  // context keys are only submitted when their value differs from the baseline:
+  // the Knowledge tab saves some of them immediately through its own endpoint,
+  // so blindly re-sending a stale form would revert that change.
+  const contextBaselineRef = useRef<FullConfig["context"] | null>(null)
+  // Loaded env-var name, so an untouched field is never re-submitted (a legacy
+  // config value that fails today's validation must not break unrelated saves).
+  const apiKeyEnvRef = useRef("")
 
   function handleRegistryPick(item: McpRegistryItem) {
+    if (busy === "save") return
     // stdio 条目给 command/args；remote 条目只有 URL，走 streamable_http。
     // 早期实现只接受 stdio，导致 registry 首页 20 条 remote 全部无法添加。
     const remoteUrl = item.remote_url?.trim() || ""
@@ -267,6 +285,62 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
     setMcpRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
   }
 
+  function patchContext(patch: Partial<FullConfig["context"]>) {
+    dirtyRef.current.cfg = true
+    setCfg((c) => (c ? { ...c, context: { ...c.context, ...patch } } : c))
+  }
+
+  /** True when a newly exposed context key differs from what was loaded. */
+  function contextChanged(key: keyof FullConfig["context"]): boolean {
+    const base = contextBaselineRef.current
+    return base !== null && cfg?.context[key] !== base[key]
+  }
+
+  function patchMemory(patch: Partial<NonNullable<FullConfig["memory"]>>) {
+    dirtyRef.current.memory = true
+    setCfg((c) =>
+      c
+        ? {
+            ...c,
+            memory: {
+              ...(c.memory ?? { enabled: true, top_k: 6, capacity: 500, embedding_model: "", auto_extract: true }),
+              ...patch,
+            },
+          }
+        : c,
+    )
+  }
+
+  function patchReplay(patch: Partial<NonNullable<FullConfig["replay"]>>) {
+    dirtyRef.current.advanced = true
+    setCfg((c) => (c ? { ...c, replay: { ...(c.replay ?? { enabled: true }), ...patch } } : c))
+  }
+
+  function patchUpdater(patch: Partial<NonNullable<FullConfig["updater"]>>) {
+    dirtyRef.current.advanced = true
+    setCfg((c) => (c ? { ...c, updater: { ...(c.updater ?? { mode: "notify" }), ...patch } } : c))
+  }
+
+  function patchHook(i: number, patch: Partial<HookEntry>) {
+    dirtyRef.current.cfg = true
+    setHookRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+  }
+
+  function headersToText(headers: Record<string, string> | undefined): string {
+    return Object.entries(headers ?? {}).map(([k, v]) => `${k}: ${v}`).join("\n")
+  }
+
+  function textToHeaders(raw: string): Record<string, string> {
+    const out: Record<string, string> = {}
+    for (const line of raw.split("\n")) {
+      const idx = line.indexOf(":")
+      if (idx <= 0) continue
+      const key = line.slice(0, idx).trim()
+      if (key) out[key] = line.slice(idx + 1).trim()
+    }
+    return out
+  }
+
   async function refreshProfiles() {
     try {
       const data = await listModelProfiles()
@@ -281,9 +355,17 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
     fetchConfig()
       .then((data) => {
         if (!dirtyRef.current.cfg) setCfg(data)
-        if (!dirtyRef.current.mcp) setMcpRows(data.mcp_servers.map((s) => ({ ...s, args: [...s.args], readonly_tools: [...s.readonly_tools] })))
+        if (!dirtyRef.current.mcp) {
+          setMcpRows(data.mcp_servers.map((s) => ({ ...s, args: [...s.args], readonly_tools: [...s.readonly_tools] })))
+          setHeaderText(Object.fromEntries(data.mcp_servers.map((s) => [s.name, headersToText(s.http?.headers)])))
+        }
+        // Baseline for the Project block only taken on the initial load; a
+        // re-fetch must not erase unsaved edits.
+        if (contextBaselineRef.current === null) contextBaselineRef.current = { ...data.context }
         setProtectedText(data.agent.protected_paths?.join("\n") ?? "")
         setHookRows((data.hooks || []).map((h) => ({ ...h, args: [...(h.args || [])] })))
+        setAgentsMdName(data.context.agents_md ?? "")
+        apiKeyEnvRef.current = data.provider.api_key_env ?? ""
       })
       .catch((e) => setNotice(t("settings.loadFailed", lang, { msg: e instanceof Error ? e.message : String(e) })))
     fetchAgentsMd()
@@ -304,6 +386,11 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
 
   async function handleSave() {
     if (!cfg) return
+    const trimmedMdName = agentsMdName.trim()
+    // A bare filename only: same guard as the backend, so an obvious typo is
+    // rejected in the form instead of being silently rewritten.
+    const agentsMdFilename = trimmedMdName && !/[\\/]/.test(trimmedMdName) ? trimmedMdName : null
+    const agentsMdNameChanged = agentsMdFilename !== null && agentsMdFilename !== cfg.context.agents_md
     setBusy("save")
     setNotice("")
     try {
@@ -315,11 +402,14 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
           // Empty means "keep the stored key": the backend falls back to
           // cfg.provider.api_key / the env var when this is blank.
           api_key: apiKeyInput.trim(),
-          // 供应商韧性：输入框留空 = 保持现状（避免保存设置时误清凭据池）；
-          // 有输入 = 整体替换（掩码回显不参与保存，重新输入真实值覆盖）。
-          ...(providerApiKeysText.trim() ? { api_keys: providerApiKeysText.split("\n").map((s) => s.trim()).filter(Boolean) } : {}),
-          ...(providerFallbackText.trim() ? { fallback_models: providerFallbackText.split("\n").map((s) => s.trim()).filter(Boolean) } : {}),
-          ...(providerSmallModel.trim() ? { small_model: providerSmallModel.trim() } : {}),
+          ...(resilienceDirty.current.api_keys ? { api_keys: providerApiKeysText.split("\n").map((s) => s.trim()).filter(Boolean) } : {}),
+          ...(resilienceDirty.current.fallback_models ? { fallback_models: providerFallbackText.split("\n").map((s) => s.trim()).filter(Boolean) } : {}),
+          ...(resilienceDirty.current.small_model ? { small_model: providerSmallModel.trim() } : {}),
+          // 环境变量名是可编辑字段；只有用户确实改过才提交，避免把历史配置
+          // 里不合法的名字在无关保存时再次送上校验。
+          ...(cfg.provider.api_key_env !== undefined && cfg.provider.api_key_env !== apiKeyEnvRef.current
+            ? { api_key_env: cfg.provider.api_key_env }
+            : {}),
         },
         agent: {
           approval: cfg.agent.approval,
@@ -341,7 +431,8 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
           system_prompt: cfg.agent.system_prompt ?? "",
         },
         // Project tab edits land here; without this field every context change
-        // was silently discarded on save.
+        // was silently discarded on save. Optional keys are omitted when the
+        // backend did not send them (older builds), so we never invent defaults.
         context: {
           compact_threshold: cfg.context.compact_threshold,
           max_context_tokens: cfg.context.max_context_tokens,
@@ -349,6 +440,13 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
           history_budget_chars: cfg.context.history_budget_chars,
           max_fragment_chars: cfg.context.max_fragment_chars,
           repo_map_enabled: cfg.context.repo_map_enabled,
+          ...(cfg.context.repo_map_max_chars !== undefined ? { repo_map_max_chars: cfg.context.repo_map_max_chars } : {}),
+          // 知识库开关/条数在「知识库」页也会即时保存；只有本页确实改过才提交，
+          // 否则回到本页保存会用挂载时的旧值覆盖另一处刚保存的设置。
+          ...(cfg.context.knowledge_enabled !== undefined && contextChanged("knowledge_enabled") ? { knowledge_enabled: cfg.context.knowledge_enabled } : {}),
+          ...(cfg.context.knowledge_top_k !== undefined && contextChanged("knowledge_top_k") ? { knowledge_top_k: cfg.context.knowledge_top_k } : {}),
+          ...(cfg.context.knowledge_max_chars !== undefined && contextChanged("knowledge_max_chars") ? { knowledge_max_chars: cfg.context.knowledge_max_chars } : {}),
+          ...(agentsMdNameChanged && agentsMdFilename !== null ? { agents_md: agentsMdFilename } : {}),
         },
         // 只在记忆配置区块有改动时提交，避免覆盖 toml 手改值
         ...(dirtyRef.current.memory
@@ -357,13 +455,23 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                 enabled: cfg.memory?.enabled ?? true,
                 top_k: cfg.memory?.top_k ?? 6,
                 capacity: cfg.memory?.capacity ?? 500,
-                embedding_model: cfg.memory?.embedding_model ?? "",
+                // Empty is rejected by the backend, and a toggle-only save must
+                // not fail because the stored model name was blank.
+                ...(cfg.memory?.embedding_model ? { embedding_model: cfg.memory.embedding_model } : {}),
                 auto_extract: cfg.memory?.auto_extract ?? true,
+                ...(cfg.memory?.embedding_enabled !== undefined ? { embedding_enabled: cfg.memory.embedding_enabled } : {}),
+                ...(cfg.memory?.embedding_base_url !== undefined ? { embedding_base_url: cfg.memory.embedding_base_url } : {}),
+                // Blank input = keep the stored key; only send a value the user typed.
+                ...(embeddingKeyInput.trim() ? { embedding_api_key: embeddingKeyInput.trim() } : {}),
+                ...(cfg.memory?.rerank_model !== undefined ? { rerank_model: cfg.memory.rerank_model } : {}),
               },
             }
           : {}),
+        ...(dirtyRef.current.advanced && cfg.replay ? { replay: { enabled: cfg.replay.enabled } } : {}),
+        ...(dirtyRef.current.advanced && cfg.updater ? { updater: { mode: cfg.updater.mode } } : {}),
         mcp_servers: mcpRows.map((row) => ({
           ...row,
+          env_replace: true,
           env: Object.fromEntries(
             Object.entries(row.env ?? {}).filter(([, value]) => String(value).trim() !== ""),
           ),
@@ -371,6 +479,31 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
         hooks: hookRows,
       }
       const data = await saveSettings(payload)
+      setMcpRows(data.config.mcp_servers.map((s) => ({ ...s, args: [...s.args], readonly_tools: [...s.readonly_tools] })))
+      setHeaderText(Object.fromEntries(data.config.mcp_servers.map((s) => [s.name, headersToText(s.http?.headers)])))
+      // Re-base the form on what the backend actually stored, so masked echoes
+      // and server-side normalisation are reflected without a reload.
+      setCfg(data.config)
+      setProtectedText(data.config.agent.protected_paths?.join("\n") ?? "")
+      setHookRows((data.config.hooks || []).map((h) => ({ ...h, args: [...(h.args || [])] })))
+      // Saved settings are authoritative: drop per-row raw buffers so a
+      // re-saved row cannot resurrect stale text.
+      setArgsText({})
+      setEmbeddingKeyInput("")
+      resilienceDirty.current = { api_keys: false, fallback_models: false, small_model: false }
+      setProviderApiKeysText("")
+      setProviderFallbackText("")
+      setProviderSmallModel("")
+      setAgentsMdName(data.config.context.agents_md ?? "")
+      apiKeyEnvRef.current = data.config.provider.api_key_env ?? ""
+      contextBaselineRef.current = { ...data.config.context }
+      // Renaming the memory file changes which file the editor shows; refetch
+      // instead of leaving the previous filename's content on screen.
+      if (agentsMdFilename !== null && agentsMdFilename !== cfg.context.agents_md) {
+        fetchAgentsMd()
+          .then((d) => setAgentsMd(d))
+          .catch(() => setAgentsMd(null))
+      }
       // Surface MCP boot failures instead of a blanket "saved": a server that
       // could not start is a saved-but-broken state the user must see.
       if (data.mcp_errors && data.mcp_errors.length > 0) {
@@ -381,6 +514,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
       dirtyRef.current.cfg = false
       dirtyRef.current.mcp = false
       dirtyRef.current.memory = false
+      dirtyRef.current.advanced = false
       onSaved(data.status)
       useSessionStore.getState().refreshSessions()
     } catch (e) {
@@ -419,6 +553,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
         base_url: profileForm.base_url,
         model: profileForm.model,
         api_key: profileForm.api_key || undefined,
+        api_key_env: profileForm.api_key_env.trim(),
         // 留空 = 保持该档案已有韧性（掩码回显不参与保存）
         ...(profileForm.api_keysText.trim() ? { api_keys: profileForm.api_keysText.split("\n").map((s) => s.trim()).filter(Boolean) } : {}),
         ...(profileForm.fallbackModelsText.trim() ? { fallback_models: profileForm.fallbackModelsText.split("\n").map((s) => s.trim()).filter(Boolean) } : {}),
@@ -428,7 +563,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
       const act = await activateModelProfile(res.id)
       onSaved(act.status)
       setShowProfileForm(false)
-      setProfileForm({ id: "", name: "", provider: "openai_compat", base_url: "", model: "", api_key: "", api_keysText: "", fallbackModelsText: "", small_model: "" })
+      setProfileForm({ id: "", name: "", provider: "openai_compat", base_url: "", model: "", api_key: "", api_key_env: "", api_keysText: "", fallbackModelsText: "", small_model: "" })
       setNotice(t("model.saved", lang))
     } catch (e) {
       setNotice(t("settings.saveFailed", lang, { msg: e instanceof Error ? e.message : String(e) }))
@@ -624,6 +759,19 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                     placeholder={cfg.provider.has_api_key ? t("model.apiKeyKeep", lang, { masked: cfg.provider.api_key_masked }) : t("model.apiKeyPhNew", lang)}
                   />
                 </Field>
+                {cfg.provider.api_key_env !== undefined && (
+                  <Field label={t("model.apiKeyEnv", lang)} hint={t("model.apiKeyEnvEditableHint", lang)}>
+                    <TextInput
+                      value={cfg.provider.api_key_env}
+                      onChange={(e) => {
+                        dirtyRef.current.cfg = true
+                        setCfg((c) => (c ? { ...c, provider: { ...c.provider, api_key_env: e.target.value } } : c))
+                      }}
+                      placeholder="SPARK_API_KEY"
+                      className="font-mono"
+                    />
+                  </Field>
+                )}
                 <Field label={t("settings.effort", lang)} hint={t("settings.effortDesc", lang)}>
                   <Select value={cfg.agent.effort ?? "medium"} onChange={(e) => patchAgent({ effort: e.target.value as "low" | "medium" | "high" })}>
                     <option value="low">{t("settings.effortLow", lang)}</option>
@@ -642,13 +790,16 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                 <h3 className="text-sm font-semibold text-ink">{t("model.resilience", lang)}</h3>
                 <p className="text-xs leading-relaxed text-ink3">{t("model.resilienceDesc", lang)}</p>
                 <Field label={t("model.apiKeys", lang)} hint={cfg.provider.api_keys_count > 0 ? t("model.apiKeysHint", lang, { n: cfg.provider.api_keys_count }) : undefined}>
-                  <TextArea value={providerApiKeysText} onChange={(e) => { dirtyRef.current.cfg = true; setProviderApiKeysText(e.target.value) }} placeholder={t("model.apiKeysPh", lang)} rows={2} />
+                  <TextArea value={providerApiKeysText} onChange={(e) => { dirtyRef.current.cfg = true; resilienceDirty.current.api_keys = true; setProviderApiKeysText(e.target.value) }} placeholder={t("model.apiKeysPh", lang)} rows={2} />
+                  <Button size="sm" variant="ghost" onClick={() => { dirtyRef.current.cfg = true; resilienceDirty.current.api_keys = true; setProviderApiKeysText("") }}>{t("model.clearValue", lang)}</Button>
                 </Field>
                 <Field label={t("model.fallbackModels", lang)}>
-                  <TextArea value={providerFallbackText} onChange={(e) => { dirtyRef.current.cfg = true; setProviderFallbackText(e.target.value) }} placeholder={t("model.fallbackModelsPh", lang)} rows={2} />
+                  <TextArea value={providerFallbackText} onChange={(e) => { dirtyRef.current.cfg = true; resilienceDirty.current.fallback_models = true; setProviderFallbackText(e.target.value) }} placeholder={t("model.fallbackModelsPh", lang)} rows={2} />
+                  <Button size="sm" variant="ghost" onClick={() => { dirtyRef.current.cfg = true; resilienceDirty.current.fallback_models = true; setProviderFallbackText("") }}>{t("model.clearValue", lang)}</Button>
                 </Field>
                 <Field label={t("model.smallModel", lang)}>
-                  <TextInput value={providerSmallModel} onChange={(e) => { dirtyRef.current.cfg = true; setProviderSmallModel(e.target.value) }} placeholder={t("model.smallModelPh", lang)} />
+                  <TextInput value={providerSmallModel} onChange={(e) => { dirtyRef.current.cfg = true; resilienceDirty.current.small_model = true; setProviderSmallModel(e.target.value) }} placeholder={t("model.smallModelPh", lang)} />
+                  <Button size="sm" variant="ghost" onClick={() => { dirtyRef.current.cfg = true; resilienceDirty.current.small_model = true; setProviderSmallModel("") }}>{t("model.clearValue", lang)}</Button>
                 </Field>
               </section>
 
@@ -679,6 +830,9 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                     </Field>
                     <Field label={t("model.apiKey", lang)}>
                       <TextInput value={profileForm.api_key} onChange={(e) => setProfileForm((p) => ({ ...p, api_key: e.target.value }))} placeholder={t("model.apiKeyPhNew", lang)} type="password" />
+                    </Field>
+                    <Field label={t("model.profileEnv", lang)} hint={t("model.profileEnvHint", lang)}>
+                      <TextInput value={profileForm.api_key_env} onChange={(e) => setProfileForm((p) => ({ ...p, api_key_env: e.target.value }))} placeholder="SPARK_API_KEY" />
                     </Field>
                     <Field label={t("model.apiKeys", lang)} hint={t("model.apiKeysProfileHint", lang)}>
                       <TextArea value={profileForm.api_keysText} onChange={(e) => setProfileForm((p) => ({ ...p, api_keysText: e.target.value }))} placeholder={t("model.apiKeysPh", lang)} rows={2} />
@@ -850,14 +1004,48 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                           // made "hello world" impossible to enter).
                           dirtyRef.current.cfg = true
                           setArgsText((m) => ({ ...m, [i]: raw }))
-                          setHookRows((rows) => rows.map((r, idx) => idx === i ? { ...r, args: splitArgs(raw) } : r))
+                          setHookRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, args: splitArgs(raw) } : r)))
                         }}
                         placeholder={t("security.hookArgsPh", lang)}
                         className="font-mono"
                       />
+                      <div className="grid grid-cols-2 gap-2">
+                        <Field label={t("security.hookName", lang)}>
+                          <TextInput
+                            value={h.name}
+                            onChange={(e) => patchHook(i, { name: e.target.value })}
+                            placeholder={t("security.hookNamePh", lang)}
+                          />
+                        </Field>
+                        <Field label={t("security.hookTimeout", lang)}>
+                          <TextInput
+                            type="number"
+                            min={1}
+                            max={3600}
+                            value={h.timeout_sec}
+                            onChange={(e) => {
+                              const raw = e.target.value
+                              if (raw === "") return
+                              patchHook(i, { timeout_sec: Math.min(3600, Math.max(1, Number(raw))) })
+                            }}
+                          />
+                        </Field>
+                      </div>
+                      {/* Optional on newer backends: rows loaded without it keep
+                          the key undefined and it is omitted from the payload,
+                          so an older API never receives a field it drops. */}
+                      <Field label={t("security.hookOnDeny", lang)}>
+                        <Select
+                          value={h.on_deny ?? "block"}
+                          onChange={(e) => patchHook(i, { on_deny: e.target.value as "warn" | "block" })}
+                        >
+                          <option value="warn">{t("security.hookOnDenyWarn", lang)}</option>
+                          <option value="block">{t("security.hookOnDenyBlock", lang)}</option>
+                        </Select>
+                      </Field>
                     </div>
                   ))}
-                  <Button size="sm" variant="soft" onClick={() => { dirtyRef.current.cfg = true; setHookRows((rows) => [...rows, { event: "pre_tool", command: "", args: [], name: "", timeout_sec: 10 }]) }}>
+                  <Button size="sm" variant="soft" onClick={() => { dirtyRef.current.cfg = true; setHookRows((rows) => [...rows, { event: "pre_tool", command: "", args: [], name: "", timeout_sec: 10, on_deny: "block" }]) }}>
                     <IconPlus size={12} /> {t("security.addHook", lang)}
                   </Button>
                 </div>
@@ -1002,6 +1190,53 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                 <Field label={t("memory.embeddingModel", lang)}>
                   <TextInput value={cfg.memory?.embedding_model ?? ""} onChange={(e) => { dirtyRef.current.memory = true; setCfg((c) => (c ? { ...c, memory: { ...(c.memory ?? { enabled: true, top_k: 6, capacity: 500, embedding_model: "", auto_extract: true }), embedding_model: e.target.value } } : c)) }} placeholder={t("memory.embeddingModelPh", lang)} />
                 </Field>
+                {cfg.memory?.embedding_enabled !== undefined && (
+                  <label className="flex items-start justify-between gap-3">
+                    <span className="flex min-w-0 flex-col">
+                      <span className="text-[12.5px] text-ink">{t("memory.embeddingEnabled", lang)}</span>
+                      <span className="text-[10.5px] leading-snug text-ink3">{t("memory.embeddingEnabledHint", lang)}</span>
+                    </span>
+                    <Toggle
+                      checked={cfg.memory.embedding_enabled}
+                      onChange={(v) => patchMemory({ embedding_enabled: v })}
+                    />
+                  </label>
+                )}
+                {cfg.memory?.embedding_base_url !== undefined && (
+                  <Field label={t("memory.embeddingBaseUrl", lang)}>
+                    <TextInput
+                      value={cfg.memory.embedding_base_url}
+                      onChange={(e) => patchMemory({ embedding_base_url: e.target.value })}
+                      placeholder={t("memory.embeddingBaseUrlPh", lang)}
+                    />
+                  </Field>
+                )}
+                {cfg.memory?.embedding_api_key_masked !== undefined || cfg.memory?.has_embedding_api_key !== undefined ? (
+                  <Field
+                    label={t("memory.embeddingApiKey", lang)}
+                    hint={cfg.memory?.has_embedding_api_key ? t("memory.embeddingApiKeyKeep", lang, { masked: cfg.memory.embedding_api_key_masked ?? "" }) : undefined}
+                  >
+                    <TextInput
+                      type="password"
+                      autoComplete="off"
+                      value={embeddingKeyInput}
+                      onChange={(e) => {
+                        dirtyRef.current.memory = true
+                        setEmbeddingKeyInput(e.target.value)
+                      }}
+                      placeholder={t("memory.embeddingApiKeyPh", lang)}
+                    />
+                  </Field>
+                ) : null}
+                {cfg.memory?.rerank_model !== undefined && (
+                  <Field label={t("memory.rerankModel", lang)}>
+                    <TextInput
+                      value={cfg.memory.rerank_model}
+                      onChange={(e) => patchMemory({ rerank_model: e.target.value })}
+                      placeholder={t("memory.rerankModelPh", lang)}
+                    />
+                  </Field>
+                )}
                 <label className="flex items-center justify-between gap-3">
                   <span className="text-[12.5px] text-ink">{t("memory.autoExtract", lang)}</span>
                   <Toggle
@@ -1025,7 +1260,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
           {tab === "knowledge" && <KnowledgeSection />}
 
           {tab === "mcp" && (
-            <div className="flex flex-col gap-4">
+            <fieldset disabled={busy === "save"} className="flex flex-col gap-4">
               <section className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-4">
                 <h3 className="text-sm font-semibold text-ink">{t("mcp.title", lang)}</h3>
                 <p className="text-xs leading-relaxed text-ink3">{t("mcp.desc", lang)}</p>
@@ -1086,6 +1321,56 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                       <Field label={t("mcp.readonly", lang)}>
                         <TextInput value={s.readonly_tools.join(" ")} onChange={(e) => patchMcp(i, { readonly_tools: e.target.value.split(/\s+/).filter(Boolean) })} placeholder={t("mcp.readonlyPh", lang)} />
                       </Field>
+                      <Field label={t("mcp.allowedTools", lang)} hint={<span className="text-[10px] text-ink3">{t("mcp.allowedToolsHint", lang)}</span>}>
+                        <TextInput
+                          value={(s.allowed_tools ?? []).join(" ")}
+                          onChange={(e) => patchMcp(i, { allowed_tools: e.target.value.split(/\s+/).filter(Boolean) })}
+                          placeholder="read_* write_file"
+                          className="font-mono"
+                        />
+                      </Field>
+                      {(s.transport ?? "stdio") !== "stdio" && (
+                        <>
+                          <Field label={t("mcp.headers", lang)} hint={<span className="text-[10px] text-ink3">{t("mcp.headersHint", lang)}</span>}>
+                            <TextArea
+                              rows={2}
+                              value={headerText[s.name] ?? headersToText(s.http?.headers)}
+                              onChange={(e) => {
+                                const raw = e.target.value
+                                setHeaderText((m) => ({ ...m, [s.name]: raw }))
+                                patchMcp(i, {
+                                  http: {
+                                    url: s.http?.url ?? "",
+                                    headers: textToHeaders(raw),
+                                    timeout_sec: s.http?.timeout_sec ?? 30,
+                                  },
+                                })
+                              }}
+                              placeholder={t("mcp.headersPh", lang)}
+                              className="font-mono text-xs"
+                            />
+                          </Field>
+                          <Field label={t("mcp.timeout", lang)}>
+                            <TextInput
+                              type="number"
+                              min={1}
+                              max={600}
+                              value={s.http?.timeout_sec ?? 30}
+                              onChange={(e) => {
+                                const raw = e.target.value
+                                if (raw === "") return
+                                patchMcp(i, {
+                                  http: {
+                                    url: s.http?.url ?? "",
+                                    headers: s.http?.headers ?? {},
+                                    timeout_sec: Math.min(600, Math.max(1, Number(raw))),
+                                  },
+                                })
+                              }}
+                            />
+                          </Field>
+                        </>
+                      )}
                       {s.env && Object.keys(s.env).length > 0 && (
                         <div className="flex flex-col gap-2 rounded-lg border border-warn/30 bg-warn/5 p-2.5">
                           <p className="text-[11px] text-warn">{t("mcp.envHint", lang)}</p>
@@ -1114,7 +1399,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                   </div>
                 </div>
               </section>
-            </div>
+            </fieldset>
           )}
 
           {tab === "project" && (
@@ -1213,6 +1498,101 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                     }}
                   />
                 </Field>
+                <Field label={t("project.historyBudget", lang)}>
+                  <TextInput
+                    type="number"
+                    min={1000}
+                    value={cfg.context.history_budget_chars}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      if (raw === "") return
+                      patchContext({ history_budget_chars: Math.max(1000, Number(raw)) })
+                    }}
+                  />
+                </Field>
+              </section>
+
+              <section className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-4">
+                <h3 className="text-sm font-semibold text-ink">{t("project.advancedTitle", lang)}</h3>
+                <p className="text-xs leading-relaxed text-ink3">{t("project.advancedDesc", lang)}</p>
+                <label className="flex items-center justify-between gap-3">
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-[12.5px] text-ink">{t("project.repoMap", lang)}</span>
+                    <span className="text-[10.5px] leading-snug text-ink3">{t("project.repoMapHint", lang)}</span>
+                  </span>
+                  <Toggle
+                    checked={cfg.context.repo_map_enabled ?? false}
+                    onChange={(v) => patchContext({ repo_map_enabled: v })}
+                  />
+                </label>
+                {cfg.context.repo_map_max_chars !== undefined && (
+                  <Field label={t("project.repoMapMax", lang)}>
+                    <TextInput
+                      type="number"
+                      min={500}
+                      max={60000}
+                      value={cfg.context.repo_map_max_chars}
+                      onChange={(e) => {
+                        const raw = e.target.value
+                        if (raw === "") return
+                        patchContext({ repo_map_max_chars: Math.min(60000, Math.max(500, Number(raw))) })
+                      }}
+                    />
+                  </Field>
+                )}
+                <label className="flex items-center justify-between gap-3">
+                  <span className="text-[12.5px] text-ink">{t("project.knowledgeEnabled", lang)}</span>
+                  <Toggle
+                    checked={cfg.context.knowledge_enabled ?? false}
+                    onChange={(v) => patchContext({ knowledge_enabled: v })}
+                  />
+                </label>
+                {cfg.context.knowledge_top_k !== undefined && (
+                  <Field label={t("project.knowledgeTopK", lang)}>
+                    <TextInput
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={cfg.context.knowledge_top_k}
+                      onChange={(e) => {
+                        const raw = e.target.value
+                        if (raw === "") return
+                        patchContext({ knowledge_top_k: Math.min(50, Math.max(1, Number(raw))) })
+                      }}
+                    />
+                  </Field>
+                )}
+                {cfg.context.knowledge_max_chars !== undefined && (
+                  <Field label={t("project.knowledgeMaxChars", lang)}>
+                    <TextInput
+                      type="number"
+                      min={500}
+                      max={60000}
+                      value={cfg.context.knowledge_max_chars}
+                      onChange={(e) => {
+                        const raw = e.target.value
+                        if (raw === "") return
+                        patchContext({ knowledge_max_chars: Math.min(60000, Math.max(500, Number(raw))) })
+                      }}
+                    />
+                  </Field>
+                )}
+                <Field
+                  label={t("project.agentsMd", lang)}
+                  hint={/[\\/]/.test(agentsMdName) ? <span className="text-err">{t("project.agentsMdInvalid", lang)}</span> : undefined}
+                >
+                  <TextInput
+                    value={agentsMdName}
+                    onChange={(e) => {
+                      dirtyRef.current.cfg = true
+                      setAgentsMdName(e.target.value)
+                    }}
+                    placeholder="AGENTS.md"
+                    spellCheck={false}
+                    className="font-mono"
+                  />
+                </Field>
+                <p className="text-[10.5px] leading-relaxed text-ink3">{t("project.agentsMdHint", lang)}</p>
               </section>
 
               <section className="rounded-xl border border-line bg-panel p-4">
@@ -1221,6 +1601,91 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
               </section>
 
               <HealthSection lang={lang} />
+            </div>
+          )}
+
+          {tab === "advanced" && (
+            <div className="flex flex-col gap-4">
+              <section className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-4">
+                <h3 className="text-sm font-semibold text-ink">{t("advanced.title", lang)}</h3>
+                <p className="text-xs leading-relaxed text-ink3">{t("advanced.desc", lang)}</p>
+              </section>
+
+              {(cfg.replay !== undefined || cfg.updater !== undefined) && (
+                <section className="flex flex-col gap-2.5 rounded-xl border border-line bg-panel p-4">
+                  <h3 className="text-sm font-semibold text-ink">{t("advanced.runtime", lang)}</h3>
+                  {cfg.replay && (
+                    <label className="flex items-start justify-between gap-3">
+                      <span className="flex min-w-0 flex-col">
+                        <span className="text-[12.5px] text-ink">{t("advanced.replayEnabled", lang)}</span>
+                        <span className="text-[10.5px] leading-snug text-ink3">{t("advanced.replayHint", lang)}</span>
+                      </span>
+                      <Toggle checked={cfg.replay.enabled} onChange={(v) => patchReplay({ enabled: v })} />
+                    </label>
+                  )}
+                  {cfg.updater && (
+                    <Field label={t("advanced.updaterMode", lang)} hint={<span className="text-[10px] text-ink3">{t("advanced.updaterHint", lang)}</span>}>
+                      <Select
+                        value={cfg.updater.mode}
+                        onChange={(e) => patchUpdater({ mode: e.target.value as "notify" | "off" })}
+                      >
+                        <option value="notify">{t("advanced.updaterNotify", lang)}</option>
+                        <option value="off">{t("advanced.updaterOff", lang)}</option>
+                      </Select>
+                    </Field>
+                  )}
+                </section>
+              )}
+
+              {cfg.permission_rules !== undefined && (
+                <section className="flex flex-col gap-2.5 rounded-xl border border-line bg-panel p-4">
+                  <h3 className="text-sm font-semibold text-ink">{t("advanced.permissionRules", lang)}</h3>
+                  <p className="text-xs leading-relaxed text-ink3">{t("advanced.permissionRulesDesc", lang)}</p>
+                  {cfg.permission_rules.length === 0 ? (
+                    <p className="text-xs text-ink3">{t("advanced.permissionEmpty", lang)}</p>
+                  ) : (
+                    <div className="flex flex-col divide-y divide-line rounded-lg border border-line">
+                      <div className="grid grid-cols-[80px_1fr_120px] gap-2 bg-panel2 px-3 py-1.5 text-[10.5px] font-medium text-ink3">
+                        <span>{t("advanced.ruleAction", lang)}</span>
+                        <span>{t("advanced.ruleResource", lang)}</span>
+                        <span>{t("advanced.ruleTool", lang)}</span>
+                      </div>
+                      {cfg.permission_rules.map((r, i) => (
+                        <div key={`${r.resource}-${i}`} className="grid grid-cols-[80px_1fr_120px] items-center gap-2 px-3 py-1.5">
+                          <Badge tone={r.action === "allow" ? "ok" : r.action === "deny" ? "err" : "warn"}>{r.action}</Badge>
+                          <span className="truncate font-mono text-[11.5px] text-ink2" title={r.resource}>{r.resource}</span>
+                          <span className="truncate font-mono text-[11.5px] text-ink3" title={r.tool ?? ""}>{r.tool || "*"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {cfg.approval_profiles !== undefined && (
+                <section className="flex flex-col gap-2.5 rounded-xl border border-line bg-panel p-4">
+                  <h3 className="text-sm font-semibold text-ink">{t("advanced.approvalProfiles", lang)}</h3>
+                  <p className="text-xs leading-relaxed text-ink3">{t("advanced.approvalProfilesDesc", lang)}</p>
+                  {cfg.approval_profiles.length === 0 ? (
+                    <p className="text-xs text-ink3">{t("advanced.approvalEmpty", lang)}</p>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {cfg.approval_profiles.map((p) => (
+                        <div key={p.id} className="flex flex-col gap-1 rounded-lg border border-line bg-panel2 px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink">{p.name || p.id}</span>
+                            <Badge tone="accent">{p.approval}</Badge>
+                          </div>
+                          <p className="truncate font-mono text-[10.5px] text-ink3">
+                            {t("advanced.profileTools", lang)}: {p.tools && p.tools.length > 0 ? p.tools.join(" ") : "*"}
+                            {p.model_profile_id ? ` · ${t("advanced.profileModel", lang)}: ${p.model_profile_id}` : ""}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
             </div>
           )}
         </div>
