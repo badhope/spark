@@ -210,14 +210,15 @@ def _handle_prompts(handler: HandlerBase, body: dict) -> None:
         if len(content) > _MAX_BODY_CHARS:
             handler._json(413, {"error": "prompt too large"})
             return
-        state.cfg.agent.system_prompt = content
-        try:
-            from spark.web._handlers_common import _save_config
+        with state.settings_lock:
+            state.cfg.agent.system_prompt = content
+            try:
+                from spark.web._handlers_common import _save_config
 
-            _save_config(state.cfg)
-        except Exception as exc:  # noqa: BLE001 — 保存失败要如实回给 UI
-            handler._json(500, {"error": f"save failed: {exc}"})
-            return
+                _save_config(state.cfg)
+            except Exception as exc:  # aqg: top-level boundary — 保存失败要如实回给 UI
+                handler._json(500, {"error": f"save failed: {exc}"})
+                return
         handler._json(200, {"ok": True, "system_prompt": content})
         return
 
@@ -371,25 +372,26 @@ def _handle_knowledge(handler: HandlerBase, body: dict) -> None:
     if action == "settings":
         enabled = body.get("enabled")
         top_k = body.get("top_k")
-        if isinstance(enabled, bool):
-            state.cfg.context.knowledge_enabled = enabled
-        if isinstance(top_k, int) and 1 <= top_k <= 50:
-            state.cfg.context.knowledge_top_k = top_k
-        try:
-            from spark.web._handlers_common import _save_config
+        with state.settings_lock:
+            if isinstance(enabled, bool):
+                state.cfg.context.knowledge_enabled = enabled
+            if isinstance(top_k, int) and 1 <= top_k <= 50:
+                state.cfg.context.knowledge_top_k = top_k
+            try:
+                from spark.web._handlers_common import _save_config
 
-            _save_config(state.cfg)
-        except Exception as exc:  # noqa: BLE001
-            handler._json(500, {"error": f"save failed: {exc}"})
-            return
-        handler._json(
-            200,
-            {
-                "ok": True,
-                "enabled": state.cfg.context.knowledge_enabled,
-                "top_k": state.cfg.context.knowledge_top_k,
-            },
-        )
+                _save_config(state.cfg)
+            except Exception as exc:  # aqg: top-level boundary
+                handler._json(500, {"error": f"save failed: {exc}"})
+                return
+            handler._json(
+                200,
+                {
+                    "ok": True,
+                    "enabled": state.cfg.context.knowledge_enabled,
+                    "top_k": state.cfg.context.knowledge_top_k,
+                },
+            )
         return
 
     handler._json(400, {"error": "action must be list, add, delete, search or settings"})

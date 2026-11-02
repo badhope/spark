@@ -123,6 +123,9 @@ def _dispatch_turn(
     with state.turn_lock:
         if stream.disconnected:
             return
+        if turn_loop is not state.loop:
+            stream.submit_payload({"type": "turn_error", "text": "settings changed; retry the request"})
+            return
         state.busy = True
         # Always apply the per-turn gate. It used to be skipped whenever a
         # tool_allowlist was active, so the switch silently did nothing for

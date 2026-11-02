@@ -13,6 +13,7 @@ from spark.config import (
     ProviderName,
     SandboxMode,
     SparkConfig,
+    activate_model_profile,
     default_home,
     ensure_home,
     env_api_key,
@@ -1048,12 +1049,7 @@ def profile_use_cmd(
             (m for m in cfg.model_profiles if m.id == hit.model_profile_id), None
         )
         if mp is not None:
-            cfg.active_profile_id = mp.id
-            if mp.api_key:
-                cfg.provider.api_key = mp.api_key
-                cfg.provider.name = mp.provider
-                cfg.provider.base_url = mp.base_url or cfg.provider.base_url
-                cfg.provider.model = mp.model
+            activate_model_profile(cfg, mp)
     path = save_config(cfg, config)
     typer.echo(
         f"● 档案已激活: {hit.name or hit.id} "
@@ -1097,12 +1093,7 @@ def agent_use_cmd(
     if hit is None:
         typer.echo(f"档案不存在: {profile}（用 `spark agent list` 查看）", err=True)
         raise typer.Exit(1)
-    cfg.active_profile_id = hit.id
-    if hit.api_key:
-        cfg.provider.api_key = hit.api_key
-        cfg.provider.name = hit.provider
-        cfg.provider.base_url = hit.base_url or cfg.provider.base_url
-        cfg.provider.model = hit.model
+    activate_model_profile(cfg, hit)
     path = save_config(cfg, config)
     typer.echo(f"● 大脑已切换: {hit.name or hit.id} ({hit.provider}/{hit.model})")
     typer.echo(f"  配置已写入 {path}")

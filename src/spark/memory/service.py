@@ -10,7 +10,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 from spark.asyncutil import run_coroutine_sync
-from spark.config import SparkConfig
+from spark.config import SparkConfig, env_api_key
 from spark.memory.extractor import (
     consolidate_group,
     extract_facts,
@@ -48,6 +48,7 @@ class MemoryService:
         self.cfg = cfg
         self.embedding_available: bool | None = None
         self.embedding_checked_at = 0.0
+        self._embedding_config: tuple[str, str, str, str] | None = None
         self._lock = threading.RLock()
 
     # ---------- embeddings ----------
@@ -62,22 +63,27 @@ class MemoryService:
 
     def _embed(self, texts: list[str]) -> list[list[float]] | None:
         if not self.cfg.memory.enabled:
+            self._embedding_config = None
             return None
         # P0 修复：向量检索显式 opt-in（memory.embedding_enabled，默认关）。
         # 默认配置曾把 /embeddings 请求打到 chat 端点（如 DeepSeek，无该路由），
         # 每轮失败降级关键词——宣传与实际不符。现在不开启就静默跳过。
         if not getattr(self.cfg.memory, "embedding_enabled", False):
+            self._embedding_config = None
             return None
+        p = self.cfg.provider
+        base_url = self.cfg.memory.embedding_base_url or p.base_url
+        same_target = base_url.rstrip("/") == p.base_url.rstrip("/")
+        api_key = self.cfg.memory.embedding_api_key or ((p.api_key or env_api_key(self.cfg)) if same_target else "") or "ollama"
+        embedding_config = (base_url, api_key, self.cfg.memory.embedding_model, p.name)
         now = time.time()
         if (
             self.embedding_available is False
+            and self._embedding_config == embedding_config
             and now - self.embedding_checked_at < EMBED_RETRY_SECS
         ):
             return None
-        p = self.cfg.provider
-        # embedding 端点独立可配；留空时回落 provider 凭据（要求该端点支持 /embeddings）
-        base_url = self.cfg.memory.embedding_base_url or p.base_url
-        api_key = self.cfg.memory.embedding_api_key or p.api_key or "ollama"
+        self._embedding_config = embedding_config
 
         def _run_embed():
             return embed_texts(
@@ -120,6 +126,9 @@ class MemoryService:
 
         未安装 / 加载失败时静默保持原序（RRF 已保证基础质量），不引入硬依赖。
         """
+        if not self.cfg.memory.rerank_model:
+            self._reranker_cache = (None, None)
+            return hits
         if not hits or top_k == 0:
             return hits
         try:
@@ -149,10 +158,14 @@ class MemoryService:
 
     def _get_reranker(self, cls) -> Any | None:
         """缓存已加载的 reranker（模型一次性加载，进程内复用）。"""
-        cached = self._reranker_cache[0]
-        if cached is not None:
+        model_name = self.cfg.memory.rerank_model
+        if not model_name:
+            self._reranker_cache = (None, None)
+            return None
+        cached, cached_name = self._reranker_cache
+        if cached is not None and cached_name == model_name:
             return cached
-        model_name = self.cfg.memory.rerank_model or "BAAI/bge-reranker-v2-m3"
+        self._reranker_cache = (None, None)
         try:
             model = cls(model_name, device="cpu")
             self._reranker_cache = (model, model_name)

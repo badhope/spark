@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Literal, cast
 from urllib.parse import urlparse
@@ -15,6 +16,30 @@ INDEX_HTML = Path(__file__).with_name("index.html")
 HOOK_EVENTS = tuple(HookRegistry.EVENTS)
 
 MAX_REQUEST_BYTES = 32 * 1024 * 1024
+MAX_AGENTS_MD_BYTES = 1 * 1024 * 1024
+MCP_REDACTED_HEADER = "[REDACTED]"
+
+
+def is_sensitive_mcp_header(name: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", name.lower())
+    return normalized in {
+        "authorization",
+        "proxyauthorization",
+        "cookie",
+        "setcookie",
+        "apikey",
+        "xapikey",
+    } or normalized.endswith(("authorization", "apikey", "authtoken", "sessionid")) or any(
+        token in normalized for token in ("token", "secret", "password", "credential", "session")
+    )
+
+
+def redact_mcp_headers(headers: dict[str, str]) -> dict[str, str]:
+    return {
+        name: MCP_REDACTED_HEADER if is_sensitive_mcp_header(name) else value
+        for name, value in headers.items()
+    }
+
 
 _CTYPES = {
     ".html": "text/html; charset=utf-8",

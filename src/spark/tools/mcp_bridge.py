@@ -310,6 +310,7 @@ class McpBridge:
     def __init__(self) -> None:
         self.servers: dict[str, _McpConnection] = {}
         self.errors: list[str] = []
+        self.startup_errors: list[str] = []
         self._registry: ToolRegistry | None = None
         self._sampling_handler: Any = None
         # The SDK binds stdio streams and session tasks to the loop that opened
@@ -489,7 +490,9 @@ class McpBridge:
                 logger.warning(
                     "MCP server '%s' failed to start: %s", cfg.name, exc, exc_info=True
                 )
-                self.errors.append(f"MCP {cfg.name} failed: {exc}")
+                message = f"MCP {cfg.name} failed: {exc}"
+                self.errors.append(message)
+                self.startup_errors.append(message)
                 await conn.close()
                 continue
             except BaseException as exc:
@@ -507,7 +510,9 @@ class McpBridge:
                     if isinstance(exc, asyncio.CancelledError)
                     else type(exc).__name__
                 )
-                self.errors.append(f"MCP {cfg.name} failed: {reason}")
+                message = f"MCP {cfg.name} failed: {reason}"
+                self.errors.append(message)
+                self.startup_errors.append(message)
                 await conn.close()
                 continue
             # P1-9: 最小权限白名单（加载路径强制）。

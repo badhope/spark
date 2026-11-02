@@ -134,6 +134,23 @@ def ensure_skeleton(config: Path | None) -> Path:
     return path
 
 
+def _redacted_secret(value: str | None) -> str:
+    """与 Web /api/config 保持同一展示语义：只给掩码，不给明文。"""
+    return mask_secret(value or "")
+
+
+def _redact_env(values: dict[str, str]) -> dict[str, str]:
+    """MCP env 一律打码——键名（GITHUB_TOKEN 等）本身就是凭据提示。"""
+    return {name: "[REDACTED]" for name in values}
+
+
+def _redact_headers(values: dict[str, str]) -> dict[str, str]:
+    """复用 Web 端的敏感头判定，保证 CLI 与 Web 脱敏口径一致。"""
+    from spark.web.utils import redact_mcp_headers
+
+    return redact_mcp_headers(dict(values))
+
+
 def config_as_dict(cfg: SparkConfig) -> dict[str, Any]:
     return {
         "provider": {
@@ -141,14 +158,46 @@ def config_as_dict(cfg: SparkConfig) -> dict[str, Any]:
             "base_url": cfg.provider.base_url,
             "model": cfg.provider.model,
             "api_key_env": cfg.provider.api_key_env,
-            "api_key": mask_secret(cfg.provider.api_key or ""),
+            "api_key": _redacted_secret(cfg.provider.api_key),
             "has_api_key": bool(cfg.provider.api_key),
+            # 凭据池按掩码回显，与 /api/config 一致。
+            "api_keys": [_redacted_secret(key) for key in cfg.provider.api_keys],
+            "api_keys_count": len(cfg.provider.api_keys),
+            "fallback_models": list(cfg.provider.fallback_models),
+            "small_model": cfg.provider.small_model,
         },
         "agent": cfg.agent.model_dump(),
         "context": cfg.context.model_dump(),
-        "memory": cfg.memory.model_dump(),
-        "mcp_servers": [s.model_dump() for s in cfg.mcp_servers],
+        "memory": {
+            **cfg.memory.model_dump(),
+            # 明文嵌入密钥绝不进 CLI 输出（JSON 与文本同源，一处打码两处安全）。
+            "embedding_api_key": _redacted_secret(cfg.memory.embedding_api_key),
+            "has_embedding_api_key": bool(cfg.memory.embedding_api_key),
+        },
+        "mcp_servers": [
+            {
+                **server.model_dump(exclude={"env", "http"}),
+                "env": _redact_env(server.env),
+                "http": (
+                    {
+                        **server.http.model_dump(exclude={"headers"}),
+                        "headers": _redact_headers(server.http.headers),
+                    }
+                    if server.http is not None
+                    else None
+                ),
+            }
+            for server in cfg.mcp_servers
+        ],
         "hooks": [h.model_dump() for h in cfg.hooks],
+        "model_profiles": [
+            {
+                **profile.model_dump(exclude={"api_key", "api_keys"}),
+                "api_key": _redacted_secret(profile.api_key),
+                "api_keys": [_redacted_secret(key) for key in profile.api_keys],
+            }
+            for profile in cfg.model_profiles
+        ],
     }
 
 

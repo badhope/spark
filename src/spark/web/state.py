@@ -27,7 +27,7 @@ from spark.sandbox import WorkdirSandbox
 from spark.tools import bg as bg_tools
 from spark.tools.mcp_bridge import McpBridge
 from spark.tools.registry import ToolContext, ToolRegistry
-from spark.web.utils import probe_env
+from spark.web.utils import MCP_REDACTED_HEADER, probe_env, redact_mcp_headers
 
 logger = logging.getLogger(__name__)
 
@@ -198,11 +198,13 @@ class SparkWebState:
         self.session_id = ""
         self.loop: AgentLoop | None = None
         self.turn_lock = threading.Lock()
+        self.settings_lock = threading.Lock()
         self.busy = False
         self.approver = WebApprover() if cfg.agent.approval != "full-auto" else None
         self.question_bridge = WebQuestionBridge()
         self.mcp_bridge: McpBridge | None = None
         self.control_token = secrets.token_urlsafe(32)
+        self.test_probe_semaphore = threading.BoundedSemaphore(2)
         self.memory_store = MemoryStore(
             importlib.import_module("spark.web.server").default_home()
             / "memory.db",
@@ -236,6 +238,23 @@ class SparkWebState:
         run_coroutine_sync(bridge.start(self.cfg.mcp_servers, dummy))
         self.mcp_bridge = bridge
         return list(bridge.errors)
+
+    def prepare_mcp(self, servers: list) -> McpBridge | None:
+        if not servers:
+            return None
+        bridge = McpBridge()
+        try:
+            registry = ToolRegistry(ToolContext(sandbox=self.sandbox, config=self.cfg))
+            run_coroutine_sync(bridge.start(servers, registry))
+            if bridge.startup_errors:
+                raise RuntimeError("MCP server startup failed")
+            return bridge
+        except BaseException:  # aqg: top-level boundary — cleanup then re-raise
+            try:
+                run_coroutine_sync(bridge.close())
+            except Exception:  # aqg: top-level boundary — cleanup must not mask the original
+                logger.warning("Failed to close candidate MCP bridge", exc_info=True)
+            raise
 
     def _ensure_checkpointer(self):
         """One persistent turn checkpointer per process (A10 crash recovery).
@@ -389,22 +408,27 @@ class SparkWebState:
         return {"demo_mode": False, "demo_reason": ""}
 
     def ensure_default_profile(self) -> None:
-        if self.cfg.model_profiles:
-            return
-        if not self.cfg.provider.model:
-            return
-        self.cfg.model_profiles = [
-            ModelProfile(
-                id=uuid.uuid4().hex[:8],
-                name=self.cfg.provider.model,
-                provider=self.cfg.provider.name,
-                base_url=self.cfg.provider.base_url,
-                model=self.cfg.provider.model,
-                api_key=self.cfg.provider.api_key or "",
-            )
-        ]
-        self.cfg.active_profile_id = self.cfg.model_profiles[0].id
-        save_config(self.cfg)
+        with self.settings_lock:
+            if self.cfg.model_profiles:
+                return
+            if not self.cfg.provider.model:
+                return
+            self.cfg.model_profiles = [
+                ModelProfile(
+                    id=uuid.uuid4().hex[:8],
+                    name=self.cfg.provider.model,
+                    provider=self.cfg.provider.name,
+                    base_url=self.cfg.provider.base_url,
+                    model=self.cfg.provider.model,
+                    api_key=self.cfg.provider.api_key or "",
+                    api_key_env=self.cfg.provider.api_key_env,
+                    api_keys=self.cfg.provider.api_keys.copy(),
+                    fallback_models=self.cfg.provider.fallback_models.copy(),
+                    small_model=self.cfg.provider.small_model,
+                )
+            ]
+            self.cfg.active_profile_id = self.cfg.model_profiles[0].id
+            save_config(self.cfg)
 
     def full_config(self) -> dict:
         return {
@@ -452,6 +476,11 @@ class SparkWebState:
                 # inputs read undefined and the toggle silently never persisted.
                 "repo_map_enabled": self.cfg.context.repo_map_enabled,
                 "repo_map_max_chars": self.cfg.context.repo_map_max_chars,
+                # 知识库页可改；此前只在 /api/knowledge 局部暴露，设置保存后回读
+                # 拿不到值，刷新即显示默认。
+                "knowledge_enabled": self.cfg.context.knowledge_enabled,
+                "knowledge_top_k": self.cfg.context.knowledge_top_k,
+                "knowledge_max_chars": self.cfg.context.knowledge_max_chars,
             },
             "memory": {
                 "enabled": self.cfg.memory.enabled,
@@ -459,20 +488,47 @@ class SparkWebState:
                 "capacity": self.cfg.memory.capacity,
                 "embedding_model": self.cfg.memory.embedding_model,
                 "auto_extract": self.cfg.memory.auto_extract,
+                # 嵌入/重排：密钥只回掩码，明文永不离开后端。
+                "embedding_enabled": self.cfg.memory.embedding_enabled,
+                "embedding_base_url": self.cfg.memory.embedding_base_url,
+                "embedding_api_key_masked": mask_secret(self.cfg.memory.embedding_api_key),
+                "has_embedding_api_key": bool(self.cfg.memory.embedding_api_key),
+                "rerank_model": self.cfg.memory.rerank_model,
             },
+            "replay": {"enabled": bool(self.cfg.replay.enabled)},
+            "updater": {"mode": self.cfg.updater.mode},
+            # 只读：写路径尚未开放（见 docs/API.md「permission_rules /
+            # approval_profiles 写接口设计」），先把现状如实回显给 UI。
+            "permission_rules": [
+                {"action": rule.action, "resource": rule.resource, "tool": rule.tool}
+                for rule in self.cfg.permission_rules
+            ],
+            "approval_profiles": [
+                {
+                    "id": profile.id,
+                    "name": profile.name,
+                    "approval": profile.approval,
+                    "tools": list(profile.tools),
+                    "system_prompt": profile.system_prompt,
+                    "model_profile_id": profile.model_profile_id,
+                }
+                for profile in self.cfg.approval_profiles
+            ],
+            "active_approval_profile_id": self.cfg.active_approval_profile_id,
             "env_probe": probe_env(),
             "mcp_servers": [
                 {
                     "name": s.name,
                     "command": s.command,
                     "args": s.args,
+                    "env": {name: MCP_REDACTED_HEADER for name in s.env},
                     "readonly_tools": s.readonly_tools,
                     "transport": s.transport,
                     "allowed_tools": list(s.allowed_tools),
                     "http": (
                         {
                             "url": s.http.url,
-                            "headers": dict(s.http.headers),
+                            "headers": redact_mcp_headers(dict(s.http.headers)),
                             "timeout_sec": s.http.timeout_sec,
                         }
                         if s.http
@@ -489,6 +545,8 @@ class SparkWebState:
                     "args": list(h.args),
                     "name": h.name,
                     "timeout_sec": h.timeout_sec,
+                    # 回传 on_deny，否则 UI 保存时会把 warn 重置为 block。
+                    "on_deny": h.on_deny,
                 }
                 for h in self.cfg.hooks
             ],

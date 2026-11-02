@@ -107,30 +107,37 @@ def _fs_tree(workdir: str, rel: str) -> dict[str, Any]:
 
 
 _MAX_READ_CHARS = 100_000
+_MAX_READ_BYTES = _MAX_READ_CHARS * 4
 
 
-def _fs_read(workdir: str, rel: str) -> dict[str, Any]:
+def _fs_read(workdir: str, rel: str, sandbox: Any = None) -> dict[str, Any]:
     target = _resolve_in_workdir(workdir, rel)
     if target is None:
         return {"error": "path outside workdir"}
+    if sandbox is not None and not sandbox.is_path_allowed(target):
+        return {"error": "path protected by sandbox policy"}
     if not target.exists() or not target.is_file():
         return {"error": "not found"}
     try:
-        raw = target.read_bytes()
+        size = target.stat().st_size
+        with target.open("rb") as handle:
+            raw = handle.read(_MAX_READ_BYTES)
     except OSError:
         return {"error": "unreadable file"}
     if b"\x00" in raw[:8192]:
-        return {"name": target.name, "binary": True, "size": len(raw)}
+        return {"name": target.name, "binary": True, "size": size}
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
-        return {"name": target.name, "binary": True, "size": len(raw)}
-    truncated = len(text) > _MAX_READ_CHARS
+        if size <= _MAX_READ_BYTES:
+            return {"name": target.name, "binary": True, "size": size}
+        text = raw[:_MAX_READ_BYTES].decode("utf-8", errors="ignore")
+    truncated = size > _MAX_READ_BYTES or len(text) > _MAX_READ_CHARS
     return {
         "name": target.name,
         "path": str(target),
         "content": text[:_MAX_READ_CHARS],
-        "size": len(raw),
+        "size": size,
         "truncated": truncated,
     }
 
@@ -181,32 +188,81 @@ def build_handler_class(html: str):
             host = self.client_address[0] if self.client_address else ""
             return host in {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
 
+        def _server_is_loopback(self) -> bool:
+            host = getattr(self.server, "server_address", ("",))[0]
+            return host in {"127.0.0.1", "::1", "localhost"}
+
+        def _service_port(self) -> int | None:
+            port = getattr(self.server, "server_port", None)
+            return port if isinstance(port, int) else None
+
+        @staticmethod
+        def _local_host(hostname: str) -> bool:
+            return hostname.strip("[]").lower() in {"127.0.0.1", "::1", "localhost"}
+
         def _host_is_local(self) -> bool:
             host = (self.headers.get("Host") or "").strip()
             if not host:
-                return True  # HTTP/1.0 clients may omit it
-            if host.startswith("["):  # IPv6 literal
-                hostname = host[1:].split("]", 1)[0]
-            else:
-                hostname = host.rsplit(":", 1)[0] if ":" in host else host
-            hostname = hostname.strip("[]").lower()
-            return hostname in {"127.0.0.1", "::1", "localhost"}
-
-        def _origin_allowed(self) -> bool:
-            origin = (self.headers.get("Origin") or "").strip()
-            if not origin:
-                return True  # non-browser client (curl, TUI, SDK)
+                return True
             try:
-                parsed = urlparse(origin)
+                parsed = urlparse(f"http://{host}")
+                hostname = parsed.hostname or ""
+                port = parsed.port
             except ValueError:
                 return False
-            host_c = (parsed.hostname or "").lower()
-            return host_c in {"127.0.0.1", "::1", "localhost"}
+            if parsed.username or parsed.password or parsed.path or parsed.params or parsed.query or parsed.fragment:
+                return False
+            service_port = self._service_port()
+            if service_port is None:
+                return False
+            if self._server_is_loopback() and not self._local_host(hostname):
+                return False
+            if not self._server_is_loopback() and not self._local_host(hostname):
+                if not self.headers.get("X-Spark-Token"):
+                    return False
+            return port == service_port or (port is None and service_port in {80, 443})
+
+        def _origin_allowed(self) -> bool:
+            fetch_site = (self.headers.get("Sec-Fetch-Site") or "").strip().lower()
+            if fetch_site == "cross-site":
+                return False
+            origin = (self.headers.get("Origin") or "").strip()
+            if not origin:
+                return True
+            try:
+                parsed = urlparse(origin)
+                host = parsed.hostname or ""
+                port = parsed.port
+            except ValueError:
+                return False
+            service_port = self._service_port()
+            if (
+                service_port is None
+                or parsed.scheme != "http"
+                or parsed.username
+                or parsed.password
+                or parsed.path
+                or parsed.params
+                or parsed.query
+                or parsed.fragment
+            ):
+                return False
+            if self._is_loopback():
+                return self._local_host(host) and (
+                    port == service_port or (port is None and service_port in {80, 443})
+                )
+            try:
+                host_parsed = urlparse(f"http://{self.headers.get('Host', '')}")
+                request_host = (host_parsed.hostname or "").lower()
+                request_port = host_parsed.port or service_port
+            except ValueError:
+                return False
+            return host.lower() == request_host and port == request_port
 
         def _authorized(self) -> bool:
             import secrets as _secrets
 
-            if self._is_loopback():
+            if self._server_is_loopback():
                 return True
             supplied = (self.headers.get("X-Spark-Token") or "").encode("utf-8", "replace")
             state = _route_state(self)
@@ -221,7 +277,7 @@ def build_handler_class(html: str):
             if not self._origin_allowed():
                 self._json(403, {"error": "cross-origin request rejected"})
                 return True
-            if self._is_loopback() or self._authorized():
+            if self._server_is_loopback() or self._authorized():
                 return False
             self._json(
                 401,
@@ -285,7 +341,10 @@ def build_handler_class(html: str):
             if length > MAX_REQUEST_BYTES:
                 raise ValueError("request body too large")
             raw = self.rfile.read(length) if length else b"{}"
-            return _json.loads(raw.decode("utf-8") or "{}")
+            payload = _json.loads(raw.decode("utf-8") or "{}")
+            if not isinstance(payload, dict):
+                raise TypeError("request JSON must be an object")
+            return payload
 
         # ------------------------------------------------------------------
         # Route dispatch — GET
@@ -368,19 +427,44 @@ def build_handler_class(html: str):
                 self._json(200, {"profiles": profiles})
                 return
             if path == "/api/agents_md":
-                from spark.web.utils import _safe_agents_md_name
+                from spark.web.utils import MAX_AGENTS_MD_BYTES, _safe_agents_md_name
 
                 safe_name = _safe_agents_md_name(state.cfg.context.agents_md)
                 if safe_name is None:
                     self._json(400, {"error": "invalid agents_md filename"})
                     return
-                path_md = state.workdir / safe_name
-                content = path_md.read_text(encoding="utf-8") if path_md.exists() else ""
+                path_md = _resolve_in_workdir(str(state.workdir), safe_name)
+                if path_md is None:
+                    self._json(400, {"error": "agents_md path escapes workdir"})
+                    return
+                content = ""
+                exists = path_md.exists()
+                if exists:
+                    try:
+                        with path_md.open("rb") as handle:
+                            raw = handle.read(MAX_AGENTS_MD_BYTES + 1)
+                    except OSError:
+                        self._json(500, {"error": "unreadable agents_md file"})
+                        return
+                    if len(raw) > MAX_AGENTS_MD_BYTES:
+                        self._json(
+                            413,
+                            {
+                                "error": "agents_md file too large",
+                                "max_bytes": MAX_AGENTS_MD_BYTES,
+                            },
+                        )
+                        return
+                    try:
+                        content = raw.decode("utf-8")
+                    except UnicodeDecodeError:
+                        self._json(400, {"error": "agents_md file must be UTF-8"})
+                        return
                 self._json(
                     200,
                     {
                         "filename": state.cfg.context.agents_md,
-                        "exists": path_md.exists(),
+                        "exists": exists,
                         "content": content,
                         "chars": len(content),
                         "max_fragment_chars": state.cfg.context.max_fragment_chars,
@@ -534,7 +618,7 @@ def build_handler_class(html: str):
             if path == "/api/fs/read":
                 query = parse_qs(urlparse(self.path).query)
                 rel = (query.get("path", [""])[0] or "").strip()
-                self._json(200, _fs_read(str(state.workdir), rel))
+                self._json(200, _fs_read(str(state.workdir), rel, state.sandbox))
                 return
             if path == "/api/browse":
                 query = parse_qs(urlparse(self.path).query)
@@ -585,8 +669,8 @@ def build_handler_class(html: str):
                 return
             try:
                 body = self._read_json()
-            except _json.JSONDecodeError:
-                self._json(400, {"error": "invalid json"})
+            except (_json.JSONDecodeError, UnicodeDecodeError, TypeError) as exc:
+                self._json(400, {"error": str(exc) or "invalid json"})
                 return
             except ValueError as exc:
                 self._json(413, {"error": str(exc)})

@@ -201,6 +201,7 @@ class ModelProfile(BaseModel):
     base_url: str = ""
     model: str = ""
     api_key: str = ""
+    api_key_env: str = ""
     # 供应商韧性（激活时同步到 [provider]）：凭据池 / 回退链 / 小模型分工
     api_keys: list[str] = Field(default_factory=list)
     fallback_models: list[str] = Field(default_factory=list)
@@ -548,6 +549,13 @@ def _sanitize_project_config(raw: dict[str, Any]) -> dict[str, Any]:
         provider.pop("api_key", None)
         provider.pop("api_key_env", None)
         clean["provider"] = provider
+    memory = clean.get("memory")
+    if isinstance(memory, dict):
+        memory = dict(memory)
+        memory.pop("embedding_base_url", None)
+        memory.pop("embedding_api_key", None)
+        memory.pop("embedding_enabled", None)
+        clean["memory"] = memory
     agent = clean.get("agent")
     if isinstance(agent, dict):
         agent = dict(agent)
@@ -741,10 +749,31 @@ def load_config(
     return cfg
 
 
+def activate_model_profile(cfg: SparkConfig, profile: ModelProfile) -> None:
+    same_target = (cfg.provider.name == profile.provider and
+                   cfg.provider.base_url.rstrip("/") == profile.base_url.rstrip("/"))
+    if "api_key_env" in profile.model_fields_set:
+        cfg.provider.api_key_env = profile.api_key_env
+    elif not same_target or cfg.active_profile_id != profile.id:
+        cfg.provider.api_key_env = ""
+    if not cfg.memory.embedding_base_url and cfg.provider.base_url.rstrip("/") != profile.base_url.rstrip("/"):
+        cfg.memory.embedding_api_key = ""
+    cfg.provider.name = profile.provider
+    cfg.provider.base_url = profile.base_url
+    cfg.provider.model = profile.model
+    cfg.provider.api_key = profile.api_key or None
+    cfg.provider.api_keys = profile.api_keys.copy()
+    cfg.provider.fallback_models = profile.fallback_models.copy()
+    cfg.provider.small_model = profile.small_model
+    cfg.active_profile_id = profile.id
+
+
 def env_api_key(cfg: SparkConfig) -> str:
     """从环境变量读取 API Key（不存在时返回空串，不抛错）。"""
     env_name = cfg.provider.api_key_env
-    return os.environ.get(env_name) or os.environ.get("SPARK_API_KEY") or ""
+    if not env_name:
+        return ""
+    return os.environ.get(env_name) or ""
 
 
 def require_api_key(cfg: SparkConfig) -> str | None:
@@ -783,6 +812,14 @@ def _provider_table(cfg: SparkConfig) -> tomlkit.items.Table:
     provider.add("api_key_env", cfg.provider.api_key_env or "")
     if cfg.provider.api_key:
         provider.add("api_key", cfg.provider.api_key)
+    # 供应商韧性：漏写这三项会让「设置」保存后在下次启动静默丢失
+    # （凭据池 / 回退链 / 小模型分工）。
+    if cfg.provider.api_keys:
+        provider.add("api_keys", list(cfg.provider.api_keys))
+    if cfg.provider.fallback_models:
+        provider.add("fallback_models", list(cfg.provider.fallback_models))
+    if cfg.provider.small_model:
+        provider.add("small_model", cfg.provider.small_model)
     return provider
 
 
@@ -818,6 +855,10 @@ def _context_table(cfg: SparkConfig) -> tomlkit.items.Table:
     context.add("keep_recent_messages", cfg.context.keep_recent_messages)
     context.add("repo_map_enabled", cfg.context.repo_map_enabled)
     context.add("repo_map_max_chars", cfg.context.repo_map_max_chars)
+    # 项目知识库检索参数：Web「知识库」页可改，漏写则保存后重启回到默认值。
+    context.add("knowledge_enabled", cfg.context.knowledge_enabled)
+    context.add("knowledge_top_k", cfg.context.knowledge_top_k)
+    context.add("knowledge_max_chars", cfg.context.knowledge_max_chars)
     return context
 
 
@@ -828,6 +869,13 @@ def _memory_table(cfg: SparkConfig) -> tomlkit.items.Table:
     memory.add("capacity", cfg.memory.capacity)
     memory.add("embedding_model", cfg.memory.embedding_model or "")
     memory.add("auto_extract", cfg.memory.auto_extract)
+    # 嵌入/重排：默认关闭，但一旦用户开启就必须持久化，否则每次重启退回
+    # 「关键词检索 + 无重排」，且 embedding_api_key 会静默丢失。
+    memory.add("embedding_enabled", cfg.memory.embedding_enabled)
+    memory.add("embedding_base_url", cfg.memory.embedding_base_url or "")
+    if cfg.memory.embedding_api_key:
+        memory.add("embedding_api_key", cfg.memory.embedding_api_key)
+    memory.add("rerank_model", cfg.memory.rerank_model or "")
     return memory
 
 
@@ -874,6 +922,16 @@ def _model_profiles_aot(cfg: SparkConfig) -> tomlkit.items.AoT | None:
         pt.add("base_url", prof.base_url or "")
         pt.add("model", prof.model or "")
         pt.add("api_key", prof.api_key or "")
+        if "api_key_env" in prof.model_fields_set:
+            pt.add("api_key_env", prof.api_key_env)
+        # 档案级韧性字段：``spark profile use`` 会把它们同步到 provider，
+        # 不持久化等于切换档案后凭据池/回退链凭空消失。
+        if prof.api_keys:
+            pt.add("api_keys", list(prof.api_keys))
+        if prof.fallback_models:
+            pt.add("fallback_models", list(prof.fallback_models))
+        if prof.small_model:
+            pt.add("small_model", prof.small_model)
         prof_aot.append(pt)
     return prof_aot
 
@@ -989,13 +1047,14 @@ def _harden_permissions(f: Path) -> None:
         sid = _win_user_sid()
         if sid:
             try:
-                subprocess.run(
+                completed = subprocess.run(
                     ["icacls", str(f), "/inheritance:r", "/grant:r", f"*{sid}:F"],
                     capture_output=True,
                     timeout=30,
                     creationflags=CREATE_NO_WINDOW,
                 )
-                return
+                if completed.returncode == 0:
+                    return
             except (OSError, subprocess.SubprocessError):
                 pass
     try:
@@ -1063,9 +1122,12 @@ def win_acl_restricted(f: Path) -> bool:
             timeout=30,
             creationflags=CREATE_NO_WINDOW,
         )
+        if completed.returncode != 0:
+            return False
         out = completed.stdout or ""
     except (OSError, subprocess.SubprocessError):
         return False
+
     aces = [ln for ln in out.splitlines() if ":(" in ln]
     if not aces:
         return False

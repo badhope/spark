@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from spark.config import SparkConfig, mask_secret
 
 EXAMPLES = [
@@ -23,14 +25,21 @@ SHORTCUTS = [
 
 
 def key_status(cfg: SparkConfig) -> tuple[str, str]:
-    """Return (marker, label) describing whether credentials are usable."""
+    """Return (marker, label) describing whether credentials are usable.
+
+    Must mirror :func:`spark.config.require_api_key`: the environment variable is
+    only consulted when ``provider.api_key_env`` is bound to an actual name. The
+    old code also fell back to ``SPARK_API_KEY`` here, so an unbound config
+    showed "OK" while ``require_api_key`` raised and the agent silently ran on
+    the mock provider.
+    """
     if cfg.provider.name == "mock":
         return "!", "mock 模型（未接真实模型）"
     if cfg.provider.api_key:
         return "OK", f"密钥已配置 {mask_secret(cfg.provider.api_key)}"
-    import os
-
-    if os.environ.get(cfg.provider.api_key_env) or os.environ.get("SPARK_API_KEY"):
+    if cfg.provider.name == "ollama":
+        return "OK", "Ollama 本地模型无需密钥"
+    if cfg.provider.api_key_env and os.environ.get(cfg.provider.api_key_env):
         return "OK", f"密钥来自环境变量 {cfg.provider.api_key_env}"
     return "X", "缺少 API Key（按 ? 查看如何配置）"
 

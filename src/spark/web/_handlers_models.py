@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import cast
 
-from spark.config import ProviderName
+from spark.config import ProviderName, activate_model_profile
 from spark.errors import SparkError
 from spark.web._handlers_common import _save_config
 from spark.web._httpbase import HandlerBase
@@ -27,6 +27,11 @@ def _parse_resilience(body: dict) -> tuple[list[str], list[str], str]:
 
 
 def _handle_models_save(handler: HandlerBase, body: dict) -> None:
+    with _route_state(handler).settings_lock:
+        _handle_models_save_locked(handler, body)
+
+
+def _handle_models_save_locked(handler: HandlerBase, body: dict) -> None:
     from spark.config import ModelProfile
 
     name = str(body.get("name") or "").strip()
@@ -47,17 +52,23 @@ def _handle_models_save(handler: HandlerBase, body: dict) -> None:
         (p for p in state.cfg.model_profiles if p.id == pid), None
     )
     if existing:
+        same_target = existing.provider == provider_name and existing.base_url.rstrip("/") == base_url.rstrip("/")
         existing.name = name or existing.name or existing.model
         existing.provider = cast(ProviderName, provider_name)
         existing.base_url = base_url
         existing.model = model
-        if api_key:
+        if api_key or not same_target:
             existing.api_key = api_key
-        existing.api_keys = api_keys
-        existing.fallback_models = fallback_models
-        existing.small_model = small_model
+        if "api_key_env" in body or not same_target:
+            existing.api_key_env = str(body.get("api_key_env") or "").strip()
+        if "api_keys" in body or not same_target:
+            existing.api_keys = api_keys
+        if "fallback_models" in body:
+            existing.fallback_models = fallback_models
+        if "small_model" in body:
+            existing.small_model = small_model
     else:
-        if not api_key:
+        if not api_key and not state.cfg.active_profile_id and state.cfg.provider.name == provider_name and state.cfg.provider.base_url.rstrip("/") == base_url.rstrip("/"):
             api_key = state.cfg.provider.api_key or ""
         existing = ModelProfile(
             id=uuid.uuid4().hex[:8],
@@ -66,6 +77,7 @@ def _handle_models_save(handler: HandlerBase, body: dict) -> None:
             base_url=base_url,
             model=model,
             api_key=api_key,
+            api_key_env=str(body.get("api_key_env") or "").strip(),
             api_keys=api_keys,
             fallback_models=fallback_models,
             small_model=small_model,
@@ -76,6 +88,11 @@ def _handle_models_save(handler: HandlerBase, body: dict) -> None:
 
 
 def _handle_models_delete(handler: HandlerBase, body: dict) -> None:
+    with _route_state(handler).settings_lock:
+        _handle_models_delete_locked(handler, body)
+
+
+def _handle_models_delete_locked(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)
     pid = str(body.get("id") or "").strip()
     before = len(state.cfg.model_profiles)
@@ -93,6 +110,18 @@ def _handle_models_delete(handler: HandlerBase, body: dict) -> None:
 
 def _handle_models_activate(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)
+    with state.settings_lock:
+        if not state.turn_lock.acquire(blocking=False):
+            handler._json(409, {"error": "agent is busy"})
+            return
+        try:
+            _handle_models_activate_locked(handler, body)
+        finally:
+            state.turn_lock.release()
+
+
+def _handle_models_activate_locked(handler: HandlerBase, body: dict) -> None:
+    state = _route_state(handler)
     if state.busy:
         handler._json(409, {"error": "agent is busy"})
         return
@@ -103,23 +132,10 @@ def _handle_models_activate(handler: HandlerBase, body: dict) -> None:
     if not profile:
         handler._json(404, {"error": "unknown profile"})
         return
-    state.cfg.provider.name = profile.provider
-    state.cfg.provider.base_url = profile.base_url
-    state.cfg.provider.model = profile.model
-    if profile.api_key:
-        state.cfg.provider.api_key = profile.api_key
-    # 供应商韧性随档案同步（档案未配置时保持全局现状）
-    if profile.api_keys:
-        state.cfg.provider.api_keys = profile.api_keys
-    if profile.fallback_models:
-        state.cfg.provider.fallback_models = profile.fallback_models
-    if profile.small_model:
-        state.cfg.provider.small_model = profile.small_model
-    state.cfg.active_profile_id = profile.id
+    activate_model_profile(state.cfg, profile)
     _save_config(state.cfg)
     try:
-        with state.turn_lock:
-            state.rebuild_loop(session_id=state.session_id)
+        state.rebuild_loop(session_id=state.session_id)
     except SparkError as exc:
         handler._json(400, {"error": str(exc)})
         return
