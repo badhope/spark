@@ -68,7 +68,7 @@
 | 归档 | ✅ Web 删除 | codex `/archive`；ZCode 自动归档候选（窗口可配） |
 | 重命名 | ✅ 自动标题 | codex `/rename`；opencode ctrl+r |
 | 会话内 token 用量 | ✅ ContextMeter | codex `/status`；ZCode Usage Stats 面板 |
-| 消息级撤销/回滚 | ⚠️ 存储层支持，UI 未接 | ZCode Undo/Reapply（全有或全无）；Qoder `/rewind`（会话/文件分别恢复）；codex `thread/revert` |
+| 消息级撤销/回滚 | ✅ 时间轴 undo，可选连文件一并还原到该消息前的检查点 | ZCode Undo/Reapply（全有或全无）；Qoder `/rewind`（会话/文件分别恢复）；codex `thread/revert` |
 | 侧聊/旁支 | ❌ | codex `/side`(`/btw`)；ZCode Side Conversation；Qoder Side task |
 
 ## 5. 上下文 / 记忆 / 知识
@@ -131,7 +131,7 @@
 | 功能点 | spark | 竞品代表 |
 |---|---|---|
 | 子代理 | ✅ `task`（最多 4 并行）+ 声明式 `.claude/agents` | codex spawn_agent（并发/深度限制/消息板）；opencode general/explore/scout；ZCode subagents（frontmatter 超集）+ workflows |
-| 子代理独立模型 | ❌ | ZCode subagent `model`/`thoughtLevel`；codex `default_subagent_model` |
+| 子代理独立模型 | ✅ `.claude/agents/*.md` 的 `model:` 字段，按声明切 provider | ZCode subagent `model`/`thoughtLevel`；codex `default_subagent_model` |
 | 专业团队编排 | ❌ | Qoder Experts Mode（Lead + 6 专家 + Team Canvas）；ZCode Dynamic Workflows（JS 编排） |
 | 主 agent 切换 | ❌（单 agent） | opencode Tab 切 build/plan；codex `/agents` 指挥中心 |
 | 子会话导航 | ❌ | opencode 子会话树（leader+方向键）；codex `/subagents` |
@@ -174,10 +174,10 @@
 ## 12. 差距清单（建议优先级）
 
 **P0（低成本高价值，已有基础设施只差接线/UI）**
-- Fork 的 UI/API 暴露（`store.fork()` 已有）
-- 消息级 Undo（`truncate_messages/delete_message` 已有）+ 按轮"文件+消息"一并还原
-- `/export` 会话导出（markdown，`sessions.db` 全字段已有）
-- `@` 文件引用补全（前端 Composer + `/api/fs/tree` 已有）
+- ~~Fork 的 UI/API 暴露~~（已关闭：`/api/sessions/fork` + 前端入口）
+- ~~消息级 Undo + 按轮"文件+消息"一并还原~~（已关闭：`/api/messages/truncate` 支持 `restore_files`）
+- ~~`/export` 会话导出~~（已关闭：`/api/sessions/export` md/json + HTML 分享）
+- ~~`@` 文件引用补全~~（已关闭：Composer + `/api/fs/tree`）
 - effort 全链路（本轮已修 ✅）
 - system_prompt 全链路（本轮已修 ✅）
 

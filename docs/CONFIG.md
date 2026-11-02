@@ -73,7 +73,10 @@
 | `replay.enabled` | `true` | 启用按会话保存的回放记录，可能包含会话内容，需保护本地文件 |
 | `updater.mode` | `notify` | `notify` 提示更新；`off` 关闭版本检查；显式 `spark update` 不受影响 |
 
-高级设置中的权限规则与审批档案仅供查看；`/api/config` 展示的是用户规则而非所有作用域的合并视图。`permission_scopes` 不在该响应中，不能通过 `/api/settings` 写入。
+高级设置中的权限规则与审批档案可在 Web 里直接编辑（写 `user` 层，走
+`/api/permissions/rules` 与 `/api/approval_profiles/*`，见 [API.md](API.md)）。
+`/api/config` 展示的是用户规则而非所有作用域的合并视图；`permission_scopes` 不在该
+响应中，也不能通过 `/api/settings` 写入——`/api/settings` 对这四个键一律返回 400。
 
 ## MCP 服务器
 

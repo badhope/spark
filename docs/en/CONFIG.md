@@ -78,9 +78,11 @@ it cannot clear it.
 | `replay.enabled` | `true` | Enables per-session replay records, which may contain conversation content; protect local files |
 | `updater.mode` | `notify` | `notify` announces updates; `off` disables version checks; explicit `spark update` is unaffected |
 
-Permission rules and approval profiles in advanced settings are read-only. `/api/config`
-shows user rules, not a merged view of every scope. `permission_scopes` is not in that
-response and cannot be written through `/api/settings`.
+Permission rules and approval profiles in advanced settings are editable in the Web UI
+(user scope only, via `/api/permissions/rules` and `/api/approval_profiles/*`, see
+[API.md](API.md)). `/api/config` shows user rules, not a merged view of every scope.
+`permission_scopes` is not in that response and cannot be written through `/api/settings` —
+`/api/settings` returns 400 for all four of those keys.
 
 ## MCP servers
 

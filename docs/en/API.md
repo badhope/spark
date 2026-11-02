@@ -24,7 +24,7 @@ The server listens on `127.0.0.1` only by default (`spark web --host 0.0.0.0` op
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/status` | Session, sandbox mode, approval mode, context usage, plan, environment info |
-| `GET` | `/api/config` | Settings view (some sensitive values masked; not all config): provider, agent, context (incl. `agents_md` / `repo_map_max_chars` / `knowledge_*`), memory (incl. `embedding_*` / `rerank_model`), mcp_servers, hooks (incl. `on_deny`), replay, updater, plus read-only `permission_rules` / `approval_profiles` / `active_approval_profile_id` |
+| `GET` | `/api/config` | Settings view (some sensitive values masked; not all config): provider, agent, context (incl. `agents_md` / `repo_map_max_chars` / `knowledge_*`), memory (incl. `embedding_*` / `rerank_model`), mcp_servers, hooks (incl. `on_deny`), replay, updater, plus `permission_rules` / `approval_profiles` / `active_approval_profile_id` |
 | `GET` | `/api/models` | Model profiles (api_key masked, `active` flag) |
 | `GET` | `/api/agents_md` | Reads the AGENTS.md inside the workdir |
 | `GET` | `/api/memory` | Long-term memory: `items`, `search?q=` hits with score, `stats` |
@@ -95,32 +95,35 @@ restored only for the same server name and URL, otherwise dropped; an env placeh
 that cannot be safely restored produces an error. Config files store secrets in plaintext;
 restrict access.
 
-### `permission_rules` / `approval_profiles` write API design (read-only today)
+### `permission_rules` / `approval_profiles` write API
 
 `GET /api/config` returns `permission_rules`, `approval_profiles` and
 `active_approval_profile_id`. The rules are the user-level rules, not the project/local
-scopes; `permission_scopes` is not returned. `POST /api/settings` returns an explicit
-`400` (`... is read-only over /api/settings`) for any of these four keys instead of silently
-ignoring them.
+scopes; `permission_scopes` is not returned. `POST /api/settings` still returns an explicit
+`400` (`... is read-only over /api/settings`) for any of these four keys — governance goes
+through the dedicated endpoints below so the two semantics never blur.
 
-Write paths are intentionally not shipped yet: permission rules are a security boundary
-with deny-across-scopes precedence (`spark.policy.decide` +
-`_load_scoped_permission_rules`), and activating an approval profile rewrites the approval
-mode, tool allowlist and system prompt. A half-built write path is more dangerous than none.
-
-Planned endpoints (not implemented, pending security review):
+Why they are separate from `/api/settings`: permission rules are a security boundary with
+deny-across-scopes precedence (`spark.policy.decide` + `_load_scoped_permission_rules`), and
+activating an approval profile rewrites the approval mode, tool allowlist and system prompt.
+Their failure modes silently weaken or widen permissions, so they need their own response
+and their own audit trail.
 
 | Method | Path | Body | Semantics |
 | --- | --- | --- | --- |
-| `POST` | `/api/permissions/rules` | `{scope: "user", rules: [{action, resource, tool}]}` | `user` scope only; `project` / `local` come from workdir files and are never writable remotely |
-| `POST` | `/api/permissions/rules/delete` | `{scope, index}` | Delete by index so glob strings never act as primary keys |
-| `POST` | `/api/approval_profiles/save` | `{id?, name, approval, tools, system_prompt, model_profile_id}` | Mirrors `/api/models/save`: no `id` creates |
+| `POST` | `/api/permissions/rules` | `{scope: "user", rules: [{action, resource, tool}]}` | Replaces the `user` scope wholesale; `project` / `local` come from workdir files and any other `scope` returns `400` |
+| `POST` | `/api/permissions/rules/delete` | `{scope, index}` | Delete by index (glob strings are not stable keys); out of range `404`, negative `400` |
+| `POST` | `/api/approval_profiles/save` | `{id?, name, approval, tools, system_prompt, model_profile_id}` | Mirrors `/api/models/save`: no `id` creates; `approval` is required on create; unknown `model_profile_id` returns `404` |
 | `POST` | `/api/approval_profiles/delete` | `{id}` | Deleting the active profile clears `active_approval_profile_id` |
-| `POST` | `/api/approval_profiles/activate` | `{id}` | Activate and rebuild the AgentLoop (`settings_lock` → non-blocking `turn_lock`, same as `/api/models/activate`) |
+| `POST` | `/api/approval_profiles/activate` | `{id}` | Activate and rebuild the AgentLoop (`settings_lock` → non-blocking `turn_lock`); a profile with `model_profile_id` also switches that model profile |
 
 Shared constraints: every write runs inside `state.settings_lock` as
-"validate → apply → `save_config` → rebuild loop"; validation failure rolls back memory and
-returns `400`; writing `user`-scope rules additionally requires an audit-log entry.
+"validate → apply → `save_config`"; rule writes additionally re-validate the whole config
+against the pydantic models and roll back on failure. Every successful write appends an
+audit event (`permission_rules_written` / `approval_profile_written` /
+`approval_profile_deleted` / `approval_profile_activated`, see `spark.audit`). Malformed
+rule entries are rejected rather than dropped — a `deny` the user believes exists but
+doesn't is the worse outcome.
 
 ## SSE event format
 

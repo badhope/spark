@@ -24,7 +24,7 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/api/status` | 会话 / 沙箱模式 / 审批模式 / 上下文用量 / 计划列表 / 环境信息 |
-| `GET` | `/api/config` | 设置视图（部分敏感值打码，并非全部配置）：provider、agent、context（含 `agents_md` / `repo_map_max_chars` / `knowledge_*`）、memory（含 `embedding_*` / `rerank_model`）、mcp_servers、hooks（含 `on_deny`）、replay、updater，以及只读的 `permission_rules` / `approval_profiles` / `active_approval_profile_id` |
+| `GET` | `/api/config` | 设置视图（部分敏感值打码，并非全部配置）：provider、agent、context（含 `agents_md` / `repo_map_max_chars` / `knowledge_*`）、memory（含 `embedding_*` / `rerank_model`）、mcp_servers、hooks（含 `on_deny`）、replay、updater，以及 `permission_rules` / `approval_profiles` / `active_approval_profile_id` |
 | `GET` | `/api/models` | 模型 profile 列表（api_key 打码，含 `active` 标记） |
 | `GET` | `/api/agents_md` | 读取工作目录内 AGENTS.md 的内容与状态 |
 | `GET` | `/api/memory` | 长期记忆：`items` 全量、`search?q=关键词` 检索（带 score）、`stats` 统计 |
@@ -49,6 +49,7 @@
 | `POST` | `/api/sessions/delete` | `{session_id}` | 删除会话；删当前会话时自动切换 |
 | `POST` | `/api/sessions/switch` | `{session_id}` | 切换会话并返回消息历史 |
 | `POST` | `/api/checkpoints/rollback` | `{checkpoint_id}` | 回滚到检查点（恢复工作区文件 + 对话历史） |
+| `POST` | `/api/messages/truncate` | `{message_id, restore_files?}` | 消息级 undo：删除该消息及其后全部消息。`restore_files: true` 时一并把工作区恢复到该消息之前最近的检查点；没有可用快照时返回 `files_restored: false` + `restore_reason`，不假装还原过 |
 | `POST` | `/api/settings` | provider/agent/context/memory/hooks/mcp_servers/replay/updater 各节 | 保存设置并重建 AgentLoop；部分字段校验失败返回 `400` 且不落盘，agent 忙 `409`；缺省字段通常保持现状（切换目标时凭据池例外） |
 | `POST` | `/api/test` | `{base_url, model, api_key?}` | 探活模型接口（拒绝向与已配置不同的地址发送存储的密钥） |
 
@@ -75,27 +76,29 @@
 
 `api_keys` 提交时整体替换：不要将 GET 返回的掩码重新作为密钥提交；空数组清空。长密钥掩码会暴露首尾各四位。MCP env 默认合并，`env_replace: true` 才整体替换；更改目标时旧 env 不会自动带往新目标。MCP header 的占位符仅在同名服务器和相同 URL 下恢复，否则被丢弃；env 占位符无法安全恢复时返回错误。配置文件中密钥以明文保存，应限制访问。
 
-### `permission_rules` / `approval_profiles` 写接口设计（当前只读）
+### `permission_rules` / `approval_profiles` 写接口
 
-`GET /api/config` 已返回 `permission_rules`、`approval_profiles`、
-`active_approval_profile_id`，其中权限规则仅为用户层，不含 project/local 层。`permission_scopes` 不在该响应中。`POST /api/settings` 收到这四个键中的任何一个都会明确返回 `400`（`... is read-only over /api/settings`），而不是静默忽略。
+`GET /api/config` 返回 `permission_rules`、`approval_profiles`、
+`active_approval_profile_id`，其中权限规则仅为用户层，不含 project/local 层。`permission_scopes` 不在该响应中。`POST /api/settings` 收到这四个键中的任何一个仍会明确返回 `400`（`... is read-only over /api/settings`）——治理面走下面的独立端点，两套语义不混用。
 
-暂不开放写路径的原因：权限规则是 deny 跨层优先的安全边界
+之所以单独开端点而不是塞进 `/api/settings`：权限规则是 deny 跨层优先的安全边界
 （`spark.policy.decide` + `_load_scoped_permission_rules`），审批档案激活会改写
-审批模式、工具白名单与 system prompt；半成品写路径比不支持更危险。
-
-计划中的接口（未实现，待安全评审）：
+审批模式、工具白名单与 system prompt。它们的失败模式与普通设置不同（会静默削弱
+或放大权限），因此需要独立反馈、独立审计。
 
 | 方法 | 路径 | 请求体 | 语义 |
 | --- | --- | --- | --- |
-| `POST` | `/api/permissions/rules` | `{scope: "user", rules: [{action, resource, tool}]}` | 仅允许写 `user` 层；`project` / `local` 层由工作目录文件装配，不接受远程写入 |
-| `POST` | `/api/permissions/rules/delete` | `{scope, index}` | 按序号删除，避免 glob 字符串作为主键 |
-| `POST` | `/api/approval_profiles/save` | `{id?, name, approval, tools, system_prompt, model_profile_id}` | 与 `/api/models/save` 同构：无 `id` 为新建 |
+| `POST` | `/api/permissions/rules` | `{scope: "user", rules: [{action, resource, tool}]}` | 整体替换 `user` 层规则；`project` / `local` 层由工作目录文件装配，`scope` 传其它值返回 `400` |
+| `POST` | `/api/permissions/rules/delete` | `{scope, index}` | 按序号删除（glob 字符串不能当稳定主键）；越界返回 `404`，负数返回 `400` |
+| `POST` | `/api/approval_profiles/save` | `{id?, name, approval, tools, system_prompt, model_profile_id}` | 与 `/api/models/save` 同构：无 `id` 为新建；新建时 `approval` 必填；`model_profile_id` 不存在返回 `404` |
 | `POST` | `/api/approval_profiles/delete` | `{id}` | 删除档案；删除活跃档案时清空 `active_approval_profile_id` |
-| `POST` | `/api/approval_profiles/activate` | `{id}` | 激活并重建 AgentLoop（与 `/api/models/activate` 同样走 `settings_lock` → 非阻塞 `turn_lock`） |
+| `POST` | `/api/approval_profiles/activate` | `{id}` | 激活并重建 AgentLoop（走 `settings_lock` → 非阻塞 `turn_lock`）；档案带 `model_profile_id` 时联动切换模型档案 |
 
-共同约束：全部在 `state.settings_lock` 内完成「校验 → 应用 → `save_config` → 重建
-loop」；校验失败回滚内存并返回 `400`；写 `user` 层规则需要额外审计日志。
+共同约束：全部在 `state.settings_lock` 内完成「校验 → 应用 → `save_config`」；
+规则类写入额外用 pydantic 模型复核整份配置，失败回滚内存并返回 `400`；每个成功的
+写操作都会落一条审计事件（`permission_rules_written` / `approval_profile_written`
+/ `approval_profile_deleted` / `approval_profile_activated`，见 `spark.audit`）。
+非法规则条目一律报错而非静默丢弃——用户以为加了一条 `deny` 而它没生效是更糟的结果。
 
 ## SSE 事件格式
 
