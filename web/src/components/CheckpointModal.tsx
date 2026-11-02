@@ -38,6 +38,8 @@ export const CheckpointModal = memo(function CheckpointModal() {
   const [messages, setMessages] = useState<TimelineMessageBrief[]>([])
   const [confirmMsgId, setConfirmMsgId] = useState<number | null>(null)
   const [undoing, setUndoing] = useState<number | null>(null)
+  /** 消息级 undo 是否连带把工作区恢复到该消息之前的快照 */
+  const [restoreFiles, setRestoreFiles] = useState(false)
 
   const load = useCallback(async () => {
     setBusy(true)
@@ -91,9 +93,15 @@ export const CheckpointModal = memo(function CheckpointModal() {
   async function doUndo(messageId: number) {
     setUndoing(messageId)
     try {
-      const data = await truncateFromMessage(messageId)
+      const data = await truncateFromMessage(messageId, restoreFiles)
       applyHistory(data as never)
-      pushToast("toast.undoDone", "success")
+      // 勾了"连文件一起还原"但没有可用快照时必须如实说明，只回退了对话——
+      // 不能让用户以为工作区也回去了。
+      if (restoreFiles && !data.files_restored) {
+        pushToast("toast.undoFilesSkipped", "info")
+      } else {
+        pushToast("toast.undoDone", "success")
+      }
       await load()
     } catch {
       pushToast("toast.undoFailed", "error")
@@ -171,6 +179,18 @@ export const CheckpointModal = memo(function CheckpointModal() {
               <p className="mb-2 mt-4 px-1 text-[11px] font-semibold uppercase tracking-wide text-ink3">
                 {t("timeline.messages", lang)}
               </p>
+              <label className="mb-2 flex items-start gap-2 px-1">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 accent-[var(--accent)]"
+                  checked={restoreFiles}
+                  onChange={(e) => setRestoreFiles(e.target.checked)}
+                />
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-[11.5px] text-ink2">{t("timeline.restoreFiles", lang)}</span>
+                  <span className="text-[10px] leading-snug text-ink3">{t("timeline.restoreFilesHint", lang)}</span>
+                </span>
+              </label>
               {messages.length === 0 ? (
                 <p className="px-1 pb-4 text-xs text-ink3">{t("timeline.messagesEmpty", lang)}</p>
               ) : (

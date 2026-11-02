@@ -631,16 +631,91 @@ export async function fetchTimeline(): Promise<{
   return readJson(await fetchWithTimeout("/api/timeline"))
 }
 
-export async function truncateFromMessage(messageId: number): Promise<{
+export async function truncateFromMessage(
+  messageId: number,
+  restoreFiles = false,
+): Promise<{
   ok: boolean
   status: Status
   messages: HistoryMessage[]
+  files_restored?: boolean
+  restore_reason?: string
+  restore_counts?: Record<string, unknown>
 }> {
   return readJson(
     await fetchWithTimeout("/api/messages/truncate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message_id: messageId }),
+      body: JSON.stringify({ message_id: messageId, restore_files: restoreFiles }),
+    }),
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* 治理：权限规则 / 审批档案写接口（user 层；project/local 只读）        */
+/* ------------------------------------------------------------------ */
+
+export interface PermissionRulePayload {
+  action: "allow" | "prompt" | "deny"
+  resource: string
+  tool?: string
+}
+
+export async function savePermissionRules(
+  rules: PermissionRulePayload[],
+): Promise<{ ok: boolean; permission_rules: PermissionRulePayload[] }> {
+  return readJson(
+    await fetchWithTimeout("/api/permissions/rules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "user", rules }),
+    }),
+  )
+}
+
+export async function deletePermissionRule(index: number): Promise<{ ok: boolean; remaining: number }> {
+  return readJson(
+    await fetchWithTimeout("/api/permissions/rules/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "user", index }),
+    }),
+  )
+}
+
+export async function saveApprovalProfile(payload: {
+  id?: string
+  name: string
+  approval: string
+  tools?: string[]
+  system_prompt?: string
+  model_profile_id?: string
+}): Promise<{ ok: boolean; id: string }> {
+  return readJson(
+    await fetchWithTimeout("/api/approval_profiles/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  )
+}
+
+export async function deleteApprovalProfile(id: string): Promise<{ ok: boolean }> {
+  return readJson(
+    await fetchWithTimeout("/api/approval_profiles/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    }),
+  )
+}
+
+export async function activateApprovalProfile(id: string): Promise<{ ok: boolean; status: Status }> {
+  return readJson(
+    await fetchWithTimeout("/api/approval_profiles/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
     }),
   )
 }

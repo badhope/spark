@@ -118,6 +118,7 @@ export interface FullConfig {
   updater?: { mode: "notify" | "off" }
   permission_rules?: PermissionRule[]
   approval_profiles?: ApprovalProfile[]
+  active_approval_profile_id?: string
   env_probe?: Array<{ name: string; path: string; version: string }>
 }
 

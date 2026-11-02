@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { FullConfig, HookEntry, McpServer, ModelProfile, ProbeResult, SettingsPayload, Status } from "../types"
-import { fetchConfig, fetchAgentsMd, saveAgentsMd, saveSettings, testConnection, listModelProfiles, saveModelProfile, deleteModelProfile, activateModelProfile, fetchDiagnostics, runSelfHeal, type HealthRow } from "../api"
+import { fetchConfig, fetchAgentsMd, saveAgentsMd, saveSettings, testConnection, listModelProfiles, saveModelProfile, deleteModelProfile, activateModelProfile, fetchDiagnostics, runSelfHeal, savePermissionRules, deletePermissionRule, saveApprovalProfile, deleteApprovalProfile, activateApprovalProfile, type HealthRow } from "../api"
 import MemorySection from "./MemorySection"
 import SkillsSection from "./SkillsSection"
 import PromptsSection from "./PromptsSection"
@@ -217,6 +217,11 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
   const [headerText, setHeaderText] = useState<Record<string, string>>({})
   // Empty = keep the stored embedding key (same contract as provider.api_key).
   const [embeddingKeyInput, setEmbeddingKeyInput] = useState("")
+  // 治理面：权限规则/审批档案走各自的即时端点（与模型档案同构），
+  // 不塞进 /api/settings 的统一保存——它们是安全边界变更，需要独立反馈。
+  const [ruleBusy, setRuleBusy] = useState(false)
+  const [ruleDraft, setRuleDraft] = useState<{ action: "allow" | "prompt" | "deny"; resource: string; tool: string }>({ action: "deny", resource: "", tool: "" })
+  const [profileDraft, setProfileDraft] = useState({ name: "", approval: "suggest", tools: "" })
   // Single source of truth is the UI store: a local copy left the command
   // palette computing "next theme" from a stale value.
   const theme = useUiStore((s) => s.theme)
@@ -583,6 +588,82 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
       setNotice(t("settings.switchFailed", lang, { msg: e instanceof Error ? e.message : String(e) }))
     } finally {
       setBusy(null)
+    }
+  }
+
+  async function refreshGovernance() {
+    const data = await fetchConfig()
+    setCfg((c) => (c ? { ...c, permission_rules: data.permission_rules, approval_profiles: data.approval_profiles, active_approval_profile_id: data.active_approval_profile_id } : c))
+  }
+
+  async function addRule() {
+    const next = [...(cfg?.permission_rules ?? []), { action: ruleDraft.action, resource: ruleDraft.resource.trim(), tool: ruleDraft.tool.trim() }]
+    setRuleBusy(true)
+    try {
+      await savePermissionRules(next)
+      await refreshGovernance()
+      setRuleDraft({ action: "deny", resource: "", tool: "" })
+      setNotice(t("advanced.ruleSaved", lang))
+    } catch (e) {
+      setNotice(t("settings.saveFailed", lang, { msg: e instanceof Error ? e.message : String(e) }))
+    } finally {
+      setRuleBusy(false)
+    }
+  }
+
+  async function removeRule(index: number) {
+    setRuleBusy(true)
+    try {
+      await deletePermissionRule(index)
+      await refreshGovernance()
+    } catch (e) {
+      setNotice(t("settings.saveFailed", lang, { msg: e instanceof Error ? e.message : String(e) }))
+    } finally {
+      setRuleBusy(false)
+    }
+  }
+
+  async function addProfile() {
+    setRuleBusy(true)
+    try {
+      await saveApprovalProfile({
+        name: profileDraft.name.trim(),
+        approval: profileDraft.approval,
+        tools: profileDraft.tools.split(/\s+/).filter(Boolean),
+      })
+      await refreshGovernance()
+      setProfileDraft({ name: "", approval: "suggest", tools: "" })
+      setNotice(t("advanced.profileSaved", lang))
+    } catch (e) {
+      setNotice(t("settings.saveFailed", lang, { msg: e instanceof Error ? e.message : String(e) }))
+    } finally {
+      setRuleBusy(false)
+    }
+  }
+
+  async function removeProfile(id: string) {
+    setRuleBusy(true)
+    try {
+      await deleteApprovalProfile(id)
+      await refreshGovernance()
+    } catch (e) {
+      setNotice(t("settings.saveFailed", lang, { msg: e instanceof Error ? e.message : String(e) }))
+    } finally {
+      setRuleBusy(false)
+    }
+  }
+
+  async function activateProfile(id: string) {
+    setRuleBusy(true)
+    try {
+      const act = await activateApprovalProfile(id)
+      onSaved(act.status)
+      await refreshGovernance()
+      setNotice(t("advanced.profileActivated", lang))
+    } catch (e) {
+      setNotice(t("settings.switchFailed", lang, { msg: e instanceof Error ? e.message : String(e) }))
+    } finally {
+      setRuleBusy(false)
     }
   }
 
@@ -1645,20 +1726,46 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                     <p className="text-xs text-ink3">{t("advanced.permissionEmpty", lang)}</p>
                   ) : (
                     <div className="flex flex-col divide-y divide-line rounded-lg border border-line">
-                      <div className="grid grid-cols-[80px_1fr_120px] gap-2 bg-panel2 px-3 py-1.5 text-[10.5px] font-medium text-ink3">
+                      <div className="grid grid-cols-[80px_1fr_120px_28px] gap-2 bg-panel2 px-3 py-1.5 text-[10.5px] font-medium text-ink3">
                         <span>{t("advanced.ruleAction", lang)}</span>
                         <span>{t("advanced.ruleResource", lang)}</span>
                         <span>{t("advanced.ruleTool", lang)}</span>
+                        <span />
                       </div>
                       {cfg.permission_rules.map((r, i) => (
-                        <div key={`${r.resource}-${i}`} className="grid grid-cols-[80px_1fr_120px] items-center gap-2 px-3 py-1.5">
+                        <div key={`${r.resource}-${i}`} className="grid grid-cols-[80px_1fr_120px_28px] items-center gap-2 px-3 py-1.5">
                           <Badge tone={r.action === "allow" ? "ok" : r.action === "deny" ? "err" : "warn"}>{r.action}</Badge>
                           <span className="truncate font-mono text-[11.5px] text-ink2" title={r.resource}>{r.resource}</span>
                           <span className="truncate font-mono text-[11.5px] text-ink3" title={r.tool ?? ""}>{r.tool || "*"}</span>
+                          <button
+                            type="button"
+                            title={t("common.remove", lang)}
+                            className="text-ink3 transition-colors hover:text-err disabled:opacity-40"
+                            disabled={ruleBusy}
+                            onClick={() => void removeRule(i)}
+                          >
+                            <IconX size={12} />
+                          </button>
                         </div>
                       ))}
                     </div>
                   )}
+                  <div className="flex flex-col gap-2 rounded-lg border border-line bg-panel2 p-2.5">
+                    <div className="grid grid-cols-[92px_1fr] gap-2">
+                      <Select value={ruleDraft.action} onChange={(e) => setRuleDraft((d) => ({ ...d, action: e.target.value as "allow" | "prompt" | "deny" }))}>
+                        <option value="deny">deny</option>
+                        <option value="prompt">prompt</option>
+                        <option value="allow">allow</option>
+                      </Select>
+                      <TextInput value={ruleDraft.resource} onChange={(e) => setRuleDraft((d) => ({ ...d, resource: e.target.value }))} placeholder={t("advanced.ruleResourcePh", lang)} className="font-mono" />
+                    </div>
+                    <div className="flex gap-2">
+                      <TextInput value={ruleDraft.tool} onChange={(e) => setRuleDraft((d) => ({ ...d, tool: e.target.value }))} placeholder={t("advanced.ruleToolPh", lang)} className="font-mono" />
+                      <Button size="sm" variant="soft" disabled={ruleBusy || !ruleDraft.resource.trim()} onClick={() => void addRule()}>
+                        <IconPlus size={12} /> {t("advanced.ruleAdd", lang)}
+                      </Button>
+                    </div>
+                  </div>
                 </section>
               )}
 
@@ -1674,16 +1781,42 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                         <div key={p.id} className="flex flex-col gap-1 rounded-lg border border-line bg-panel2 px-3 py-2">
                           <div className="flex items-center gap-2">
                             <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink">{p.name || p.id}</span>
+                            {cfg.active_approval_profile_id === p.id && <Badge tone="ok">{t("advanced.profileActive", lang)}</Badge>}
                             <Badge tone="accent">{p.approval}</Badge>
                           </div>
                           <p className="truncate font-mono text-[10.5px] text-ink3">
                             {t("advanced.profileTools", lang)}: {p.tools && p.tools.length > 0 ? p.tools.join(" ") : "*"}
                             {p.model_profile_id ? ` · ${t("advanced.profileModel", lang)}: ${p.model_profile_id}` : ""}
                           </p>
+                          <div className="flex gap-2 pt-0.5">
+                            <Button size="sm" variant="ghost" disabled={ruleBusy || cfg.active_approval_profile_id === p.id} onClick={() => void activateProfile(p.id)}>
+                              {t("advanced.profileActivate", lang)}
+                            </Button>
+                            <Button size="sm" variant="ghost" disabled={ruleBusy} onClick={() => void removeProfile(p.id)}>
+                              {t("common.remove", lang)}
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
                   )}
+                  <div className="flex flex-col gap-2 rounded-lg border border-line bg-panel2 p-2.5">
+                    <div className="grid grid-cols-2 gap-2">
+                      <TextInput value={profileDraft.name} onChange={(e) => setProfileDraft((d) => ({ ...d, name: e.target.value }))} placeholder={t("advanced.profileNewNamePh", lang)} />
+                      <Select value={profileDraft.approval} onChange={(e) => setProfileDraft((d) => ({ ...d, approval: e.target.value }))}>
+                        <option value="suggest">suggest</option>
+                        <option value="auto-edit">auto-edit</option>
+                        <option value="full-auto">full-auto</option>
+                        <option value="plan-only">plan-only</option>
+                        <option value="approve-plan">approve-plan</option>
+                        <option value="manual">manual</option>
+                      </Select>
+                    </div>
+                    <TextInput value={profileDraft.tools} onChange={(e) => setProfileDraft((d) => ({ ...d, tools: e.target.value }))} placeholder={t("advanced.profileToolsPh", lang)} className="font-mono" />
+                    <Button size="sm" variant="soft" disabled={ruleBusy || !profileDraft.name.trim()} onClick={() => void addProfile()}>
+                      <IconPlus size={12} /> {t("advanced.profileCreate", lang)}
+                    </Button>
+                  </div>
                 </section>
               )}
             </div>
