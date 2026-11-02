@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -41,7 +42,7 @@ def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     cfg.agent.system_prompt = ""
     work = tmp_path / "work"
     work.mkdir()
-    return SimpleNamespace(workdir=work, cfg=cfg, busy=False)
+    return SimpleNamespace(workdir=work, cfg=cfg, busy=False, settings_lock=threading.Lock())
 
 
 def call(fn, state, body: dict) -> tuple[int | None, Any]:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -45,6 +47,19 @@ while True:
         if req_id is not None:
             write({"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": "unknown"}})
 """
+
+
+def test_make_audit_invokes_pip_audit_as_python_module() -> None:
+    make = shutil.which("make")
+    if make is None:
+        pytest.skip("make is unavailable")
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [make, "-n", "audit"], cwd=root, capture_output=True, text=True, check=True
+    )
+    command = next(line for line in result.stdout.splitlines() if "-m pip_audit" in line)
+    assert "-m pip -m pip_audit" not in command
+    assert "-m pip_audit --progress-spinner off" in command
 
 
 def test_web_approver_includes_tool_call_id() -> None:
@@ -175,3 +190,34 @@ def test_ui_dir_finds_react_dist() -> None:
     ui = ui_dir_for()
     assert ui is not None
     assert (ui / "index.html").is_file()
+
+
+def test_makefile_uses_the_platform_venv_layout() -> None:
+    makefile = Path(__file__).parents[1] / "Makefile"
+    text = makefile.read_text(encoding="utf-8")
+    expected = ".venv/Scripts/python.exe" if sys.platform == "win32" else ".venv/bin/python"
+    assert expected in text
+
+    make = shutil.which("make")
+    if make is None:
+        return
+    expanded = subprocess.run(
+        [make, "-n", "test"],
+        cwd=makefile.parent,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert expected in expanded
+    if sys.platform == "win32":
+        assert ".venv/bin/python" not in expanded
+
+    lint_expanded = subprocess.run(
+        [make, "-n", "lint"],
+        cwd=makefile.parent,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert f"{expected} -m ruff check src/spark tests" in lint_expanded
+    assert "pip install" not in lint_expanded

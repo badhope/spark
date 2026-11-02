@@ -197,3 +197,34 @@ async def test_tui_narrow_approval_dialog_fits_buttons(tmp_path) -> None:
         )
         assert app.screen.query_one("#dialog").styles.max_width is not None
     store.close()
+
+
+def test_key_status_matches_require_api_key_for_unbound_env(monkeypatch) -> None:
+    """与 require_api_key 同口径：未绑定 api_key_env 时不得把 SPARK_API_KEY 当已配置。"""
+    from spark.config import require_api_key
+    from spark.errors import ConfigError
+
+    monkeypatch.setenv("SPARK_API_KEY", "sk-global-but-unbound")
+    cfg = make_cfg(provider__api_key=None)
+    cfg.provider.api_key_env = ""
+    marker, label = key_status(cfg)
+    with pytest.raises(ConfigError):
+        require_api_key(cfg)
+    assert marker == "X", label
+
+
+def test_key_status_accepts_bound_env(monkeypatch) -> None:
+    monkeypatch.setenv("BOUND_KEY", "sk-bound")
+    cfg = make_cfg(provider__api_key=None)
+    cfg.provider.api_key_env = "BOUND_KEY"
+    marker, label = key_status(cfg)
+    assert marker == "OK"
+    assert "BOUND_KEY" in label
+
+
+def test_key_status_treats_ollama_as_usable_without_key() -> None:
+    cfg = make_cfg(provider__api_key=None)
+    cfg.provider.name = "ollama"
+    cfg.provider.api_key_env = ""
+    marker, _label = key_status(cfg)
+    assert marker == "OK"
