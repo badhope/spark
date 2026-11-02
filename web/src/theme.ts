@@ -57,3 +57,42 @@ export function initTheme(): Theme {
   }
   return theme
 }
+
+/* ------------------------------------------------------------------ */
+/* 强调色主题（palette）                                               */
+/* 明暗是"模式"，配色是"主题"——两者正交，可以任意组合。              */
+/* 只覆盖强调色系，不动中性色：中性色改了会破坏对比度与可读性。        */
+/* ------------------------------------------------------------------ */
+
+export type Palette = "ember" | "ocean" | "forest" | "violet" | "mono"
+
+const PALETTE_KEY = "spark-palette"
+
+export const PALETTES: Array<{ id: Palette; label: string }> = [
+  { id: "ember", label: "Ember" },
+  { id: "ocean", label: "Ocean" },
+  { id: "forest", label: "Forest" },
+  { id: "violet", label: "Violet" },
+  { id: "mono", label: "Mono" },
+]
+
+export function getStoredPalette(): Palette {
+  try {
+    const v = localStorage.getItem(PALETTE_KEY)
+    if (v === "ember" || v === "ocean" || v === "forest" || v === "violet" || v === "mono") return v
+  } catch {
+    /* ignore */
+  }
+  return "ember"
+}
+
+export function applyPalette(palette: Palette): void {
+  // data-palette 挂在 <html> 上，由 index.css 覆盖 --accent 系列变量。
+  // 用属性而不是内联样式：主题切换时不必重算 JS，CSS 直接级联。
+  document.documentElement.setAttribute("data-palette", palette)
+  try {
+    localStorage.setItem(PALETTE_KEY, palette)
+  } catch {
+    /* ignore */
+  }
+}

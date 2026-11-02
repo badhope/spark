@@ -84,6 +84,10 @@ export interface FullConfig {
     show_keywords: boolean
     show_notices: boolean
     system_prompt: string
+    auto_review?: boolean
+    network_access?: boolean
+    format_on_write?: boolean
+    extra_dirs?: string[]
   }
   context: {
     agents_md: string
@@ -177,6 +181,9 @@ export interface SettingsPayload {
     show_notices?: boolean
     effort?: "low" | "medium" | "high"
     system_prompt?: string
+    auto_review?: boolean
+    network_access?: boolean
+    format_on_write?: boolean
   }
   context?: {
     compact_threshold?: number

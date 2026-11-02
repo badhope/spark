@@ -10,7 +10,7 @@ import KnowledgeSection from "./KnowledgeSection"
 import AutomationsSection from "./AutomationsSection"
 import { McpRegistryModal } from "./McpRegistryModal"
 import type { McpRegistryItem } from "../api"
-import type { Theme } from "../theme"
+import { PALETTES, type Palette, type Theme } from "../theme"
 import { Badge, Button, Field, IconButton, Select, Spinner, TextArea, TextInput, Toggle, cls } from "./ui"
 import { IconBrain, IconCheck, IconClock, IconCommand, IconFile, IconFolder, IconGlobe, IconKey, IconLayers, IconMoon, IconPlus, IconRefresh, IconSettings, IconSpark, IconStethoscope, IconSun, IconTerminal, IconTrash, IconWrench, IconX } from "./icons"
 import { useSessionStore } from "../store/sessionStore"
@@ -26,6 +26,15 @@ function splitArgs(raw: string): string[] {
   let m: RegExpExecArray | null
   while ((m = re.exec(raw)) !== null) out.push(m[1] ?? m[2] ?? m[3])
   return out
+}
+
+/** 色块取样用静态色：CSS 变量要到 applyPalette 之后才变，静态表更直观 */
+const PALETTE_SWATCH: Record<Palette, string> = {
+  ember: "#ff7a2f",
+  ocean: "#2f9dff",
+  forest: "#35c98a",
+  violet: "#a07dff",
+  mono: "#b9b9c4",
 }
 
 const HOOK_EVENTS = [
@@ -229,6 +238,8 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
   // palette computing "next theme" from a stale value.
   const theme = useUiStore((s) => s.theme)
   const setTheme = useUiStore((s) => s.setTheme)
+  const palette = useUiStore((s) => s.palette)
+  const setPalette = useUiStore((s) => s.setPalette)
   const pushToast = useUiStore((s) => s.pushToast)
   // 注意：hook 必须全部在 `if (!cfg)` 早退之前，否则首次渲染（cfg 仍是 null）
   // 与数据到达后的渲染 hook 数量不一致，React 直接抛 #310 白屏。
@@ -437,6 +448,10 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
           show_notices: cfg.agent.show_notices,
           effort: cfg.agent.effort,
           system_prompt: cfg.agent.system_prompt ?? "",
+          // 只提交后端已回显的字段：老版本后端不认这些键时不要凭空造值。
+          ...(cfg.agent.auto_review !== undefined ? { auto_review: cfg.agent.auto_review } : {}),
+          ...(cfg.agent.network_access !== undefined ? { network_access: cfg.agent.network_access } : {}),
+          ...(cfg.agent.format_on_write !== undefined ? { format_on_write: cfg.agent.format_on_write } : {}),
         },
         // Project tab edits land here; without this field every context change
         // was silently discarded on save. Optional keys are omitted when the
@@ -1027,6 +1042,37 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                   <TextInput type="number" value={cfg.agent.max_turn_tokens} onChange={(e) => patchAgent({ max_turn_tokens: Number(e.target.value) || 0 })} />
                 </Field>
               </section>
+
+              <section className="surface flex flex-col gap-3 p-4">
+                <div>
+                  <h3 className="text-[13px] font-semibold text-ink">{t("agent.safety", lang)}</h3>
+                  <p className="mt-1 text-[11.5px] leading-relaxed text-ink3">{t("agent.safetyDesc", lang)}</p>
+                </div>
+
+                <label className="flex items-start justify-between gap-3">
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-[12.5px] text-ink">{t("agent.autoReview", lang)}</span>
+                    <span className="text-[10.5px] leading-snug text-ink3">{t("agent.autoReviewHint", lang)}</span>
+                  </span>
+                  <Toggle checked={cfg.agent.auto_review ?? false} onChange={(v) => patchAgent({ auto_review: v })} />
+                </label>
+
+                <label className="flex items-start justify-between gap-3">
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-[12.5px] text-ink">{t("agent.networkAccess", lang)}</span>
+                    <span className="text-[10.5px] leading-snug text-ink3">{t("agent.networkAccessHint", lang)}</span>
+                  </span>
+                  <Toggle checked={cfg.agent.network_access ?? true} onChange={(v) => patchAgent({ network_access: v })} />
+                </label>
+
+                <label className="flex items-start justify-between gap-3">
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-[12.5px] text-ink">{t("agent.formatOnWrite", lang)}</span>
+                    <span className="text-[10.5px] leading-snug text-ink3">{t("agent.formatOnWriteHint", lang)}</span>
+                  </span>
+                  <Toggle checked={cfg.agent.format_on_write ?? false} onChange={(v) => patchAgent({ format_on_write: v })} />
+                </label>
+              </section>
             </div>
           )}
 
@@ -1174,6 +1220,33 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                       {th === "light" ? <IconSun size={16} /> : th === "dark" ? <IconMoon size={16} /> : <IconLayers size={16} />}
                       <span className="text-xs font-medium text-ink">{th === "light" ? t("display.light", lang) : th === "dark" ? t("display.dark", lang) : t("display.system", lang)}</span>
                       {theme === th && <IconCheck size={12} className="text-accent" />}
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="surface flex flex-col gap-3 p-4">
+                <div>
+                  <h3 className="text-[13px] font-semibold text-ink">{t("display.palette", lang)}</h3>
+                  <p className="mt-1 text-[11.5px] leading-relaxed text-ink3">{t("display.paletteDesc", lang)}</p>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {PALETTES.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setPalette(p.id)}
+                      title={p.label}
+                      className={cls(
+                        "flex flex-col items-center gap-1.5 rounded-[10px] border px-1 py-2.5 transition-[border-color,background-color] duration-150",
+                        palette === p.id ? "border-accent bg-accent-soft/40" : "border-line bg-panel2 hover:bg-hover",
+                      )}
+                    >
+                      <span
+                        className="h-4 w-4 rounded-full ring-1 ring-line"
+                        style={{ background: PALETTE_SWATCH[p.id] }}
+                      />
+                      <span className="text-[10px] font-medium text-ink2">{p.label}</span>
                     </button>
                   ))}
                 </div>

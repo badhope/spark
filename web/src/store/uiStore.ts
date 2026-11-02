@@ -1,7 +1,7 @@
 import { create } from "zustand"
 import { getDefaultLang, setDefaultLang, type Lang, type TranslationKey } from "../i18n"
-import type { Theme } from "../theme"
-import { applyTheme, getStoredTheme, initTheme } from "../theme"
+import type { Palette, Theme } from "../theme"
+import { applyPalette, applyTheme, getStoredPalette, getStoredTheme, initTheme } from "../theme"
 import type { CheckpointRow } from "../api"
 
 export type SettingsTab =
@@ -40,6 +40,8 @@ export interface ConfirmRequest {
 
 interface UiState {
   theme: Theme
+  palette: Palette
+  setPalette: (p: Palette) => void
   settingsOpen: boolean
   sidebarOpen: boolean
   rightPanelOpen: boolean
@@ -95,6 +97,7 @@ let toastCounter = 0
 
 export const useUiStore = create<UiState>((set) => ({
   theme: initTheme(),
+  palette: getStoredPalette(),
   settingsOpen: false,
   sidebarOpen: window.innerWidth >= 1024,
   rightPanelOpen: true,
@@ -115,6 +118,10 @@ export const useUiStore = create<UiState>((set) => ({
   setTheme: (t) => {
     applyTheme(t)
     set({ theme: t })
+  },
+  setPalette: (p) => {
+    applyPalette(p)
+    set({ palette: p })
   },
   cycleTheme: () => {
     const order: Theme[] = ["light", "dark", "system"]

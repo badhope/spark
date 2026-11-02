@@ -131,6 +131,79 @@
   --highlight: rgba(255, 255, 255, 0.9);
 }
 
+/* ---------------- 强调色主题（data-palette） ----------------
+   明暗是"模式"，配色是"主题"，两者正交。这里只覆盖强调色系：
+   中性色一旦按主题改动，对比度与可读性就会随主题漂移，
+   所以底色/文字/边框永远由上面的明暗块决定。 */
+[data-palette="ocean"] {
+  --accent: #2f9dff;
+  --accent-strong: #66b8ff;
+  --accent-soft: rgba(47, 157, 255, 0.15);
+  --accent-glow: rgba(47, 157, 255, 0.28);
+  --on-accent: #04121f;
+  --caret: #2f9dff;
+}
+[data-theme="light"][data-palette="ocean"] {
+  --accent: #0b72d0;
+  --accent-strong: #095aa6;
+  --accent-soft: rgba(11, 114, 208, 0.1);
+  --accent-glow: rgba(11, 114, 208, 0.2);
+  --on-accent: #ffffff;
+  --caret: #0b72d0;
+}
+
+[data-palette="forest"] {
+  --accent: #35c98a;
+  --accent-strong: #63dda6;
+  --accent-soft: rgba(53, 201, 138, 0.15);
+  --accent-glow: rgba(53, 201, 138, 0.28);
+  --on-accent: #04140d;
+  --caret: #35c98a;
+}
+[data-theme="light"][data-palette="forest"] {
+  --accent: #0d8a58;
+  --accent-strong: #076c44;
+  --accent-soft: rgba(13, 138, 88, 0.1);
+  --accent-glow: rgba(13, 138, 88, 0.2);
+  --on-accent: #ffffff;
+  --caret: #0d8a58;
+}
+
+[data-palette="violet"] {
+  --accent: #a07dff;
+  --accent-strong: #bb9dff;
+  --accent-soft: rgba(160, 125, 255, 0.16);
+  --accent-glow: rgba(160, 125, 255, 0.3);
+  --on-accent: #0f0720;
+  --caret: #a07dff;
+}
+[data-theme="light"][data-palette="violet"] {
+  --accent: #6d3fe0;
+  --accent-strong: #5a2fc4;
+  --accent-soft: rgba(109, 63, 224, 0.1);
+  --accent-glow: rgba(109, 63, 224, 0.2);
+  --on-accent: #ffffff;
+  --caret: #6d3fe0;
+}
+
+/* mono：无彩强调色，适合投屏/录屏/印刷校对——不抢内容注意力 */
+[data-palette="mono"] {
+  --accent: #d4d4dc;
+  --accent-strong: #f0f0f4;
+  --accent-soft: rgba(212, 212, 220, 0.14);
+  --accent-glow: rgba(212, 212, 220, 0.2);
+  --on-accent: #101014;
+  --caret: #d4d4dc;
+}
+[data-theme="light"][data-palette="mono"] {
+  --accent: #3f3f4a;
+  --accent-strong: #23232b;
+  --accent-soft: rgba(63, 63, 74, 0.1);
+  --accent-glow: rgba(63, 63, 74, 0.16);
+  --on-accent: #ffffff;
+  --caret: #3f3f4a;
+}
+
 /* ---------------- 基础 ---------------- */
 * {
   scrollbar-width: thin;
