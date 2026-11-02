@@ -515,6 +515,24 @@ class SessionStore:
             ).fetchone()
             return dict(row) if row else None
 
+    def nearest_checkpoint_at_or_before(
+        self, session_id: str, message_id: int
+    ) -> dict | None:
+        """Latest checkpoint whose message_id <= *message_id*.
+
+        Message-level undo needs the file state as it was **before** the message
+        being undone, so the checkpoint to restore is the one written at (or
+        before) that message — not the newest one.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT * FROM checkpoints
+                   WHERE session_id = ? AND message_id <= ?
+                   ORDER BY message_id DESC, id DESC LIMIT 1""",
+                (session_id, message_id),
+            ).fetchone()
+            return dict(row) if row else None
+
     def delete_messages_after(self, session_id: str, message_id: int) -> int:
         """Delete messages with id > message_id (and their tool events). Returns removed count."""
         with self._lock:

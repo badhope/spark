@@ -338,6 +338,15 @@ class SparkWebState:
                 {"from": previous_session, "to": self.session_id},
             )
 
+    def _effective_approval(self) -> str:
+        """当前真正生效的审批模式（审批档案可覆盖基线）。
+
+        与 :meth:`AgentLoop._approval_mode` 同一语义；loop 未就绪时回落到配置基线。
+        """
+        loop = self.loop
+        override = getattr(loop, "_approval_override", None) if loop is not None else None
+        return str(override or self.cfg.agent.approval)
+
     def status(self) -> dict:
         # 凭据可来自配置或环境变量（SPARK_* / DEEPSEEK_API_KEY 等）：只读配置字段
         # 会把"环境变量供 key"的部署误显示成未配置。
@@ -373,7 +382,11 @@ class SparkWebState:
             "env": self.env_info,
             "model": self.cfg.provider.model,
             "provider": self.cfg.provider.name,
-            "approval": self.cfg.agent.approval,
+            # 生效值，不是基线值：激活的审批档案会覆盖 agent.approval
+            # （见 AgentLoop._approval_mode）。此前这里读基线，档案生效时
+            # UI 会显示错误的审批模式。
+            "approval": self._effective_approval(),
+            "approval_base": self.cfg.agent.approval,
             "base_url": self.cfg.provider.base_url,
             "api_key_masked": mask_secret(key),
             "has_api_key": bool(key),
@@ -447,7 +460,10 @@ class SparkWebState:
                 "small_model": self.cfg.provider.small_model,
             },
             "agent": {
+                # 基线值（设置表单编辑的就是它）；生效值见 effective_approval，
+                # 两者不同说明有审批档案在覆盖。
                 "approval": self.cfg.agent.approval,
+                "effective_approval": self._effective_approval(),
                 "workdir_only": self.cfg.agent.workdir_only,
                 "sandbox_mode": self.cfg.agent.sandbox_mode,
                 "protected_paths": list(self.cfg.agent.protected_paths),

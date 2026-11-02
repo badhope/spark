@@ -523,14 +523,20 @@ def _handle_messages_delete(handler: HandlerBase, body: dict) -> None:
 def _handle_messages_truncate(handler: HandlerBase, body: dict) -> None:
     """P2 双粒度时间机器：消息级 undo——删除指定消息及其后全部消息。
 
-    与检查点回滚互补：检查点恢复文件快照 + 对话；消息 undo 只回退对话
+    与检查点回滚互补：检查点恢复文件快照 + 对话；消息 undo 默认只回退对话
     （文件保持现状），适合"对话跑偏但改动仍想保留"的场景。
+
+    请求带 ``restore_files: true`` 时，会一并把工作区恢复到该消息**之前**
+    最近的检查点快照——这才是竞品矩阵里承诺的"按轮把文件+消息一并还原"。
+    没有可用快照时不静默跳过：返回 ``files_restored: false`` 和一个原因，
+    让 UI 如实告诉用户只回退了对话。
     """
     state = _route_state(handler)
     message_id = body.get("message_id")
     if not isinstance(message_id, int) or message_id <= 0:
         handler._json(400, {"error": "message_id (int) required"})
         return
+    restore_files = bool(body.get("restore_files"))
     if state.busy:
         handler._json(409, {"error": "agent is busy"})
         return
@@ -538,6 +544,33 @@ def _handle_messages_truncate(handler: HandlerBase, body: dict) -> None:
         handler._json(500, {"error": "agent not ready"})
         return
     with state.turn_lock:
+        files_restored = False
+        restore_reason = ""
+        restore_counts: dict = {}
+        if restore_files:
+            record = state.store.nearest_checkpoint_at_or_before(
+                state.session_id, message_id
+            )
+            if record is None:
+                restore_reason = "no checkpoint at or before this message"
+            else:
+                try:
+                    import json as _json
+
+                    from spark.core.checkpoints import restore_workdir
+
+                    meta = _json.loads(record["snapshot_json"])
+                    snapshot_id = str(meta.get("snapshot_id") or "")
+                    if snapshot_id:
+                        restore_counts = restore_workdir(state.workdir, snapshot_id)
+                        files_restored = True
+                    else:
+                        restore_reason = "checkpoint has no snapshot id"
+                except Exception as exc:  # aqg: top-level boundary
+                    # Rolling back the conversation while claiming the files
+                    # were restored would be a lie; report the failure instead.
+                    logger.warning("message undo file restore failed: %s", exc, exc_info=True)
+                    restore_reason = f"file restore failed: {exc}"
         remaining = state.store.truncate_messages(state.session_id, message_id)
         if remaining is None:
             handler._json(404, {"error": f"message not found: {message_id}"})
@@ -549,5 +582,8 @@ def _handle_messages_truncate(handler: HandlerBase, body: dict) -> None:
             "ok": True,
             "status": state.status(),
             "messages": _history_messages(state),
+            "files_restored": files_restored,
+            "restore_reason": restore_reason,
+            "restore_counts": restore_counts,
         },
     )

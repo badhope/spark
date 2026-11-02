@@ -1329,17 +1329,20 @@ class AgentLoop:
         return ToolResult(ok=False, payload={"error": "user dismissed the question"})
 
     @staticmethod
-    def _single_task_params(item) -> tuple[str, str, list[str] | None]:
-        """单个子任务派发参数：prompt / system_extra / allowlist。"""
+    def _single_task_params(item) -> tuple[str, str, list[str] | None, str]:
+        """单个子任务派发参数：prompt / system_extra / allowlist / model。"""
         from spark.agents import subagent_system_prompt
 
         prompt, agent = item
         system_extra = subagent_system_prompt(agent) if agent else ""
         allowlist = list(agent.tools) if agent and agent.tools else None
-        return prompt, system_extra, allowlist
+        model = agent.model if agent and agent.model else ""
+        return prompt, system_extra, allowlist, model
 
     @staticmethod
-    def _parallel_task_params(items) -> tuple[list[str], list[str], list[list[str] | None]]:
+    def _parallel_task_params(
+        items,
+    ) -> tuple[list[str], list[str], list[list[str] | None], list[str]]:
         """并行子任务派发参数（最多 4 路）。"""
         from spark.agents import subagent_system_prompt
 
@@ -1352,7 +1355,8 @@ class AgentLoop:
         allowlists = [
             list(a.tools) if a and a.tools else None for _, a in items
         ]
-        return prompts, system_extras, allowlists
+        models = [a.model if a and a.model else "" for _, a in items]
+        return prompts, system_extras, allowlists, models
 
     @staticmethod
     def _single_task_result(summaries: list[str], errors: list[str]) -> ToolResult:
@@ -1524,10 +1528,13 @@ class AgentLoop:
             elif not items:
                 result = ToolResult(ok=False, payload={"error": "prompt required"})
             elif len(items) == 1:
-                prompt, system_extra, allowlist = self._single_task_params(items[0])
+                prompt, system_extra, allowlist, model = self._single_task_params(items[0])
                 async for sub_event in self._forward_subtask_events(
                     self.spawn_subtask(
-                        prompt, system_extra=system_extra, tools_allowlist=allowlist
+                        prompt,
+                        system_extra=system_extra,
+                        tools_allowlist=allowlist,
+                        model=model,
                     ),
                     summaries,
                     sub_errors,
@@ -1535,12 +1542,13 @@ class AgentLoop:
                     yield sub_event
                 result = self._single_task_result(summaries, sub_errors)
             else:
-                prompts, system_extras, allowlists = self._parallel_task_params(items)
+                prompts, system_extras, allowlists, models = self._parallel_task_params(items)
                 async for sub_event in self._forward_subtask_events(
                     self.spawn_subtasks_parallel(
                         prompts,
                         system_extras=system_extras,
                         tools_allowlists=allowlists,
+                        models=models,
                     ),
                     summaries,
                     sub_errors,
@@ -1589,11 +1597,17 @@ class AgentLoop:
         *,
         system_extra: str = "",
         tools_allowlist: list[str] | None = None,
+        model: str = "",
     ):
         """Run a self-contained sub-agent with a fresh context; yield its events, final turn_end carries the summary.
 
         P1-4: ``system_extra`` becomes the sub-agent's own system-prompt slot
         (declared-agent body); ``tools_allowlist`` restricts its tool schemas.
+
+        ``model`` lets a declared specialist run on its own model. The provider
+        is rebuilt only when the requested model differs from the main one, and
+        the credentials come from the parent config (same endpoint, same key) —
+        a sub-agent never introduces a new credential.
         """
         from pathlib import Path as _Path
 
@@ -1603,6 +1617,23 @@ class AgentLoop:
         if tools_allowlist:
             sub_registry.tool_allowlist = set(tools_allowlist)
         sub_cfg = sub_ctx.config
+        provider = self.provider
+        if model and model != sub_cfg.provider.model:
+            sub_cfg.provider.model = model
+            try:
+                from spark.providers.factory import create_provider
+
+                provider = create_provider(sub_cfg)
+            except Exception as exc:  # aqg: top-level boundary
+                # A bad model id must not kill the whole turn: fall back to the
+                # parent provider and say so in the log.
+                logger.warning(
+                    "sub-agent model %r unavailable (%s); using the parent model",
+                    model,
+                    exc,
+                )
+                sub_cfg.provider.model = self.cfg.provider.model
+                provider = self.provider
         sub_store = SessionStore(_Path(":memory:"))
         sid = sub_store.create_session(
             self.workdir, sub_cfg.provider.model, title="subtask"
@@ -1610,7 +1641,7 @@ class AgentLoop:
         sub_loop = AgentLoop(
             workdir=self.workdir,
             cfg=sub_cfg,
-            provider=self.provider,
+            provider=provider,
             registry=sub_registry,
             store=sub_store,
             session_id=sid,
@@ -1642,13 +1673,15 @@ class AgentLoop:
         *,
         system_extras: list[str] | None = None,
         tools_allowlists: list[list[str] | None] | None = None,
+        models: list[str] | None = None,
     ):
         """Run several sub-agents concurrently; each gets its own context. Yields each sub-agent's
         tool/plan events live, then one combined turn_end carrying all summaries.
 
         P1-4: ``system_extras`` / ``tools_allowlists`` align 1:1 with prompts
         (declared-agent body + tool allowlist per parallel item); defaults are
-        empty, preserving the pre-P1-4 behavior exactly.
+        empty, preserving the pre-P1-4 behavior exactly. ``models`` likewise
+        aligns 1:1 and carries each specialist's optional model override.
         """
         import asyncio as _asyncio
 
@@ -1656,11 +1689,14 @@ class AgentLoop:
             system_extras = [""] * len(prompts)
         if tools_allowlists is None:
             tools_allowlists = [None] * len(prompts)
+        if models is None:
+            models = [""] * len(prompts)
         if len(prompts) == 1:
             async for event in self.spawn_subtask(
                 prompts[0],
                 system_extra=system_extras[0],
                 tools_allowlist=tools_allowlists[0],
+                model=models[0] if models else "",
             ):
                 yield event
             return
@@ -1676,6 +1712,7 @@ class AgentLoop:
                     queue,
                     system_extra=system_extras[index],
                     tools_allowlist=tools_allowlists[index],
+                    model=models[index] if index < len(models) else "",
                 )
                 return index, summary
             except Exception as exc:
@@ -1747,6 +1784,7 @@ class AgentLoop:
         *,
         system_extra: str = "",
         tools_allowlist: list[str] | None = None,
+        model: str = "",
     ) -> str:
         """Run one subtask; stream its tool events into the queue tagged by index; return summary."""
         from pathlib import Path as _Path
@@ -1757,6 +1795,21 @@ class AgentLoop:
         if tools_allowlist:
             sub_registry.tool_allowlist = set(tools_allowlist)
         sub_cfg = sub_ctx.config
+        provider = self.provider
+        if model and model != sub_cfg.provider.model:
+            sub_cfg.provider.model = model
+            try:
+                from spark.providers.factory import create_provider
+
+                provider = create_provider(sub_cfg)
+            except Exception as exc:  # aqg: top-level boundary
+                logger.warning(
+                    "sub-agent model %r unavailable (%s); using the parent model",
+                    model,
+                    exc,
+                )
+                sub_cfg.provider.model = self.cfg.provider.model
+                provider = self.provider
         sub_store = SessionStore(_Path(":memory:"))
         sid = sub_store.create_session(
             self.workdir, sub_cfg.provider.model, title=f"subtask-{index}"
@@ -1764,7 +1817,7 @@ class AgentLoop:
         sub_loop = AgentLoop(
             workdir=self.workdir,
             cfg=sub_cfg,
-            provider=self.provider,
+            provider=provider,
             registry=sub_registry,
             store=sub_store,
             session_id=sid,

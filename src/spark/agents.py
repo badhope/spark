@@ -48,6 +48,10 @@ class DeclaredAgent:
     path: Path
     when_to_use: str = ""
     tools: list[str] = field(default_factory=list)
+    #: Optional model id for this specialist. Empty means "inherit the main
+    #: model". A cheap reviewer or a strong architect can each declare their
+    #: own, which is what the competitors' subagent-level model selection does.
+    model: str = ""
 
 
 def _parse_tools(raw: str) -> list[str]:
@@ -79,6 +83,7 @@ def parse_agent_file(path: Path) -> DeclaredAgent:
         description=(meta.get("description") or "").strip(),
         when_to_use=(meta.get("when_to_use") or "").strip(),
         tools=_parse_tools(meta.get("tools", "")),
+        model=(meta.get("model") or "").strip(),
         body=stripped_body,
         path=path,
     )
@@ -168,8 +173,9 @@ def inject_subagents(system_prompt: str, agents: list[DeclaredAgent]) -> str:
     ]
     for a in agents:
         attr = f' when_to_use="{a.when_to_use}"' if a.when_to_use else ""
+        model_attr = f' model="{a.model}"' if a.model else ""
         block.append(
-            f'  <subagent name="{a.name}" description="{a.description}"{attr}/>'
+            f'  <subagent name="{a.name}" description="{a.description}"{attr}{model_attr}/>'
         )
     block.append("</available_subagents>\n")
     return system_prompt + "\n".join(block)

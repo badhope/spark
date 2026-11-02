@@ -29,6 +29,13 @@ from spark.web._handlers_content import (  # noqa: F401
     _handle_prompts,
     _handle_skills,
 )
+from spark.web._handlers_governance import (  # noqa: F401
+    _handle_approval_profiles_activate,
+    _handle_approval_profiles_delete,
+    _handle_approval_profiles_save,
+    _handle_permissions_rules,
+    _handle_permissions_rules_delete,
+)
 from spark.web._handlers_health import (  # noqa: F401
     _handle_diagnostics,
     _handle_selfheal,
@@ -66,6 +73,9 @@ from spark.web._handlers_settings import (  # noqa: F401
 __all__ = [
     "_handle_agents_md",
     "_handle_approval",
+    "_handle_approval_profiles_activate",
+    "_handle_approval_profiles_delete",
+    "_handle_approval_profiles_save",
     "_handle_cancel",
     "_handle_chat",
     "_handle_chat_stream",
@@ -77,6 +87,8 @@ __all__ = [
     "_handle_models_activate",
     "_handle_models_delete",
     "_handle_models_save",
+    "_handle_permissions_rules",
+    "_handle_permissions_rules_delete",
     "_handle_selfheal",
     "_handle_question_answer",
     "_handle_sessions_delete",

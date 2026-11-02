@@ -42,6 +42,13 @@ AUDIT_KINDS = frozenset(
         "question_dismissed",
         "config_recovered",  # a broken config was backed up and rebuilt
         "selfheal_applied",
+        # Security-boundary edits made through the Web API. Changing a rule or
+        # an approval profile changes what the agent is allowed to do, so it
+        # belongs in the same trail as the refusals those rules produce.
+        "permission_rules_written",
+        "approval_profile_written",
+        "approval_profile_deleted",
+        "approval_profile_activated",
     }
 )
 
