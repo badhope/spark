@@ -125,6 +125,13 @@ class AgentConfig(BaseModel):
     #: 写文件后自动格式化（对应 opencode 的 formatter）。默认关：隐式改写
     #: 用户文件必须由用户显式打开。只调用项目里已有的 ruff / prettier。
     format_on_write: bool = False
+    #: 自动审查（对应 codex Guardian）：危险动作落地前用一次独立模型调用审它。
+    #: 默认关——多一次调用就是多一次成本与延迟，该由用户按需打开。
+    auto_review: bool = False
+    #: shell 命令是否允许联网（对应 codex 的 network_access）。默认开——
+    #: 关掉会让 pip/npm 在 workspace 模式下直接失败。仅在 bwrap 可用时
+    #: 真正生效；其它平台如实降级为"策略层无法断网"。
+    network_access: bool = True
     shell_timeout_sec: int = Field(default=60, ge=1, le=3600)
     max_tool_rounds: int = Field(default=30, ge=1, le=1000)
     max_repeat_calls: int = Field(default=4, ge=0, le=10000)
@@ -839,6 +846,11 @@ def _agent_table(cfg: SparkConfig) -> tomlkit.items.Table:
         agent.add("extra_dirs", list(cfg.agent.extra_dirs))
     if cfg.agent.format_on_write:
         agent.add("format_on_write", cfg.agent.format_on_write)
+    if cfg.agent.auto_review:
+        agent.add("auto_review", cfg.agent.auto_review)
+    if not cfg.agent.network_access:
+        # 只在关掉时写，避免给现有配置文件平白加一行默认值。
+        agent.add("network_access", cfg.agent.network_access)
     agent.add("shell_timeout_sec", cfg.agent.shell_timeout_sec)
     agent.add("max_tool_rounds", cfg.agent.max_tool_rounds)
     agent.add("max_repeat_calls", cfg.agent.max_repeat_calls)

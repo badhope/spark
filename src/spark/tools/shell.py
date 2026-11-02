@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +40,26 @@ def _bwrap_path() -> str | None:
     return path
 
 
-def bwrap_command(cwd: str, command: str, workdir: str, home: str | None = None) -> list[str] | None:
+def bwrap_command(
+    cwd: str,
+    command: str,
+    workdir: str,
+    home: str | None = None,
+    *,
+    allow_network: bool = True,
+) -> list[str] | None:
     """构造 bubblewrap 命名空间隔离命令；环境不支持时返回 None（调用方降级）。
 
     仅保护文件系统视图：系统路径只读、workdir 与 HOME 读写、/tmp 读写、
-    proc/dev 挂载。不隔离网络（agent 可能需要 shell 内网络命令）。
+    proc/dev 挂载。
+
+    ``allow_network=False`` 时**不**传 ``--share-net``：``--unshare-all`` 会
+    建一个空的网络命名空间，进程只剩 loopback。这正是 codex
+    ``sandbox_workspace_write.network_access = false`` 的语义——离线跑构建
+    与测试，防止仓库里的脚本外连。
+
+    能力边界要如实：bwrap 不可用时（Windows / 未安装）本函数返回 None，
+    网络开关不会生效，调用方必须把这一点回报给用户，而不是假装已断网。
     """
     if os.name == "nt" or not _bwrap_path():
         return None
@@ -62,11 +78,14 @@ def bwrap_command(cwd: str, command: str, workdir: str, home: str | None = None)
         bindings += ["--bind", home_dir, home_dir]
     if os.path.isdir("/tmp"):
         bindings += ["--bind", "/tmp", "/tmp"]
+    net_args = ["--share-net"] if allow_network else []
     return [
         _bwrap_path(),  # type: ignore[list-item]
         "--unshare-all",
-        "--share-net",  # P0：--unshare-all 会连网络命名空间一起隔离，与"不隔离网络"的
-        #               契约相悖——保留网络，否则 workspace 模式下 pip/npm 等直接失败
+        # P0：--unshare-all 会连网络命名空间一起隔离。默认保留网络，否则
+        # workspace 模式下 pip/npm 等直接失败；allow_network=False 时才刻意
+        # 让它落在空网络命名空间里。
+        *net_args,
         "--die-with-parent",
         *bindings,
         "--chdir", cwd,
@@ -110,20 +129,35 @@ def run_shell(
 
     # OS 级沙箱：workspace 模式且 bwrap 可用时走命名空间隔离；
     # 不可用/更高权限档位时维持原路径（check_shell 仍在前面把关）。
+    network_blocked = False
+    network_note = ""
+    cfg = getattr(sandbox, "cfg", None)
+    allow_network = bool(getattr(getattr(cfg, "agent", None), "network_access", True))
     if (
         os.name != "nt"
         and not sandbox.full_access
         and not sandbox.unrestricted
         and sandbox.sandbox_mode == "workspace"
     ):
-        isolated = bwrap_command(str(cwd), args.command, str(sandbox.root))
+        isolated = bwrap_command(
+            str(cwd), args.command, str(sandbox.root), allow_network=allow_network
+        )
         if isolated is not None:
             process_kwargs["shell"] = False
             command_to_run: list[str] = isolated
+            network_blocked = not allow_network
         else:
             command_to_run = args.command  # type: ignore[assignment]
     else:
         command_to_run = args.command  # type: ignore[assignment]
+
+    if not allow_network and not network_blocked:
+        # 配置要求断网但当前平台无法真隔离：必须如实告知，不能假装已断网。
+        network_note = (
+            "network_access=false was requested but cannot be enforced here "
+            "(bubblewrap unavailable on this platform / access mode); "
+            "the command may still reach the network"
+        )
 
     process = subprocess.Popen(command_to_run, **process_kwargs)  # type: ignore[arg-type]
     stdout_result: list[tuple[bytes, bool]] = []
@@ -180,18 +214,20 @@ def run_shell(
     stderr = clip_text(stderr_text, output_limit)
     stdout_truncated = stdout_was_truncated or stdout_was_clipped
     stderr_truncated = stderr_was_truncated or stderr_was_clipped
-    return ToolResult(
-        ok=process.returncode == 0,
-        payload={
-            "command": args.command,
-            "exit_code": process.returncode,
-            "stdout": stdout,
-            "stderr": stderr,
-            "truncated": stdout_truncated or stderr_truncated,
-            "stdout_truncated": stdout_truncated,
-            "stderr_truncated": stderr_truncated,
-        },
-    )
+    payload: dict[str, Any] = {
+        "command": args.command,
+        "exit_code": process.returncode,
+        "stdout": stdout,
+        "stderr": stderr,
+        "truncated": stdout_truncated or stderr_truncated,
+        "stdout_truncated": stdout_truncated,
+        "stderr_truncated": stderr_truncated,
+    }
+    if network_blocked:
+        payload["network"] = "blocked"
+    if network_note:
+        payload["network_warning"] = network_note
+    return ToolResult(ok=process.returncode == 0, payload=payload)
 
 
 def _read_bounded(stream, limit: int) -> tuple[bytes, bool]:

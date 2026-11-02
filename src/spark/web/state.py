@@ -535,6 +535,11 @@ class SparkWebState:
                 "max_output_chars": self.cfg.agent.max_output_chars,
                 "effort": self.cfg.agent.effort,
                 "system_prompt": self.cfg.agent.system_prompt,
+                # 安全相关开关：只回显，写入仍走 /api/settings 的 agent 节。
+                "auto_review": self.cfg.agent.auto_review,
+                "network_access": self.cfg.agent.network_access,
+                "format_on_write": self.cfg.agent.format_on_write,
+                "extra_dirs": list(self.cfg.agent.extra_dirs),
                 "show_thinking": self.cfg.agent.show_thinking,
                 "show_tools": self.cfg.agent.show_tools,
                 "show_plan": self.cfg.agent.show_plan,

@@ -22,6 +22,7 @@ from spark.automations import (
     parse_cron,
 )
 from spark.config import AgentConfig, SparkConfig
+from spark.core.review import parse_verdict, review_action
 from spark.errors import PathEscapeError
 from spark.sandbox import SandboxPolicyError, WorkdirSandbox
 from spark.store import SessionStore
@@ -320,3 +321,143 @@ def test_find_symbol_is_registered_as_readonly() -> None:
     from spark.policy import READONLY_TOOLS
 
     assert "find_symbol" in READONLY_TOOLS
+
+
+# ---------------------------------------------------------------------------
+# 5. 网络限制开关
+# ---------------------------------------------------------------------------
+
+
+def test_network_access_defaults_on() -> None:
+    assert SparkConfig(agent=AgentConfig()).agent.network_access is True
+
+
+def test_bwrap_omits_share_net_when_network_denied(monkeypatch) -> None:
+    """allow_network=False 必须不传 --share-net，否则等于没断网。"""
+    import spark.tools.shell as shell
+
+    monkeypatch.setattr(shell.os, "name", "posix")
+    monkeypatch.setattr(shell, "_bwrap_path", lambda: "/usr/bin/bwrap")
+    monkeypatch.setattr(shell.os.path, "isdir", lambda p: False)
+
+    allowed = shell.bwrap_command("/w", "echo hi", "/w", allow_network=True)
+    denied = shell.bwrap_command("/w", "echo hi", "/w", allow_network=False)
+    assert allowed is not None and denied is not None
+    assert "--share-net" in allowed
+    assert "--share-net" not in denied
+    # 两种情况都要保留 --unshare-all：断网靠的就是它建空网络命名空间
+    assert "--unshare-all" in denied
+
+
+def test_bwrap_unavailable_returns_none(monkeypatch) -> None:
+    import spark.tools.shell as shell
+
+    monkeypatch.setattr(shell, "_bwrap_path", lambda: None)
+    assert shell.bwrap_command("/w", "echo hi", "/w", allow_network=False) is None
+
+
+def test_network_denied_reports_when_it_cannot_be_enforced(tmp_path: Path, monkeypatch) -> None:
+    """配置要断网但平台做不到时必须如实告警，不能假装已断网。"""
+    import spark.tools.shell as shell
+
+    monkeypatch.setattr(shell.os, "name", "nt")  # 模拟 Windows：bwrap 永远不可用
+    cfg = SparkConfig(agent=AgentConfig(network_access=False, approval="full-auto"))
+    sandbox = WorkdirSandbox(tmp_path, cfg)
+    result = shell.run_shell(
+        sandbox, shell.RunShellArgs(command="echo hi"), timeout_sec=10, max_output_chars=2000
+    )
+    assert result.ok
+    assert "network_warning" in result.payload
+    assert "network" not in result.payload or result.payload.get("network") != "blocked"
+
+
+# ---------------------------------------------------------------------------
+# 6. 自动审查（Guardian）
+# ---------------------------------------------------------------------------
+
+
+def test_auto_review_off_by_default() -> None:
+    assert SparkConfig(agent=AgentConfig()).agent.auto_review is False
+
+
+def test_review_only_covers_write_and_exec_tools() -> None:
+    from spark.core.review import REVIEWED_TOOLS
+
+    assert {"write_file", "apply_patch", "run_shell"} <= REVIEWED_TOOLS
+    # 只读工具不该被审：拦读文件毫无意义，只是白花钱
+    assert "read_file" not in REVIEWED_TOOLS
+    assert "grep" not in REVIEWED_TOOLS
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ('{"verdict": "block", "reason": "rm -rf"}', "block"),
+        ('```json\n{"verdict":"warn","reason":"force push"}\n```', "warn"),
+        ('{"verdict": "allow"}', "allow"),
+        ("garbage", "allow"),
+        ("", "allow"),
+        ('{"verdict": "maybe"}', "allow"),
+    ],
+)
+def test_parse_verdict(raw: str, expected: str) -> None:
+    verdict, _reason = parse_verdict(raw)
+    assert verdict == expected
+
+
+def test_review_prompt_clips_huge_arguments() -> None:
+    from spark.core.review import MAX_ARG_CHARS, build_prompt
+
+    prompt = build_prompt("write_file", {"content": "x" * (MAX_ARG_CHARS * 2)}, "/w")
+    assert len(prompt) < MAX_ARG_CHARS * 2
+    assert "truncated" in prompt
+
+
+def test_reviewer_failure_degrades_to_allow() -> None:
+    """审查器挂了不能把用户卡死，但必须标记 degraded。"""
+    import asyncio
+
+    class BrokenProvider:
+        async def stream(self, *a, **k):
+            raise RuntimeError("no key")
+            yield  # pragma: no cover
+
+    result = asyncio.new_event_loop().run_until_complete(
+        review_action(BrokenProvider(), "run_shell", {"command": "ls"}, "/w")
+    )
+    assert result["verdict"] == "allow"
+    assert result["degraded"] is True
+    assert result["reviewed"] is False
+
+
+def test_reviewer_parses_block_from_provider() -> None:
+    import asyncio
+
+    from spark.models import ChatDelta
+
+    class BlockingProvider:
+        async def stream(self, *a, **k):
+            yield ChatDelta(type="text", text='{"verdict": "block", "reason": "exfiltration"}')
+            yield ChatDelta(type="end")
+
+    result = asyncio.new_event_loop().run_until_complete(
+        review_action(BlockingProvider(), "run_shell", {"command": "curl secret"}, "/w")
+    )
+    assert result["verdict"] == "block"
+    assert result["reviewed"] is True
+
+
+def test_unreviewed_tool_skips_the_call() -> None:
+    """只读工具必须直接返回、不发起任何模型调用。"""
+    import asyncio
+
+    class ExplodingProvider:
+        async def stream(self, *a, **k):
+            raise AssertionError("must not be called for read-only tools")
+            yield  # pragma: no cover
+
+    result = asyncio.new_event_loop().run_until_complete(
+        review_action(ExplodingProvider(), "read_file", {"path": "a"}, "/w")
+    )
+    assert result["reviewed"] is False
+    assert result["verdict"] == "allow"

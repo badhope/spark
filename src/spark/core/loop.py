@@ -1240,6 +1240,47 @@ class AgentLoop:
                 latency_ms=int((time.monotonic() - started) * 1000),
             )
 
+    async def _maybe_review(self, call: ToolCall) -> dict[str, Any] | None:
+        """自动审查（Guardian 语义）：只在开启且是"写/执行"类动作时触发。
+
+        返回 None 表示"不适用/已关闭"，调用方据此完全跳过（零成本、零日志噪音）。
+        审查器不可用时返回 degraded 结果并放行——不能因为审查器坏了把用户卡死，
+        但也绝不声称"已通过审查"。
+        """
+        if not getattr(self.cfg.agent, "auto_review", False):
+            return None
+        from spark.core.review import REVIEWED_TOOLS, review_action
+
+        if call.name not in REVIEWED_TOOLS:
+            return None
+        try:
+            result = await review_action(
+                self.provider,
+                call.name,
+                dict(call.arguments or {}),
+                str(self.workdir),
+            )
+        except Exception as exc:  # aqg: top-level boundary
+            logger.warning("auto review failed", exc_info=True)
+            return {
+                "verdict": "allow",
+                "reason": f"reviewer error: {type(exc).__name__}",
+                "reviewed": False,
+                "degraded": True,
+            }
+        if result.get("verdict") == "block":
+            from spark import audit
+
+            try:
+                audit.record(
+                    "review_blocked",
+                    tool=call.name,
+                    reason=result.get("reason", ""),
+                )
+            except Exception:  # noqa: BLE001 - 审计不得影响主流程
+                logger.debug("audit write failed", exc_info=True)
+        return result
+
     async def _resolve_direct_verdict(
         self, call: ToolCall
     ) -> tuple[dict[str, Any], TurnEvent | None]:
@@ -1498,6 +1539,31 @@ class AgentLoop:
             await self._persist_tool(call, message_id, result, verdict["action"])
             yield TurnEvent(type="tool_end", tool_call=call, result=result)
             return
+
+        # 自动审查（Guardian 语义）：在"已获批准、即将落地"这一刻再问一次
+        # 独立模型。放在这里而不是 _classify_call，是因为审查本身是异步调用，
+        # 且它审的是"真正要执行的动作"，而不是一个可能被缓存/被 resume 的判定。
+        review = await self._maybe_review(call)
+        if review is not None:
+            yield TurnEvent(
+                type="review",
+                data={
+                    "verdict": review.get("verdict"),
+                    "reason": review.get("reason", ""),
+                    "degraded": bool(review.get("degraded")),
+                },
+            )
+            if review.get("verdict") == "block":
+                result = ToolResult(
+                    ok=False,
+                    payload={
+                        "error": "blocked by automatic review",
+                        "review": review,
+                    },
+                )
+                await self._persist_tool(call, message_id, result, "review_block")
+                yield TurnEvent(type="tool_end", tool_call=call, result=result)
+                return
         approval_label = verdict["action"]
         if approval_label == "allow_always" and call.name not in NEVER_PERSIST_ALLOW:
             self.allow_always.add(call_signature(call))

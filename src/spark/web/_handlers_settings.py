@@ -585,6 +585,10 @@ def _handle_settings_locked(handler: HandlerBase, body: dict) -> None:
             "show_context",
             "show_keywords",
             "show_notices",
+            # 安全开关与展示开关同为布尔，走同一条"缺省即保持现状"的路径。
+            "auto_review",
+            "network_access",
+            "format_on_write",
         )
         if k in agent_in
     }

@@ -49,6 +49,7 @@ AUDIT_KINDS = frozenset(
         "approval_profile_written",
         "approval_profile_deleted",
         "approval_profile_activated",
+        "review_blocked",       # 自动审查拒绝了即将落地的动作
     }
 )
 

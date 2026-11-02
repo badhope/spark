@@ -545,3 +545,40 @@ def test_status_reports_effective_approval_not_baseline(web) -> None:
     cfg = _request(base, "/api/config")[1]
     assert cfg["agent"]["approval"] == "full-auto", "the form edits the baseline"
     assert cfg["agent"]["effective_approval"] == "suggest"
+
+
+def test_safety_switches_round_trip_through_settings(web) -> None:
+    """三个安全开关必须能经 /api/settings 写入、落盘、回读。
+
+    它们改变 agent 的实际行为（审查、断网、改文件），所以"保存了但没生效"
+    比不支持更糟——这里断言的是完整往返。
+    """
+    base, state, saved, tmp_path = web
+    status, body = _request(
+        base,
+        "/api/settings",
+        {"agent": {"auto_review": True, "network_access": False, "format_on_write": True}},
+    )
+    assert status == 200, body
+    assert state.cfg.agent.auto_review is True
+    assert state.cfg.agent.network_access is False
+    assert state.cfg.agent.format_on_write is True
+
+    loaded = load_config(config_path=saved[-1], workdir=tmp_path)
+    assert loaded.agent.auto_review is True
+    assert loaded.agent.network_access is False
+    assert loaded.agent.format_on_write is True
+
+    # /api/config 必须回显，否则设置面板刷新后显示默认值
+    cfg = _request(base, "/api/config")[1]
+    assert cfg["agent"]["auto_review"] is True
+    assert cfg["agent"]["network_access"] is False
+    assert cfg["agent"]["format_on_write"] is True
+
+
+def test_safety_switches_default_to_conservative_values(web) -> None:
+    base, state, _saved, _tmp = web
+    cfg = _request(base, "/api/config")[1]
+    assert cfg["agent"]["auto_review"] is False, "review costs a model call: off by default"
+    assert cfg["agent"]["network_access"] is True, "off would break pip/npm out of the box"
+    assert cfg["agent"]["format_on_write"] is False, "silently rewriting files must be opt-in"

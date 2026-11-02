@@ -25,6 +25,10 @@ TurnEventType = Literal[
     "subtask_trace",
     # Interactive question: the agent asks the user and blocks until answered.
     "question",
+    # Automatic review outcome (Guardian-style). Carries the verdict so the UI
+    # can show "this action was reviewed / flagged" instead of it happening
+    # invisibly — a silent reviewer is indistinguishable from no reviewer.
+    "review",
     "turn_end",
     "turn_error",
 ]
