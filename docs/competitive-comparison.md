@@ -79,7 +79,7 @@
 | 全局规则文件 | ✅ `~/.agents/AGENTS.md`（+CLAUDE.md，与项目/子目录三级叠加） | opencode `~/.config/opencode/AGENTS.md`；ZCode `~/.zcode/AGENTS.md` |
 | Claude Code 兼容（CLAUDE.md/skills） | ⚠️ 声明式 subagent 读 `.claude/agents/*.md` | opencode `CLAUDE.md` 回退 + `.claude/skills`；ZCode 一键导入 + 预装 CC marketplace |
 | `@` 文件引用补全 | ✅ 输入框 `@` 列出工作区条目，方向键 + Tab/Enter | opencode `@` 模糊；codex `@` file-search；ZCode `@` 文件/文件夹 |
-| 外部目录/仓库引用 | ❌ | opencode `references`（别名+description）；codex `--add-dir` |
+| 外部目录/仓库引用 | ✅ `--add-dir` / `agent.extra_dirs` | opencode `references`（别名+description）；codex `--add-dir` |
 | 图片输入 | ✅ Web 粘贴/拖拽 | opencode 自动缩放/5MB 上限；codex 剪贴板截图 + `view_image` |
 | 自动压缩 | ✅ 85% 阈值 + 保留 8 条 | opencode 三态（auto/prune/reserved）；codex 双阈值 + pre/post_compact hooks |
 | 压缩可编程干预 | ❌ | opencode 插件可换压缩提示词；codex hooks |
@@ -96,8 +96,8 @@
 | shell | ✅ 沙箱策略 + 超时/输出上限 | codex unified exec（可后台）；opencode bash |
 | 后台任务 | ✅ bg_start/output/kill/list（跨重启持久化） | codex `/ps` `/stop`；Qoder `/tasks` 面板 |
 | grep/glob | ✅ | opencode ripgrep 尊重 .gitignore + `.ignore`；codex file-search |
-| **LSP 集成** | ❌ | opencode 内建 40+ 语言 LSP（definition/references/hover/…） |
-| 代码格式化 | ❌ | opencode 30+ formatter（写后自动，默认关） |
+| **LSP 集成** | ⚠️ `find_symbol` 语法级定义/引用（tree-sitter，零子进程）；非完整 LSP | opencode 内建 40+ 语言 LSP（definition/references/hover/…） |
+| 代码格式化 | ✅ `agent.format_on_write`（ruff/prettier，默认关） | opencode 30+ formatter（写后自动，默认关） |
 | web 搜索/抓取 | ✅ Bing 搜索 + HTML→text | codex 原生 web_search + browser_use/computer_use 配置 |
 | 内置浏览器（agent 可驱动） | ❌ | ZCode built-in browser（点击/填表/截图/视口模拟/Chrome 数据导入）；Qoder Browser Agent |
 | Notebook | ✅ read + edit（cell 级） | — |
@@ -148,7 +148,7 @@
 
 | 功能点 | spark | 竞品代表 |
 |---|---|---|
-| 定时任务 | ❌ | ZCode Automations（模板/聊天创建 + 四种频率 + skipped 语义）；Qoder `/crontab` |
+| 定时任务 | ✅ `automations.py`（cron + skipped 语义 + 停机补跑） | ZCode Automations（模板/聊天创建 + 四种频率 + skipped 语义）；Qoder `/crontab` |
 | 空闲算力队列 | ❌ | ZCode Idle-time task（免费跑、超时回队列续跑）—— 独特 |
 | 桌面通知/声音 | ✅ Web Notification（回合结束/等待审批，页面不可见时才发；设置可开） | opencode attention 声音包；codex notifications（osc9/bel）+ `/warnings` |
 | 主题 | ⚠️ Web light/dark/system；TUI 固定 | opencode 10+ 主题 + 自定义 JSON；codex `/theme` + `$CODEX_HOME/themes` |
@@ -185,7 +185,7 @@
 - ~~自定义斜杠命令~~（已完成，见 §3）
 - ~~桌面通知~~（第七轮完成，见 §10）
 - ~~`exec --json`~~（第七轮完成，见 §3）
-- LSP 只读工具（definition/references——接 pylsp/typescript-language-server 子进程）——**未做，仍是已知差距**
+- ~~LSP 只读工具~~（已用 `find_symbol` 语法级实现；刻意不拉起语言服务器子进程，见 tools/symbols.py 的边界说明）
 - ~~会话分享~~（第七轮完成：单文件 HTML，见 §4）
 - ~~快捷键可配置~~（已完成）+ 主题扩展（未做，仅 light/dark/system）
 
@@ -195,7 +195,7 @@
 
 **P2（高成本 / 需要产品决策）**
 - Repo Wiki（可复用现有 tree-sitter + LLM 摘要，产物落本地）
-- 定时 Automations（复用 bg_jobs 持久化机制 + 轻量 scheduler）
+- ~~定时 Automations~~（已实现：automations.py + 设置→定时任务）
 - IDE/ACP 集成（opencode 的 ACP 协议有开源实现可参考）
 - 插件市场（先做"本地目录 + git URL 安装"最小版）
 - 多 agent 专业编排（Experts/Workflows 级）
