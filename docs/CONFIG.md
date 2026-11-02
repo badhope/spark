@@ -4,7 +4,7 @@
 > 字段的唯一事实来源：`src/spark/config.py`（`SparkConfig` 及嵌套模型，含全部默认值与边界）。
 
 配置文件位于 `~/.spark/config.toml`（可用 `SPARK_HOME` 环境变量覆盖目录），由 `spark init` 生成模板。
-绝大多数字段可在网页「设置」面板中修改并保存，本文件按 `[section]` 列出全部字段与默认值。
+部分字段可在网页「设置」面板中修改并保存；具体可写字段与限制见 [API.md](API.md)。默认值以代码为准。
 
 ## `[provider]` — 模型服务
 
@@ -14,7 +14,10 @@
 | `base_url` | `https://api.deepseek.com/v1` | OpenAI 兼容接口地址（LiteLLM 承载，支持 100+ 后端） |
 | `model` | `deepseek-chat` | 主模型名 |
 | `api_key_env` | `SPARK_API_KEY` | 密钥所在环境变量名 |
-| `api_key` | `null` | 直接写密钥（网页回显打码）；优先级低于环境变量 |
+| `api_key` | `null` | 直接配置的密钥（网页回显打码）；`require_api_key` 优先使用此值，再读取环境变量 |
+| `api_keys` | `[]` | 凭据池：主密钥失败后逐次轮换的备选密钥（网页只回掩码） |
+| `fallback_models` | `[]` | 同端点的回退模型链，主模型重试耗尽后依次切换 |
+| `small_model` | `""` | 压缩摘要及网页标题/关键词等辅助调用使用的小模型（留空 = 主模型）；记忆抽取目前仍使用主模型 |
 
 ## `[agent]` — 行为与安全
 
@@ -41,6 +44,11 @@
 | `max_context_tokens` | `32768` | 上下文窗口上限，超过 `compact_threshold` 自动压缩 |
 | `compact_threshold` | `0.85` | 触发压缩的用量比例（0.1–0.99） |
 | `keep_recent_messages` | `8` | 压缩时保留的最近消息数 |
+| `repo_map_enabled` | `true` | 是否注入 tree-sitter 代码索引 |
+| `repo_map_max_chars` | `6000` | repo-map 注入截断长度（500–60,000） |
+| `knowledge_enabled` | `true` | 是否每轮检索项目知识库 |
+| `knowledge_top_k` | `6` | 知识库检索条数（1–50） |
+| `knowledge_max_chars` | `6000` | 知识库片段注入上限（500–60,000） |
 
 ## `[memory]` — 长期记忆
 
@@ -51,6 +59,21 @@
 | `capacity` | `500` | 记忆容量上限（1–100,000） |
 | `embedding_model` | `text-embedding-3-small` | 嵌入模型 |
 | `auto_extract` | `true` | 每回合后自动抽取事实入记忆 |
+| `embedding_enabled` | `false` | 向量检索显式开关（多数 chat 端点没有 `/embeddings`） |
+| `embedding_base_url` | `""` | 独立 embedding 服务地址（留空 = 复用 `provider.base_url`） |
+| `embedding_api_key` | `""` | embedding 密钥；留空时仅当地址与 provider 相同（忽略末尾 `/`）才复用 `provider.api_key`，否则使用 `ollama` 占位值 |
+| `rerank_model` | `""` | 重排模型名；需另行安装 `FlagEmbedding`，不可用或加载失败时保持原顺序 |
+
+配置文件会保存明文密钥，应限制文件访问权限且不要提交；`spark config show` 脱敏，网页掩码对较长密钥仍显示首尾各四位。网页保存空的 embedding 密钥会保留旧值，不能用空值清除。
+
+## `[replay]` 与 `[updater]` — 高级设置
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `replay.enabled` | `true` | 启用按会话保存的回放记录，可能包含会话内容，需保护本地文件 |
+| `updater.mode` | `notify` | `notify` 提示更新；`off` 关闭版本检查；显式 `spark update` 不受影响 |
+
+高级设置中的权限规则与审批档案仅供查看；`/api/config` 展示的是用户规则而非所有作用域的合并视图。`permission_scopes` 不在该响应中，不能通过 `/api/settings` 写入。
 
 ## MCP 服务器
 
@@ -96,7 +119,7 @@ model = "deepseek-chat"
 # api_key 字段存在但示例留空：密钥请写入配置或环境变量，勿提交到仓库
 ```
 
-网页「设置 → 模型」的增删切换即读写这一节。
+网页「设置 → 模型」的增删切换即读写这一节。需要从环境变量读取凭据的档案，可在受信任的全局配置中为每个 `[[model_profiles]]` 显式添加 `api_key_env = "SPARK_API_KEY"`（也可使用不同的变量名）。多个档案可以明确指定同一变量；旧档案未声明时不会跨档案继承，即使端点相同，也需手动绑定。指定的变量不存在时不会回退到其他变量。
 
 ## 环境变量
 

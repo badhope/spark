@@ -4,9 +4,9 @@
 > Single source of truth for every field: `src/spark/config.py` (`SparkConfig` and its nested models, including defaults and bounds).
 
 The config file lives at `~/.spark/config.toml` (override the directory with the
-`SPARK_HOME` environment variable); `spark init` writes a template. Most fields
-are editable from the in-app **Settings** panel; this document lists every
-field and its default, grouped by `[section]`.
+`SPARK_HOME` environment variable); `spark init` writes a template. Some fields
+are editable from the in-app **Settings** panel; see [API.md](API.md) for writable
+fields and limitations. The code is authoritative for defaults.
 
 ## `[provider]` — model service
 
@@ -16,7 +16,10 @@ field and its default, grouped by `[section]`.
 | `base_url` | `https://api.deepseek.com/v1` | OpenAI-compatible endpoint (backed by LiteLLM, 100+ providers) |
 | `model` | `deepseek-chat` | Primary model name |
 | `api_key_env` | `SPARK_API_KEY` | Name of the environment variable holding the key |
-| `api_key` | `null` | Inline key (masked on echo); the env var takes precedence |
+| `api_key` | `null` | Inline key (masked on echo); `require_api_key` uses it before the environment variable |
+| `api_keys` | `[]` | Credential pool: alternate keys rotated through after the primary fails (masked in the UI) |
+| `fallback_models` | `[]` | Fallback model chain on the same endpoint, tried after the primary's retries are exhausted |
+| `small_model` | `""` | Small model for compaction summaries and web titles/keywords (blank = primary); memory extraction currently uses the primary model |
 
 ## `[agent]` — behavior & safety
 
@@ -43,6 +46,11 @@ field and its default, grouped by `[section]`.
 | `max_context_tokens` | `32768` | Context ceiling; compaction triggers past `compact_threshold` |
 | `compact_threshold` | `0.85` | Usage ratio that triggers compaction (0.1–0.99) |
 | `keep_recent_messages` | `8` | Recent messages kept during compaction |
+| `repo_map_enabled` | `true` | Inject the tree-sitter repo map |
+| `repo_map_max_chars` | `6000` | Repo-map injection cap (500–60,000) |
+| `knowledge_enabled` | `true` | Retrieve from the project knowledge base every turn |
+| `knowledge_top_k` | `6` | Knowledge-base retrieval count (1–50) |
+| `knowledge_max_chars` | `6000` | Knowledge snippet injection cap (500–60,000) |
 
 ## `[memory]` — long-term memory
 
@@ -53,6 +61,26 @@ field and its default, grouped by `[section]`.
 | `capacity` | `500` | Memory capacity cap (1–100,000) |
 | `embedding_model` | `text-embedding-3-small` | Embedding model |
 | `auto_extract` | `true` | Auto-extract facts after each turn |
+| `embedding_enabled` | `false` | Explicit opt-in for vector retrieval (most chat endpoints lack `/embeddings`) |
+| `embedding_base_url` | `""` | Dedicated embedding endpoint (blank = reuse `provider.base_url`) |
+| `embedding_api_key` | `""` | Embedding key; when blank, `provider.api_key` is reused only for the same endpoint (ignoring trailing `/`), otherwise the `ollama` placeholder is used |
+| `rerank_model` | `""` | Rerank model; requires a separate `FlagEmbedding` installation, and leaves the original order unchanged if unavailable or loading fails |
+
+The config file stores secrets in plaintext: restrict file access and never commit it.
+`spark config show` redacts secrets; web masks still reveal the first and last four
+characters of long keys. A blank embedding key in web settings keeps the old value;
+it cannot clear it.
+
+## `[replay]` and `[updater]` — advanced settings
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `replay.enabled` | `true` | Enables per-session replay records, which may contain conversation content; protect local files |
+| `updater.mode` | `notify` | `notify` announces updates; `off` disables version checks; explicit `spark update` is unaffected |
+
+Permission rules and approval profiles in advanced settings are read-only. `/api/config`
+shows user rules, not a merged view of every scope. `permission_scopes` is not in that
+response and cannot be written through `/api/settings`.
 
 ## MCP servers
 
@@ -98,7 +126,7 @@ model = "deepseek-chat"
 # the api_key field exists but stays empty here: keep keys in config/env, never in the repo
 ```
 
-The Settings → Models panel reads and writes this section.
+The Settings → Models panel reads and writes this section. To use an environment credential, explicitly add `api_key_env = "SPARK_API_KEY"` (or another variable name) to each `[[model_profiles]]` in the trusted global configuration. Multiple profiles may explicitly name the same variable. Legacy profiles without a binding do not inherit another profile's variable, even for the same endpoint, and must be bound manually. A missing named variable does not fall back to another variable.
 
 ## Environment variables
 

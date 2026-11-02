@@ -24,7 +24,7 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/api/status` | 会话 / 沙箱模式 / 审批模式 / 上下文用量 / 计划列表 / 环境信息 |
-| `GET` | `/api/config` | 完整配置（密钥打码）：provider、agent、context、mcp_servers、hooks |
+| `GET` | `/api/config` | 设置视图（部分敏感值打码，并非全部配置）：provider、agent、context（含 `agents_md` / `repo_map_max_chars` / `knowledge_*`）、memory（含 `embedding_*` / `rerank_model`）、mcp_servers、hooks（含 `on_deny`）、replay、updater，以及只读的 `permission_rules` / `approval_profiles` / `active_approval_profile_id` |
 | `GET` | `/api/models` | 模型 profile 列表（api_key 打码，含 `active` 标记） |
 | `GET` | `/api/agents_md` | 读取工作目录内 AGENTS.md 的内容与状态 |
 | `GET` | `/api/memory` | 长期记忆：`items` 全量、`search?q=关键词` 检索（带 score）、`stats` 统计 |
@@ -49,10 +49,53 @@
 | `POST` | `/api/sessions/delete` | `{session_id}` | 删除会话；删当前会话时自动切换 |
 | `POST` | `/api/sessions/switch` | `{session_id}` | 切换会话并返回消息历史 |
 | `POST` | `/api/checkpoints/rollback` | `{checkpoint_id}` | 回滚到检查点（恢复工作区文件 + 对话历史） |
-| `POST` | `/api/settings` | provider/agent/mcp_servers/hooks 各节 | 保存设置并重建 AgentLoop；字段校验失败 `400`，agent 忙 `409` |
+| `POST` | `/api/settings` | provider/agent/context/memory/hooks/mcp_servers/replay/updater 各节 | 保存设置并重建 AgentLoop；部分字段校验失败返回 `400` 且不落盘，agent 忙 `409`；缺省字段通常保持现状（切换目标时凭据池例外） |
 | `POST` | `/api/test` | `{base_url, model, api_key?}` | 探活模型接口（拒绝向与已配置不同的地址发送存储的密钥） |
 
 未知路径一律 `404`；请求体超过 32 MiB 返回 `413`；JSON 解析失败 `400`。
+
+## `/api/settings` 字段契约
+
+缺省字段通常保留现值，但切换 provider 或地址且未提交 `api_keys` 时会清空旧凭据池。部分字段先转换类型，非预期类型的节可能被忽略，未知字段不保证报错。数值越界等校验失败返回 `400`，例如 `{"error": "invalid settings: agent.shell_timeout_sec: Input should be less than or equal to 3600"}`；候选配置校验失败会回滚内存且不保存。保存或重建失败可能返回 `500`。
+
+对 `openai_compat` 而言，切换到不同的 provider/地址必须有显式凭据来源：请求带上 `api_key`，或带上 `api_key_env` 绑定一个已存在的环境变量名。两者都没有时返回 `400`——存储的 `api_key` 与旧的 `api_key_env` 都只属于旧端点，静默沿用等于把凭据发给新主机。切换端点且未提交 `api_key_env` 时该绑定会被清空；环境变量的值只用于可用性校验，绝不写进配置文件。`mock` / `ollama` 不需要凭据，不做此校验。
+
+| 节 | 可写字段 |
+| --- | --- |
+| `provider` | `name`、`base_url`、`model`、`api_key`（空 = 保留）、`api_key_env`（合法环境变量名）、`api_keys`、`fallback_models`、`small_model` |
+| `agent` | `approval`、`sandbox_mode`、`effort`、`workdir_only`、`protected_paths`、`system_prompt`、`show_*`、`shell_timeout_sec`、`max_tool_rounds`、`max_repeat_calls`、`max_turn_tokens`、`max_output_chars` |
+| `context` | `agents_md`（仅裸文件名）、`max_fragment_chars`、`history_budget_chars`、`max_context_tokens`、`compact_threshold`、`keep_recent_messages`、`repo_map_enabled`、`repo_map_max_chars`、`knowledge_enabled`、`knowledge_top_k`、`knowledge_max_chars` |
+| `memory` | `enabled`、`top_k`、`capacity`、`embedding_model`、`auto_extract`、`embedding_enabled`、`embedding_base_url`、`embedding_api_key`（空 = 保留）、`rerank_model` |
+| `replay` | `enabled` |
+| `updater` | `mode`（`notify` / `off`） |
+| `hooks` | `[{event, command, args, name, timeout_sec, on_deny}]`；`on_deny` 缺省时沿用同事件、同命令的既有值 |
+| `mcp_servers` | 与 `/api/config` 回显结构一致；敏感 env / header 值回传 `[REDACTED]` 时按原值恢复 |
+
+主要数值边界见 `src/spark/config.py` 的 pydantic `ge`/`le`；hooks 的 `timeout_sec` 则单独转换并钳制到至少 1，空值使用 15。
+
+`api_keys` 提交时整体替换：不要将 GET 返回的掩码重新作为密钥提交；空数组清空。长密钥掩码会暴露首尾各四位。MCP env 默认合并，`env_replace: true` 才整体替换；更改目标时旧 env 不会自动带往新目标。MCP header 的占位符仅在同名服务器和相同 URL 下恢复，否则被丢弃；env 占位符无法安全恢复时返回错误。配置文件中密钥以明文保存，应限制访问。
+
+### `permission_rules` / `approval_profiles` 写接口设计（当前只读）
+
+`GET /api/config` 已返回 `permission_rules`、`approval_profiles`、
+`active_approval_profile_id`，其中权限规则仅为用户层，不含 project/local 层。`permission_scopes` 不在该响应中。`POST /api/settings` 收到这四个键中的任何一个都会明确返回 `400`（`... is read-only over /api/settings`），而不是静默忽略。
+
+暂不开放写路径的原因：权限规则是 deny 跨层优先的安全边界
+（`spark.policy.decide` + `_load_scoped_permission_rules`），审批档案激活会改写
+审批模式、工具白名单与 system prompt；半成品写路径比不支持更危险。
+
+计划中的接口（未实现，待安全评审）：
+
+| 方法 | 路径 | 请求体 | 语义 |
+| --- | --- | --- | --- |
+| `POST` | `/api/permissions/rules` | `{scope: "user", rules: [{action, resource, tool}]}` | 仅允许写 `user` 层；`project` / `local` 层由工作目录文件装配，不接受远程写入 |
+| `POST` | `/api/permissions/rules/delete` | `{scope, index}` | 按序号删除，避免 glob 字符串作为主键 |
+| `POST` | `/api/approval_profiles/save` | `{id?, name, approval, tools, system_prompt, model_profile_id}` | 与 `/api/models/save` 同构：无 `id` 为新建 |
+| `POST` | `/api/approval_profiles/delete` | `{id}` | 删除档案；删除活跃档案时清空 `active_approval_profile_id` |
+| `POST` | `/api/approval_profiles/activate` | `{id}` | 激活并重建 AgentLoop（与 `/api/models/activate` 同样走 `settings_lock` → 非阻塞 `turn_lock`） |
+
+共同约束：全部在 `state.settings_lock` 内完成「校验 → 应用 → `save_config` → 重建
+loop」；校验失败回滚内存并返回 `400`；写 `user` 层规则需要额外审计日志。
 
 ## SSE 事件格式
 

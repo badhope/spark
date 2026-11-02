@@ -24,7 +24,7 @@ The server listens on `127.0.0.1` only by default (`spark web --host 0.0.0.0` op
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/status` | Session, sandbox mode, approval mode, context usage, plan, environment info |
-| `GET` | `/api/config` | Full config (keys masked): provider, agent, context, mcp_servers, hooks |
+| `GET` | `/api/config` | Settings view (some sensitive values masked; not all config): provider, agent, context (incl. `agents_md` / `repo_map_max_chars` / `knowledge_*`), memory (incl. `embedding_*` / `rerank_model`), mcp_servers, hooks (incl. `on_deny`), replay, updater, plus read-only `permission_rules` / `approval_profiles` / `active_approval_profile_id` |
 | `GET` | `/api/models` | Model profiles (api_key masked, `active` flag) |
 | `GET` | `/api/agents_md` | Reads the AGENTS.md inside the workdir |
 | `GET` | `/api/memory` | Long-term memory: `items`, `search?q=` hits with score, `stats` |
@@ -49,10 +49,78 @@ The server listens on `127.0.0.1` only by default (`spark web --host 0.0.0.0` op
 | `POST` | `/api/sessions/delete` | `{session_id}` | Delete a session; auto-switches when deleting the current one |
 | `POST` | `/api/sessions/switch` | `{session_id}` | Switch sessions and return the message history |
 | `POST` | `/api/checkpoints/rollback` | `{checkpoint_id}` | Roll back to a checkpoint (restores workdir files + history) |
-| `POST` | `/api/settings` | provider/agent/mcp_servers/hooks sections | Save settings and rebuild the AgentLoop; `400` on invalid fields, `409` while busy |
+| `POST` | `/api/settings` | provider/agent/context/memory/hooks/mcp_servers/replay/updater sections | Save settings and rebuild the AgentLoop; `400` without persisting on validation failures, `409` while busy; omitted fields usually remain unchanged (except the pool when changing target) |
 | `POST` | `/api/test` | `{base_url, model, api_key?}` | Probe the model endpoint (refuses to send the stored credential to a different host) |
 
 Unknown paths return `404`; bodies above 32 MiB return `413`; malformed JSON returns `400`.
+
+## `/api/settings` field contract
+
+Omitted fields usually retain their values, but changing provider or endpoint clears the
+old credential pool if `api_keys` is omitted. Some fields are coerced, sections of an
+unexpected type may be ignored, and unknown fields are not guaranteed to cause an error.
+Validation failures such as out-of-range values return `400`, for example
+`{"error": "invalid settings: agent.shell_timeout_sec: Input should be less than or equal to 3600"}`;
+failed candidate validation rolls back memory and does not save. Save or rebuild failures
+may return `500`.
+
+For `openai_compat`, switching to a different provider or endpoint requires an explicit
+credential source: either send `api_key`, or send `api_key_env` naming an environment
+variable that exists. Without either, the request returns `400` — the stored `api_key`
+and the previous `api_key_env` both belong to the old endpoint, so reusing them silently
+would send the credential to a new host. When the endpoint changes without a submitted
+`api_key_env`, that binding is cleared; the environment value is only used to check
+availability and is never written into the config file. `mock` and `ollama` need no
+credentials and are exempt.
+
+| Section | Writable fields |
+| --- | --- |
+| `provider` | `name`, `base_url`, `model`, `api_key` (blank = keep), `api_key_env` (valid env name), `api_keys`, `fallback_models`, `small_model` |
+| `agent` | `approval`, `sandbox_mode`, `effort`, `workdir_only`, `protected_paths`, `system_prompt`, `show_*`, `shell_timeout_sec`, `max_tool_rounds`, `max_repeat_calls`, `max_turn_tokens`, `max_output_chars` |
+| `context` | `agents_md` (bare filename only), `max_fragment_chars`, `history_budget_chars`, `max_context_tokens`, `compact_threshold`, `keep_recent_messages`, `repo_map_enabled`, `repo_map_max_chars`, `knowledge_enabled`, `knowledge_top_k`, `knowledge_max_chars` |
+| `memory` | `enabled`, `top_k`, `capacity`, `embedding_model`, `auto_extract`, `embedding_enabled`, `embedding_base_url`, `embedding_api_key` (blank = keep), `rerank_model` |
+| `replay` | `enabled` |
+| `updater` | `mode` (`notify` / `off`) |
+| `hooks` | `[{event, command, args, name, timeout_sec, on_deny}]`; a missing `on_deny` inherits the existing value for the same event+command |
+| `mcp_servers` | Same shape as `/api/config`; sensitive env/header values sent back as `[REDACTED]` are restored |
+
+Most numeric bounds are in the pydantic `ge`/`le` metadata in `src/spark/config.py`;
+hook `timeout_sec` is separately converted and clamped to at least 1, with blank using 15.
+
+Submitting `api_keys` replaces the entire pool: never submit the masks returned by GET as
+keys; an empty array clears the pool. Long-key masks expose the first and last four
+characters. MCP env values merge by default; `env_replace: true` replaces them. Old env
+values are not automatically carried to a changed target. MCP header placeholders are
+restored only for the same server name and URL, otherwise dropped; an env placeholder
+that cannot be safely restored produces an error. Config files store secrets in plaintext;
+restrict access.
+
+### `permission_rules` / `approval_profiles` write API design (read-only today)
+
+`GET /api/config` returns `permission_rules`, `approval_profiles` and
+`active_approval_profile_id`. The rules are the user-level rules, not the project/local
+scopes; `permission_scopes` is not returned. `POST /api/settings` returns an explicit
+`400` (`... is read-only over /api/settings`) for any of these four keys instead of silently
+ignoring them.
+
+Write paths are intentionally not shipped yet: permission rules are a security boundary
+with deny-across-scopes precedence (`spark.policy.decide` +
+`_load_scoped_permission_rules`), and activating an approval profile rewrites the approval
+mode, tool allowlist and system prompt. A half-built write path is more dangerous than none.
+
+Planned endpoints (not implemented, pending security review):
+
+| Method | Path | Body | Semantics |
+| --- | --- | --- | --- |
+| `POST` | `/api/permissions/rules` | `{scope: "user", rules: [{action, resource, tool}]}` | `user` scope only; `project` / `local` come from workdir files and are never writable remotely |
+| `POST` | `/api/permissions/rules/delete` | `{scope, index}` | Delete by index so glob strings never act as primary keys |
+| `POST` | `/api/approval_profiles/save` | `{id?, name, approval, tools, system_prompt, model_profile_id}` | Mirrors `/api/models/save`: no `id` creates |
+| `POST` | `/api/approval_profiles/delete` | `{id}` | Deleting the active profile clears `active_approval_profile_id` |
+| `POST` | `/api/approval_profiles/activate` | `{id}` | Activate and rebuild the AgentLoop (`settings_lock` → non-blocking `turn_lock`, same as `/api/models/activate`) |
+
+Shared constraints: every write runs inside `state.settings_lock` as
+"validate → apply → `save_config` → rebuild loop"; validation failure rolls back memory and
+returns `400`; writing `user`-scope rules additionally requires an audit-log entry.
 
 ## SSE event format
 

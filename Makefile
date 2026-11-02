@@ -1,14 +1,39 @@
 # Spark 常用命令（轻量入口）
-# 用法：make <target>；Windows 无 make 时用 .venv/bin/python -m 等价命令
+# 用法：make <target>；没有 make 时直接运行 $(PY) -m <module>
 
+WINDOWS_SHELL := $(shell uname -s 2>/dev/null)
+ifneq ($(OS),Windows_NT)
+ifneq (,$(findstring MINGW,$(WINDOWS_SHELL)))
+OS := Windows_NT
+endif
+ifneq (,$(findstring MSYS,$(WINDOWS_SHELL)))
+OS := Windows_NT
+endif
+ifneq (,$(findstring CYGWIN,$(WINDOWS_SHELL)))
+OS := Windows_NT
+endif
+endif
+
+ifeq ($(OS),Windows_NT)
+PY := .venv/Scripts/python.exe
+ifneq (,$(WINDOWS_SHELL))
+BOOTSTRAP_PY := py -3
+export USERPROFILE := $(shell cygpath -w "$$(env | sed -n 's/^HOME=//p')")
+export USERNAME := $(shell env | sed -n 's/^HOME=//p' | sed 's#.*/##')
+else
+BOOTSTRAP_PY := python
+endif
+else
 PY := .venv/bin/python
-PIP := .venv/bin/pip
+BOOTSTRAP_PY := python3
+endif
+PIP := $(PY) -m pip
 
 .PHONY: install dev test lint build run doctor clean audit
 
 ## 安装
 install:            ## 安装到 .venv（可编辑 + dev 依赖）
-	python3 -m venv .venv
+	$(BOOTSTRAP_PY) -m venv .venv
 	$(PIP) install -e ".[dev]"
 
 ## 日常开发
@@ -23,10 +48,10 @@ audit:              ## 依赖漏洞扫描 — uv audit + pip-audit（检出漏�
 	@echo "== uv audit =="
 	uv audit
 	@echo "== pip-audit =="
-	python3 -m pip_audit --progress-spinner off
+	$(PY) -m pip_audit --progress-spinner off
 
-lint:               ## ruff 静态检查（未安装时自动安装）
-	$(PIP) install -q ruff && .venv/bin/ruff check src/spark tests
+lint:               ## ruff 静态检查（需已安装 dev 依赖）
+	$(PY) -m ruff check src/spark tests
 
 build:              ## 构建 wheel（输出到 dist/）
 	$(PIP) install -q build && $(PY) -m build
