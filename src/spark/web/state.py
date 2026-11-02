@@ -213,8 +213,14 @@ class SparkWebState:
         self.memory = MemoryService(self.memory_store, cfg)
         self.env_info = self._detect_env()
         bg_tools.attach_store(self.store)
+        # 定时任务：调度器只判"到点了"，执行走 run_due_automations（由
+        # 后台线程调，且与普通回合共用 turn_lock，保证不会和用户抢会话）。
+        from spark.automations import AutomationScheduler
+
+        self.automations = AutomationScheduler(self.store, on_due=self.run_due_automations)
         self.boot_mcp()
         self.rebuild_loop(reuse_latest=True)
+        self.automations.start()
 
     @staticmethod
     def _detect_env() -> dict:
@@ -346,6 +352,61 @@ class SparkWebState:
         loop = self.loop
         override = getattr(loop, "_approval_override", None) if loop is not None else None
         return str(override or self.cfg.agent.approval)
+
+    def run_due_automations(self) -> list[dict]:
+        """执行到期的定时任务；返回本轮结果摘要。
+
+        与用户回合共用 ``turn_lock``：无人值守任务绝不能和正在进行的对话
+        并发跑同一个 loop（会话状态、审批队列、文件快照都会互相踩）。
+        拿不到锁就标记 skipped 并留到下一拍，而不是排队堆积。
+        """
+        results: list[dict] = []
+        for task in self.automations.run_due():
+            aid = str(task.get("id") or "")
+            if not aid:
+                continue
+            if not self.turn_lock.acquire(blocking=False):
+                self.store.mark_automation_result(
+                    aid, status="skipped (agent busy)", skipped=True
+                )
+                results.append({"id": aid, "status": "skipped"})
+                continue
+            try:
+                if self.loop is None:
+                    self.store.mark_automation_result(
+                        aid, status="failed", error="agent not ready"
+                    )
+                    results.append({"id": aid, "status": "failed"})
+                    continue
+                session_id = self.store.create_session(
+                    self.workdir, self.cfg.provider.model,
+                    title=f"[auto] {task.get('name') or aid}",
+                )
+                previous = self.session_id
+                self.session_id = session_id
+                try:
+                    events = list(self.loop.iter_turn_sync(str(task.get("prompt") or "")))
+                finally:
+                    self.session_id = previous
+                text = ""
+                for event in events:
+                    if getattr(event, "type", "") == "turn_end":
+                        text = (getattr(event, "text", "") or "")[:200]
+                    elif getattr(event, "type", "") == "turn_error":
+                        text = f"error: {getattr(event, 'text', '')}"[:200]
+                self.store.mark_automation_result(
+                    aid, status="ok", session_id=session_id
+                )
+                results.append({"id": aid, "status": "ok", "summary": text})
+            except Exception as exc:  # aqg: top-level boundary
+                logger.warning("automation %s failed", aid, exc_info=True)
+                self.store.mark_automation_result(
+                    aid, status="failed", error=str(exc)
+                )
+                results.append({"id": aid, "status": "failed"})
+            finally:
+                self.turn_lock.release()
+        return results
 
     def status(self) -> dict:
         # 凭据可来自配置或环境变量（SPARK_* / DEEPSEEK_API_KEY 等）：只读配置字段

@@ -357,14 +357,48 @@ def _path_candidates(command: str) -> list[str]:
 
 
 class WorkdirSandbox:
-    def __init__(self, workdir: Path, cfg: SparkConfig | None = None) -> None:
+    def __init__(
+        self,
+        workdir: Path,
+        cfg: SparkConfig | None = None,
+        extra_roots: list[Path] | None = None,
+    ) -> None:
         self.root = workdir.resolve()
         self.cfg = cfg
         self.sandbox_mode = getattr(cfg.agent, "sandbox_mode", "workspace") if cfg else "workspace"
         self.protected_paths = list(getattr(cfg.agent, "protected_paths", []) or []) if cfg else []
+        #: 额外可访问根目录（--add-dir / agent.extra_dirs）。
+        #: 语义刻意保守：只放行这些目录内的文件读写，不放宽 shell 越界，
+        #: 也不放宽保护路径。加目录是为了让 agent 能读同级的兄弟仓库，
+        #: 不是为了给它一台新机器。
+        self.extra_roots: list[Path] = []
+        # 配置里的 extra_dirs 是默认来源，显式参数在其后追加/去重。
+        configured = list(getattr(cfg.agent, "extra_dirs", []) or []) if cfg else []
+        for raw in [*configured, *(extra_roots or [])]:
+            try:
+                resolved = Path(raw).expanduser().resolve()
+            except OSError:
+                continue
+            if resolved != self.root and resolved not in self.extra_roots:
+                self.extra_roots.append(resolved)
         #: Tool name of the call currently being dispatched, set by the registry.
         #: Only used to attribute an audit entry; enforcement never reads it.
         self.current_tool: str = ""
+
+    @property
+    def roots(self) -> list[Path]:
+        """所有允许的文件系统根（主工作目录 + 额外目录）。"""
+        return [self.root, *self.extra_roots]
+
+    def _containing_root(self, path: Path) -> Path | None:
+        """返回 *path* 所属的允许根，或 None。"""
+        for root in self.roots:
+            try:
+                path.relative_to(root)
+                return root
+            except ValueError:
+                continue
+        return None
 
     @property
     def shell_allowed(self) -> bool:
@@ -384,7 +418,17 @@ class WorkdirSandbox:
 
     def resolve(self, rel: str) -> Path:
         raw = rel.strip() or "."
-        path = (self.root / raw).resolve()
+        # 绝对路径先按原样解析：`--add-dir` 的目录通常在工作目录之外，
+        # 拼到 root 后面会得到一个无意义的名字。
+        candidate = Path(raw)
+        if candidate.is_absolute():
+            path = candidate.expanduser().resolve()
+        else:
+            path = (self.root / raw).resolve()
+        containing = self._containing_root(path)
+        if containing is not None:
+            self._check_protected(path)
+            return path
         try:
             path.relative_to(self.root)
         except ValueError as exc:
@@ -421,8 +465,13 @@ class WorkdirSandbox:
     def _check_protected(self, path: Path) -> None:
         # Any .git control surface at any depth: a nested repo (`vendor/x/.git`)
         # or a submodule (`.git/modules/m/hooks`) is just as good a place to plant
-        # a hook that runs on the user's next commit.
-        hit = _git_control_surface(path, self.root)
+        # a hook that runs on the user's next commit. 每个允许根都要查——
+        # 只相对主 root 计算会让 --add-dir 目录里的 .git 完全逃过检查。
+        hit = None
+        for root in self.roots:
+            hit = _git_control_surface(path, root)
+            if hit:
+                break
         if hit:
             from spark import audit
 

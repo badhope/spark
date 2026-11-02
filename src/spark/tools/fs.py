@@ -158,9 +158,28 @@ def write_file(sandbox: WorkdirSandbox, args: WriteFileArgs) -> ToolResult:
             handle.write(_encode_file(args.content, newline, bom))
     except OSError as exc:
         return ToolResult(ok=False, payload={"error": f"cannot write file: {exc}"})
-    return ToolResult(
-        ok=True, payload={"path": args.path, "bytes": len(args.content.encode("utf-8"))}
-    )
+    payload: dict[str, Any] = {
+        "path": args.path,
+        "bytes": len(args.content.encode("utf-8")),
+    }
+    _maybe_format(sandbox, path, payload)
+    return ToolResult(ok=True, payload=payload)
+
+
+def _maybe_format(sandbox: WorkdirSandbox, path: Path, payload: dict[str, Any]) -> None:
+    """写后格式化；结果如实写进 payload，失败不影响写入成功。"""
+    cfg = getattr(sandbox, "cfg", None)
+    enabled = bool(getattr(getattr(cfg, "agent", None), "format_on_write", False))
+    if not enabled:
+        return
+    from spark.tools.formatting import format_file
+
+    outcome = format_file(path, sandbox.root, enabled=True)
+    if outcome.get("formatted"):
+        payload["formatted"] = outcome.get("tool") or True
+    elif outcome.get("error"):
+        # 明确告知"写了但没格式化"，避免模型以为已经格式化过。
+        payload["format_skipped"] = outcome["error"]
 
 
 def apply_patch(sandbox: WorkdirSandbox, args: ApplyPatchArgs) -> ToolResult:
@@ -197,7 +216,9 @@ def apply_patch(sandbox: WorkdirSandbox, args: ApplyPatchArgs) -> ToolResult:
             handle.write(_encode_file(updated, newline, bom))
     except OSError as exc:
         return ToolResult(ok=False, payload={"error": f"cannot write file: {exc}"})
-    return ToolResult(ok=True, payload={"path": args.path, "patched": True})
+    payload: dict[str, Any] = {"path": args.path, "patched": True}
+    _maybe_format(sandbox, path, payload)
+    return ToolResult(ok=True, payload=payload)
 
 
 def write_summary(path: str, content: str) -> str:

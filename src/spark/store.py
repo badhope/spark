@@ -89,6 +89,21 @@ class SessionStore:
                     source TEXT NOT NULL DEFAULT 'estimated',
                     created_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS automations (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    prompt TEXT NOT NULL,
+                    cron TEXT NOT NULL,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    workdir TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL,
+                    last_run REAL NOT NULL DEFAULT 0,
+                    next_run_at REAL NOT NULL DEFAULT 0,
+                    last_status TEXT NOT NULL DEFAULT '',
+                    last_session_id TEXT NOT NULL DEFAULT '',
+                    last_error TEXT NOT NULL DEFAULT '',
+                    skipped_count INTEGER NOT NULL DEFAULT 0
+                );
                 """
             )
             # FTS5 trigram 全文索引（中文子串检索；短查询回退 LIKE）
@@ -965,3 +980,90 @@ class SessionStore:
         转义 FTS 特殊字符（trigram 下空格分词，短语即子串命中）。"""
         escaped = q.replace('"', '""')
         return f'"{escaped}"'
+
+    # ---- automations（定时任务） -------------------------------------------
+
+    def list_automations(self) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM automations ORDER BY created_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_automation(self, automation_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM automations WHERE id = ?", (automation_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def upsert_automation(self, record: dict) -> None:
+        """插入或整体更新一条自动化（字段集合固定，避免局部更新漏字段）。"""
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO automations
+                   (id, name, prompt, cron, enabled, workdir, created_at, last_run,
+                    next_run_at, last_status, last_session_id, last_error, skipped_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     name=excluded.name, prompt=excluded.prompt, cron=excluded.cron,
+                     enabled=excluded.enabled, workdir=excluded.workdir,
+                     last_run=excluded.last_run, next_run_at=excluded.next_run_at,
+                     last_status=excluded.last_status,
+                     last_session_id=excluded.last_session_id,
+                     last_error=excluded.last_error,
+                     skipped_count=excluded.skipped_count""",
+                (
+                    record["id"], record["name"], record["prompt"], record["cron"],
+                    int(bool(record.get("enabled", True))), record.get("workdir", ""),
+                    record.get("created_at", 0), record.get("last_run", 0),
+                    record.get("next_run_at", 0), record.get("last_status", ""),
+                    record.get("last_session_id", ""), record.get("last_error", ""),
+                    int(record.get("skipped_count", 0)),
+                ),
+            )
+            self._conn.commit()
+
+    def delete_automation(self, automation_id: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM automations WHERE id = ?", (automation_id,)
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def update_automation_schedule(
+        self, automation_id: str, *, last_run: float, next_run_at: float
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE automations SET last_run = ?, next_run_at = ? WHERE id = ?",
+                (last_run, next_run_at, automation_id),
+            )
+            self._conn.commit()
+
+    def mark_automation_result(
+        self,
+        automation_id: str,
+        *,
+        status: str,
+        session_id: str = "",
+        error: str = "",
+        skipped: bool = False,
+    ) -> None:
+        with self._lock:
+            if skipped:
+                self._conn.execute(
+                    """UPDATE automations
+                       SET last_status = ?, skipped_count = skipped_count + 1
+                       WHERE id = ?""",
+                    (status, automation_id),
+                )
+            else:
+                self._conn.execute(
+                    """UPDATE automations
+                       SET last_status = ?, last_session_id = ?, last_error = ?
+                       WHERE id = ?""",
+                    (status, session_id, error[:500], automation_id),
+                )
+            self._conn.commit()

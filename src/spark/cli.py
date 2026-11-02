@@ -115,6 +115,7 @@ def _common_cfg(
     model: str | None,
     provider: str | None,
     sandbox_mode: str | None = None,
+    add_dirs: list[Path] | None = None,
 ) -> SparkConfig:
     cfg = load_config(
         config_path=config,
@@ -124,6 +125,12 @@ def _common_cfg(
         provider=cast(ProviderName, provider),
         sandbox_mode=cast(SandboxMode, sandbox_mode),
     )
+    # --add-dir 是本次进程的额外授权，不写回配置文件：命令行给的一次性
+    # 权限不该悄悄变成持久设置。
+    for extra in add_dirs or []:
+        resolved = str(extra.expanduser().resolve())
+        if resolved not in cfg.agent.extra_dirs:
+            cfg.agent.extra_dirs.append(resolved)
     if cfg.provider.name == "openai_compat":
         try:
             require_api_key(cfg)
@@ -559,11 +566,17 @@ def web_cmd(
     port: int | None = typer.Option(
         None, "--port", help="监听端口；省略时从 8000 起自动选择可用端口"
     ),
+    add_dir: list[Path] = typer.Option(
+        None,
+        "--add-dir",
+        help="额外可读写的目录（可重复）；只放行文件读写，不放宽 shell 越界",
+    ),
 ) -> None:
     try:
         workdir = workdir.resolve()
         cfg = _common_cfg(
-            workdir, config, approval, model, provider, sandbox_mode=sandbox_mode
+            workdir, config, approval, model, provider,
+            sandbox_mode=sandbox_mode, add_dirs=add_dir,
         )
         store = _store()
         from spark.web.server import build_web_server

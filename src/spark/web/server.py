@@ -164,4 +164,10 @@ def serve_web(
             _state._notify_hook("app_stop", {"reason": "server_shutdown"})
         except Exception:  # pragma: no cover - shutdown must not fail
             logger.debug("app_stop hook failed", exc_info=True)
+        # 调度线程必须在 store.close() 之前停下：否则它会在关闭后的 sqlite
+        # 连接上继续查询，日志里刷满 ProgrammingError。
+        try:
+            _state.automations.stop()
+        except Exception:  # pragma: no cover - shutdown must not fail
+            logger.debug("automation scheduler stop failed", exc_info=True)
         store.close()

@@ -15,6 +15,10 @@
 
 from __future__ import annotations
 
+from spark.web._handlers_automations import (  # noqa: F401
+    _handle_automations,
+    _handle_automations_cron_check,
+)
 from spark.web._handlers_chat import (  # noqa: F401  (re-export for backward-compat)
     _handle_chat,
     _handle_chat_stream,
@@ -72,6 +76,8 @@ from spark.web._handlers_settings import (  # noqa: F401
 
 __all__ = [
     "_handle_agents_md",
+    "_handle_automations",
+    "_handle_automations_cron_check",
     "_handle_approval",
     "_handle_approval_profiles_activate",
     "_handle_approval_profiles_delete",

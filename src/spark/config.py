@@ -119,6 +119,12 @@ class AgentConfig(BaseModel):
     workdir_only: bool = True
     sandbox_mode: SandboxMode = "workspace"
     protected_paths: list[str] = Field(default_factory=list)
+    #: 额外可读写的目录（`--add-dir`，对应 codex/opencode 的同名能力）。
+    #: 只放行这些目录内的文件读写；不放宽 shell 越界与保护路径。
+    extra_dirs: list[str] = Field(default_factory=list)
+    #: 写文件后自动格式化（对应 opencode 的 formatter）。默认关：隐式改写
+    #: 用户文件必须由用户显式打开。只调用项目里已有的 ruff / prettier。
+    format_on_write: bool = False
     shell_timeout_sec: int = Field(default=60, ge=1, le=3600)
     max_tool_rounds: int = Field(default=30, ge=1, le=1000)
     max_repeat_calls: int = Field(default=4, ge=0, le=10000)
@@ -829,6 +835,10 @@ def _agent_table(cfg: SparkConfig) -> tomlkit.items.Table:
     agent.add("workdir_only", cfg.agent.workdir_only)
     agent.add("sandbox_mode", cfg.agent.sandbox_mode)
     agent.add("protected_paths", list(cfg.agent.protected_paths))
+    if cfg.agent.extra_dirs:
+        agent.add("extra_dirs", list(cfg.agent.extra_dirs))
+    if cfg.agent.format_on_write:
+        agent.add("format_on_write", cfg.agent.format_on_write)
     agent.add("shell_timeout_sec", cfg.agent.shell_timeout_sec)
     agent.add("max_tool_rounds", cfg.agent.max_tool_rounds)
     agent.add("max_repeat_calls", cfg.agent.max_repeat_calls)

@@ -22,6 +22,8 @@ from urllib.parse import parse_qs, urlparse
 from spark.web._handlers import (  # noqa: F401  (re-export for backward-compat)
     _handle_agents_md,
     _handle_approval,
+    _handle_automations,
+    _handle_automations_cron_check,
     _handle_cancel,
     _handle_chat,
     _handle_chat_stream,
@@ -697,6 +699,8 @@ _POST_HANDLERS: dict[str, Any] = {
     "/api/models/save": _handle_models_save,
     "/api/models/delete": _handle_models_delete,
     "/api/models/activate": _handle_models_activate,
+    "/api/automations": _handle_automations,
+    "/api/automations/cron_check": _handle_automations_cron_check,
     "/api/permissions/rules": _handle_permissions_rules,
     "/api/permissions/rules/delete": _handle_permissions_rules_delete,
     "/api/approval_profiles/save": _handle_approval_profiles_save,

@@ -21,6 +21,9 @@ READONLY_TOOLS = {
     "ask_user",
     "grep",
     "diagnostics",
+    # 符号定位只读且不执行任何子进程（tree-sitter + 文本扫描），
+    # 因此与 grep 同级免审批。
+    "find_symbol",
     "mcp_resources",
     "mcp_prompts",
     "glob",
