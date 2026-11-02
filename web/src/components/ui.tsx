@@ -37,23 +37,25 @@ interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 export function Button({ variant = "ghost", size = "md", full, className, children, ...rest }: BtnProps) {
   const v =
     variant === "primary"
-      ? "bg-accent text-on-accent hover:brightness-110 active:brightness-95"
+      ? // 主按钮带一层同色光晕，在深色底上才"立"得起来
+        "bg-accent text-on-accent glow-accent hover:brightness-110 active:brightness-95"
       : variant === "soft"
-        ? "bg-accent-soft text-accent hover:bg-accent/20"
+        ? "bg-accent-soft text-accent hover:bg-accent/25"
         : variant === "danger"
           ? "bg-err/12 text-err hover:bg-err/20"
           : variant === "outline"
             ? "border border-line2 bg-transparent text-ink hover:bg-hover"
             : "text-ink2 hover:bg-hover hover:text-ink"
-  const s = size === "sm" ? "h-7 px-2.5 text-xs" : "h-8.5 px-3.5 text-sm"
+  const s = size === "sm" ? "h-7 px-2.5 text-xs" : "h-8.5 px-3.5 text-[13px]"
   return (
     <button
       type="button"
       className={cls(
-        "inline-flex select-none items-center justify-center gap-1.5 rounded-lg font-medium transition-colors",
+        "ring-focus inline-flex select-none items-center justify-center gap-1.5 rounded-[9px] font-medium",
+        "transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.985]",
         // A disabled primary used to keep its bright fill at 45% opacity, which
         // still reads as an active call to action. Drop to a flat grey.
-        "disabled:pointer-events-none disabled:bg-hover disabled:text-ink3 disabled:opacity-100",
+        "disabled:pointer-events-none disabled:bg-hover disabled:text-ink3 disabled:opacity-100 disabled:shadow-none",
         v,
         s,
         full && "w-full",
@@ -71,7 +73,8 @@ export function IconButton({ className, children, ...rest }: ButtonHTMLAttribute
     <button
       type="button"
       className={cls(
-        "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink2 transition-colors hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-45",
+        "ring-focus inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] text-ink2",
+        "transition-colors duration-150 hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-45",
         className,
       )}
       {...rest}
@@ -135,7 +138,9 @@ export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLIn
     <input
       ref={ref}
       className={cls(
-        "h-9 w-full rounded-lg border border-line bg-panel px-3 text-sm text-ink placeholder:text-ink3 outline-none transition-colors focus:border-accent",
+        "h-9 w-full rounded-[9px] border border-line bg-panel px-3 text-[13px] text-ink outline-none",
+        "placeholder:text-ink3 transition-[border-color,box-shadow] duration-150",
+        "hover:border-line2 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]",
         className,
       )}
       {...rest}
@@ -151,7 +156,9 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
     <textarea
       ref={ref}
       className={cls(
-        "w-full rounded-lg border border-line bg-panel px-3 py-2 text-sm text-ink placeholder:text-ink3 outline-none transition-colors focus:border-accent",
+        "w-full rounded-[9px] border border-line bg-panel px-3 py-2 text-[13px] text-ink outline-none",
+        "placeholder:text-ink3 transition-[border-color,box-shadow] duration-150",
+        "hover:border-line2 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]",
         className,
       )}
       {...rest}
@@ -163,7 +170,7 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
   return (
     <div className={cls("relative", className)}>
       <select
-        className="h-9 w-full appearance-none rounded-lg border border-line bg-panel pr-8 pl-3 text-sm text-ink outline-none transition-colors focus:border-accent"
+        className="h-9 w-full appearance-none rounded-[9px] border border-line bg-panel pr-8 pl-3 text-[13px] text-ink outline-none transition-[border-color,box-shadow] duration-150 hover:border-line2 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
         {...rest}
       >
         {children}
@@ -175,11 +182,11 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
 
 export function Section({ title, desc, children, action }: { title: string; desc?: string; children: ReactNode; action?: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-4">
+    <section className="surface flex flex-col gap-3 p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-ink">{title}</h3>
-          {desc && <p className="mt-0.5 text-xs leading-relaxed text-ink3">{desc}</p>}
+          <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">{title}</h3>
+          {desc && <p className="mt-1 text-[11.5px] leading-relaxed text-ink3">{desc}</p>}
         </div>
         {action}
       </div>
@@ -191,15 +198,19 @@ export function Section({ title, desc, children, action }: { title: string; desc
 export function Badge({ tone = "neutral", className, children }: { tone?: "neutral" | "ok" | "err" | "accent" | "warn"; className?: string; children: ReactNode }) {
   const t =
     tone === "ok"
-      ? "bg-ok/12 text-ok"
+      ? "bg-ok/12 text-ok ring-ok/20"
       : tone === "err"
-        ? "bg-err/12 text-err"
+        ? "bg-err/12 text-err ring-err/20"
         : tone === "accent"
-          ? "bg-accent-soft text-accent"
+          ? "bg-accent-soft text-accent ring-accent/25"
           : tone === "warn"
-            ? "bg-warn/12 text-warn"
-            : "bg-hover text-ink2"
-  return <span className={cls("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium", t, className)}>{children}</span>
+            ? "bg-warn/12 text-warn ring-warn/20"
+            : "bg-hover text-ink2 ring-line"
+  return (
+    <span className={cls("inline-flex items-center gap-1 rounded-[6px] px-1.5 py-0.5 text-[10.5px] font-medium ring-1 ring-inset", t, className)}>
+      {children}
+    </span>
+  )
 }
 
 export function Divider({ className }: { className?: string }) {

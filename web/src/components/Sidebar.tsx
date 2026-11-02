@@ -279,9 +279,9 @@ export const Sidebar = memo(function Sidebar() {
           />
         )}
         {/* 头部 */}
-        <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-          <BrandMark size={28} />
-          <span className="text-[15px] font-bold tracking-tight text-ink">Spark</span>
+        <div className="flex items-center gap-2 px-3 pt-3.5 pb-2.5">
+          <BrandMark size={26} />
+          <span className="text-[14.5px] font-bold tracking-[-0.02em] text-ink">Spark</span>
           <div className="ml-auto flex items-center gap-0.5">
             <IconButton title={t("sidebar.collapse", lang)} onClick={() => setSidebarOpen(false)} className="lg:hidden">
               <IconX size={16} />
@@ -294,24 +294,24 @@ export const Sidebar = memo(function Sidebar() {
           <button
             type="button"
             onClick={handleNewSession}
-            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-hover text-sm font-medium text-ink transition-colors hover:bg-selected active:scale-[0.99]"
+            className="ring-focus flex h-9 w-full items-center justify-center gap-1.5 rounded-[9px] border border-line bg-panel text-[13px] font-medium text-ink transition-[background-color,border-color,transform] duration-150 hover:border-line2 hover:bg-hover active:scale-[0.99]"
           >
-            <IconPlus size={14} />
+            <IconPlus size={14} className="text-accent" />
             {t("common.newSession", lang)}
           </button>
           <div className="relative">
-            <IconSearch size={14} className="pointer-events-none absolute top-2.5 left-2.5 text-ink3" />
+            <IconSearch size={13} className="pointer-events-none absolute top-[11px] left-2.5 text-ink3" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t("sidebar.searchPh", lang)}
-              className="h-9 w-full rounded-lg border border-line bg-panel pr-7 pl-8 text-[13px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+              className="h-8.5 w-full rounded-[9px] border border-line bg-panel pr-7 pl-8 text-[12.5px] text-ink outline-none placeholder:text-ink3 transition-[border-color,box-shadow] duration-150 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
             />
             {query && (
               <button
                 type="button"
                 onClick={() => setQuery("")}
-                className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded text-ink3 hover:bg-hover"
+                className="absolute top-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded text-ink3 hover:bg-hover hover:text-ink"
               >
                 <IconX size={12} />
               </button>
@@ -369,11 +369,20 @@ export const Sidebar = memo(function Sidebar() {
                           setRenameDraft(s.title && s.title !== "untitled" ? s.title : "")
                         }}
                         className={cls(
-                          "w-full rounded-lg px-3 py-2 pr-14 text-left transition-colors",
-                          active ? "bg-selected text-ink" : "text-ink2 hover:bg-hover",
+                          "group/item relative w-full rounded-[9px] px-2.5 py-2 pr-14 text-left transition-colors duration-150",
+                          active
+                            ? "bg-selected text-ink"
+                            : "text-ink2 hover:bg-hover hover:text-ink",
                         )}
                       >
-                        <span className="block truncate text-[13px] font-medium">
+                        {/* 激活态左侧强调条：比整块反色更克制，也更容易扫读 */}
+                        {active && (
+                          <span
+                            aria-hidden
+                            className="absolute top-1/2 left-0 h-4 w-[2px] -translate-y-1/2 rounded-r bg-accent"
+                          />
+                        )}
+                        <span className="block truncate text-[12.5px] font-medium">
                           {s.title && s.title !== "untitled" ? s.title : t("common.newChat", lang)}
                         </span>
                         {showKeywords && s.keywords && (
@@ -471,30 +480,30 @@ export const Sidebar = memo(function Sidebar() {
         </div>
 
         {/* 底部：模型 + 工作目录 + 设置入口 */}
-        <div className="border-t border-line p-3">
-          <div className="flex items-center gap-2 rounded-lg bg-panel px-3 py-2">
-            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-hover text-[10px] font-bold text-accent">
+        <div className="border-t border-line p-2.5">
+          <div className="flex items-center gap-2 rounded-[9px] bg-panel px-2.5 py-2">
+            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-accent-soft text-[9.5px] font-bold text-accent">
               {status?.model?.slice(0, 2).toUpperCase() ?? "AI"}
               <span
                 title={status?.demo_mode ? (status.demo_reason ?? "") : t("sidebar.liveModel", lang)}
                 className={cls(
-                  "absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ring-2 ring-panel",
+                  "absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ring-2 ring-panel",
                   status?.demo_mode ? "bg-warn" : "bg-ok",
                 )}
               />
             </span>
-            <div className="min-w-0">
-              <p className="truncate text-[12px] font-semibold text-ink">{status?.model ?? t("sidebar.noModel", lang)}</p>
-              <p className="truncate text-[10.5px] text-ink3" title={status?.workdir}>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[11.5px] font-semibold text-ink">{status?.model ?? t("sidebar.noModel", lang)}</p>
+              <p className="truncate text-[10px] text-ink3" title={status?.workdir}>
                 {status?.workdir ?? ""}
               </p>
             </div>
           </div>
-          <div className="mt-2 grid grid-cols-3 gap-1.5">
+          <div className="mt-1.5 grid grid-cols-3 gap-1.5">
             <button
               type="button"
               onClick={openSettings}
-              className="flex h-8 items-center justify-center gap-1.5 rounded-lg bg-hover text-[12px] font-medium text-ink transition-colors hover:bg-selected active:scale-[0.99]"
+              className="ring-focus flex h-8 items-center justify-center gap-1.5 rounded-[9px] border border-line bg-panel text-[11.5px] font-medium text-ink2 transition-colors duration-150 hover:border-line2 hover:bg-hover hover:text-ink active:scale-[0.99]"
             >
               <IconSettings size={13} />
               {t("settings.title", lang)}
@@ -503,7 +512,7 @@ export const Sidebar = memo(function Sidebar() {
               type="button"
               title={t("sidebar.checkpoint", lang)}
               onClick={openCheckpoints}
-              className="flex h-8 items-center justify-center rounded-lg bg-hover text-ink2 transition-colors hover:bg-selected active:scale-[0.99]"
+              className="ring-focus flex h-8 items-center justify-center rounded-[9px] border border-line bg-panel text-ink2 transition-colors duration-150 hover:border-line2 hover:bg-hover hover:text-ink active:scale-[0.99]"
             >
               <IconHistory size={14} />
             </button>
@@ -511,7 +520,7 @@ export const Sidebar = memo(function Sidebar() {
               type="button"
               title={t("sidebar.themeTitle", lang, { theme: themeLabel })}
               onClick={cycleTheme}
-              className="flex h-8 items-center justify-center rounded-lg bg-hover text-ink2 transition-colors hover:bg-selected active:scale-[0.99]"
+              className="ring-focus flex h-8 items-center justify-center rounded-[9px] border border-line bg-panel text-ink2 transition-colors duration-150 hover:border-line2 hover:bg-hover hover:text-ink active:scale-[0.99]"
             >
               <ThemeGlyph theme={theme} />
             </button>

@@ -17,6 +17,7 @@ export type SettingsTab =
   | "shortcuts"
   | "knowledge"
   | "project"
+  | "automations"
   | "advanced"
 
 export interface ToastItem {

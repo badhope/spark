@@ -306,8 +306,12 @@ export const Composer = memo(function Composer() {
 
         <div
           className={cls(
-            "relative rounded-2xl border bg-panel shadow-sm transition-colors focus-within:border-accent/70",
-            dragging ? "border-accent" : "border-line",
+            // 输入区是全屏最常聚焦的元素：给它更明确的"可输入"信号——
+            // 更大的圆角、聚焦时一圈柔光，而不是只换边框色。
+            "relative rounded-[18px] border bg-panel shadow-[var(--shadow-sm)] transition-[border-color,box-shadow] duration-200",
+            dragging
+              ? "border-accent shadow-[0_0_0_3px_var(--accent-soft)]"
+              : "border-line focus-within:border-accent/60 focus-within:shadow-[0_0_0_3px_var(--accent-soft),var(--shadow)]",
           )}
         >
           {shellMode && (
@@ -442,7 +446,7 @@ export const Composer = memo(function Composer() {
                   type="button"
                   title={t("common.stopGenerate", lang)}
                   onClick={cancel}
-                  className="flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-full bg-hover text-ink transition-colors hover:bg-selected active:scale-95"
+                  className="flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-full border border-line bg-hover text-ink transition-all duration-150 hover:border-line2 hover:bg-selected active:scale-95"
                 >
                   <IconStop size={15} />
                 </button>
@@ -453,8 +457,9 @@ export const Composer = memo(function Composer() {
                   disabled={!canSend}
                   onClick={submit}
                   className={cls(
-                    "flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent transition-all hover:brightness-110 active:scale-95",
-                    !canSend && "disabled:opacity-40",
+                    "flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent transition-all duration-150 hover:brightness-110 active:scale-95",
+                    canSend && "glow-accent",
+                    !canSend && "disabled:bg-hover disabled:text-ink3 disabled:opacity-100",
                   )}
                 >
                   <IconSend size={15} />

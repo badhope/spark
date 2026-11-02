@@ -25,24 +25,25 @@ export const Header = memo(function Header() {
   const title = (status && status.session_id && sessionTitle(lang, sessions, status.session_id)) || t("common.newChat", lang)
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-line bg-canvas/90 px-2 backdrop-blur-sm sm:px-3">
+    <header className="glass flex h-12 shrink-0 items-center gap-1 border-b border-line px-2 sm:px-3">
       <IconButton title={t("header.toggleSidebar", lang)} onClick={toggleSidebar} className="lg:hidden">
         <IconMenu size={17} />
       </IconButton>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
-          <p className="truncate text-[13px] font-semibold text-ink">{title}</p>
+          <p className="truncate text-[13px] font-semibold tracking-[-0.01em] text-ink">{title}</p>
           {status?.demo_mode && (
             <span
               title={status.demo_reason}
-              className="hidden shrink-0 rounded-full border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-[10px] font-medium text-warn sm:inline-block"
+              className="hidden shrink-0 items-center gap-1 rounded-full border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-[10px] font-medium text-warn sm:inline-flex"
             >
+              <span className="h-1.5 w-1.5 rounded-full bg-warn breathe" />
               {t("header.demo", lang)}
             </span>
           )}
         </div>
         {status?.workdir && (
-          <p className="hidden truncate text-[10.5px] text-ink3 sm:block" title={status.workdir}>
+          <p className="hidden truncate text-[10px] text-ink3 sm:block" title={status.workdir}>
             {status.workdir}
           </p>
         )}
@@ -52,9 +53,9 @@ export const Header = memo(function Header() {
         <button
           type="button"
           onClick={handleCancel}
-          className="mr-1 flex items-center gap-1.5 rounded-full bg-hover px-2.5 py-1 text-[11px] font-medium text-ink2 transition-colors hover:bg-selected"
+          className="mr-1 flex items-center gap-1.5 rounded-full border border-err/30 bg-err/10 px-2.5 py-1 text-[11px] font-medium text-err transition-colors hover:bg-err/20"
         >
-          <span className="h-2 w-2 rounded-full bg-err" />
+          <span className="h-1.5 w-1.5 rounded-full bg-err breathe" />
           <span className="hidden sm:inline">{t("common.stop", lang)}</span>
         </button>
       )}

@@ -978,3 +978,54 @@ export async function importSession(content: unknown): Promise<{
 export async function exportSessionHtml(): Promise<{ ok: boolean; content: string }> {
   return exportSession("html")
 }
+
+/* ------------------------------------------------------------------ */
+/* 定时任务（Automations）                                              */
+/* ------------------------------------------------------------------ */
+
+export interface AutomationRow {
+  id: string
+  name: string
+  prompt: string
+  cron: string
+  enabled: boolean
+  workdir: string
+  created_at: number
+  last_run: number
+  next_run_at: number
+  last_status: string
+  last_session_id: string
+  last_error: string
+  skipped_count: number
+}
+
+export async function automationsAction(body: Record<string, unknown>): Promise<{
+  ok?: boolean
+  automation?: AutomationRow
+  automations?: AutomationRow[]
+  queued?: boolean
+  hint?: string
+}> {
+  return readJson(
+    await fetchWithTimeout("/api/automations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  )
+}
+
+export async function cronCheck(cron: string): Promise<{
+  valid: boolean
+  error?: string
+  next_run_at?: number
+  next_run_iso?: string
+}> {
+  return readJson(
+    await fetchWithTimeout("/api/automations/cron_check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cron }),
+    }),
+  )
+}

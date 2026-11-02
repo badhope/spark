@@ -7,11 +7,12 @@ import PromptsSection from "./PromptsSection"
 import PluginsSection from "./PluginsSection"
 import ShortcutsSection from "./ShortcutsSection"
 import KnowledgeSection from "./KnowledgeSection"
+import AutomationsSection from "./AutomationsSection"
 import { McpRegistryModal } from "./McpRegistryModal"
 import type { McpRegistryItem } from "../api"
 import type { Theme } from "../theme"
 import { Badge, Button, Field, IconButton, Select, Spinner, TextArea, TextInput, Toggle, cls } from "./ui"
-import { IconBrain, IconCheck, IconCommand, IconFile, IconFolder, IconGlobe, IconKey, IconLayers, IconMoon, IconPlus, IconRefresh, IconSettings, IconSpark, IconStethoscope, IconSun, IconTerminal, IconTrash, IconWrench, IconX } from "./icons"
+import { IconBrain, IconCheck, IconClock, IconCommand, IconFile, IconFolder, IconGlobe, IconKey, IconLayers, IconMoon, IconPlus, IconRefresh, IconSettings, IconSpark, IconStethoscope, IconSun, IconTerminal, IconTrash, IconWrench, IconX } from "./icons"
 import { useSessionStore } from "../store/sessionStore"
 import { useUiStore } from "../store/uiStore"
 import { t, type TranslationKey } from "../i18n"
@@ -48,6 +49,7 @@ type Tab =
   | "shortcuts"
   | "knowledge"
   | "project"
+  | "automations"
   | "advanced"
 
 // 预装模型预设：国内可用优先，用户选一个自动填 provider/base_url/model，只需填 API Key
@@ -75,6 +77,7 @@ const TABS: { key: Tab; labelKey: TranslationKey; icon: React.ReactNode }[] = [
   { key: "shortcuts", labelKey: "tab.shortcuts", icon: <IconCommand size={14} /> },
   { key: "knowledge", labelKey: "tab.knowledge", icon: <IconBrain size={14} /> },
   { key: "project", labelKey: "tab.project", icon: <IconSettings size={14} /> },
+  { key: "automations", labelKey: "tab.automations", icon: <IconClock size={14} /> },
   { key: "advanced", labelKey: "tab.advanced", icon: <IconStethoscope size={14} /> },
 ]
 
@@ -736,13 +739,17 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                   onClick={() => setTab(tb.key)}
                   aria-current={tab === tb.key ? "page" : undefined}
                   className={cls(
-                    "flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] font-medium transition-colors",
-                    tab === tb.key ? "bg-selected text-ink" : "text-ink2 hover:bg-hover",
+                    "relative flex items-center gap-2.5 rounded-[9px] px-3 py-2 text-left text-[12.5px] font-medium transition-colors duration-150",
+                    tab === tb.key ? "bg-selected text-ink" : "text-ink2 hover:bg-hover hover:text-ink",
                   )}
                 >
+                  {/* 激活态用左侧细条标记，与侧栏会话项同一套语言；
+                      右侧孤立小圆点看起来像未读提示，容易误读。 */}
+                  {tab === tb.key && (
+                    <span aria-hidden className="absolute top-1/2 left-0 h-4 w-[2px] -translate-y-1/2 rounded-r bg-accent" />
+                  )}
                   <span className={cls("shrink-0", tab === tb.key ? "text-accent" : "text-ink3")}>{tb.icon}</span>
                   {t(tb.labelKey, lang)}
-                  {tab === tb.key && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-accent" />}
                 </button>
               ))}
             </div>
@@ -1685,6 +1692,8 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
             </div>
           )}
 
+          {tab === "automations" && <AutomationsSection />}
+
           {tab === "advanced" && (
             <div className="flex flex-col gap-4">
               <section className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-4">
@@ -1823,9 +1832,10 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
           )}
         </div>
 
-        {/* 底部保存：skills/prompts/plugins/shortcuts/knowledge 有自己的即时操作；
+        {/* 底部保存：skills/prompts/plugins/shortcuts/knowledge/automations
+            都有自己的即时操作，不该出现统一的"保存设置"按钮；
             memory 页含记忆配置区块，需要统一保存 */}
-        {tab !== "skills" && tab !== "prompts" && tab !== "plugins" && tab !== "shortcuts" && tab !== "knowledge" && (
+        {tab !== "skills" && tab !== "prompts" && tab !== "plugins" && tab !== "shortcuts" && tab !== "knowledge" && tab !== "automations" && (
           <div className="border-t border-line bg-panel2 px-4 py-3">
             <Button variant="primary" full onClick={handleSave} disabled={busy === "save"}>
               {busy === "save" ? (

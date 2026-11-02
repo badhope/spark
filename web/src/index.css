@@ -10,6 +10,7 @@
   --color-canvas: var(--bg);
   --color-panel: var(--panel);
   --color-panel2: var(--panel-2);
+  --color-panel3: var(--panel-3);
   --color-sidebar: var(--sidebar);
   --color-hover: var(--hover);
   --color-selected: var(--selected);
@@ -21,6 +22,7 @@
   --color-accent: var(--accent);
   --color-accent-strong: var(--accent-strong);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-glow: var(--accent-glow);
   --color-on-accent: var(--on-accent);
   --color-ok: var(--ok);
   --color-err: var(--err);
@@ -37,65 +39,96 @@
     "Microsoft YaHei", "Noto Sans SC", sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Cascadia Code",
     "Liberation Mono", monospace;
+  /* 排版尺度：统一 8pt 网格，避免各处随手写 px 导致层级塌陷 */
+  --text-xs: 11.5px;
+  --text-sm: 12.5px;
+  --text-base: 13.5px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 24px;
+  --text-2xl: 32px;
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 320ms;
 }
 
-/* ---------------- 暗色（默认值，避免 FOUC） ---------------- */
+/* ---------------- 暗色（默认值，避免 FOUC） ----------------
+   层次靠「更暗的底 + 更亮的面板 + 1px 亮边」三层堆叠建立。
+   旧值把 bg/panel/panel2 全挤在 #101012~#1d1d21 这 13 级灰里，
+   整个界面读起来就是一块糊住的板。 */
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #101012;
-  --panel: #17171a;
-  --panel-2: #1d1d21;
-  --sidebar: #0d0d0f;
-  --hover: #232327;
-  --selected: #2a2a2f;
-  --line: #26262c;
-  --line-2: #313138;
-  --text: #ececf1;
-  --text-2: #a7a7b3;
-  --text-3: #6f6f7a;
-  --accent: #f97316;
-  --accent-strong: #fb923c;
-  --accent-soft: rgba(249, 115, 22, 0.14);
-  --on-accent: #ffffff;
-  --ok: #34d399;
-  --err: #f87171;
-  --warn: #fbbf24;
-  --info: #60a5fa;
-  --code-bg: #0b0b0d;
-  --user-bubble: #26262c;
-  --user-bubble-text: #ececf1;
-  --shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  --caret: #f97316;
+  --bg: #0b0b0d;
+  --panel: #131316;
+  --panel-2: #191920;
+  --panel-3: #212129;
+  --sidebar: #08080a;
+  --hover: #21212a;
+  --selected: #2b2b36;
+  --line: #232329;
+  --line-2: #33333d;
+  --text: #f2f2f5;
+  --text-2: #a9a9b6;
+  --text-3: #6e6e7b;
+  --accent: #ff7a2f;
+  --accent-strong: #ff9a5c;
+  --accent-soft: rgba(255, 122, 47, 0.15);
+  --accent-glow: rgba(255, 122, 47, 0.28);
+  --on-accent: #1a0d04;
+  --ok: #3ddc97;
+  --err: #ff6b6b;
+  --warn: #ffc857;
+  --info: #6ba6ff;
+  --code-bg: #0a0a0c;
+  --user-bubble: #23232c;
+  --user-bubble-text: #f2f2f5;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.7);
+  --caret: #ff7a2f;
+  /* 面板顶部 1px 亮线，制造"浮起"的物理感 */
+  --highlight: rgba(255, 255, 255, 0.055);
 }
 
 /* ---------------- 亮色 ---------------- */
 [data-theme="light"] {
   color-scheme: light;
-  --bg: #fafafa;
+  --bg: #f7f7f8;
   --panel: #ffffff;
-  --panel-2: #f4f4f5;
-  --sidebar: #f2f2f4;
-  --hover: #f0f0f2;
-  --selected: #e8e8ea;
-  --line: #e4e4e7;
-  --line-2: #d4d4d8;
-  --text: #18181b;
-  --text-2: #52525b;
-  --text-3: #8e8e98;
-  --accent: #ea580c;
+  --panel-2: #fafafa;
+  --panel-3: #f1f1f3;
+  --sidebar: #efeff1;
+  --hover: #ececee;
+  --selected: #e2e2e6;
+  --line: #e3e3e7;
+  --line-2: #cfcfd6;
+  --text: #15151a;
+  --text-2: #4d4d57;
+  --text-3: #8a8a95;
+  --accent: #e8620c;
   --accent-strong: #c2410c;
-  --accent-soft: rgba(234, 88, 12, 0.1);
+  --accent-soft: rgba(232, 98, 12, 0.1);
+  --accent-glow: rgba(232, 98, 12, 0.2);
   --on-accent: #ffffff;
-  --ok: #16a34a;
-  --err: #dc2626;
-  --warn: #d97706;
-  --info: #2563eb;
-  --code-bg: #f6f6f7;
-  --user-bubble: #e8e8ea;
-  --user-bubble-text: #18181b;
-  --shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-  --caret: #ea580c;
+  --ok: #0f9d58;
+  --err: #d92d20;
+  --warn: #b45309;
+  --info: #1d4ed8;
+  --code-bg: #f6f6f8;
+  --user-bubble: #e9e9ee;
+  --user-bubble-text: #15151a;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow: 0 10px 34px rgba(16, 24, 40, 0.1);
+  --shadow-lg: 0 24px 64px rgba(16, 24, 40, 0.16);
+  --caret: #e8620c;
+  --highlight: rgba(255, 255, 255, 0.9);
 }
 
 /* ---------------- 基础 ---------------- */
@@ -126,6 +159,67 @@ body,
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* ---------------- 布局基元 ----------------
+   面板统一走 .surface：底色 + 1px 边 + 顶部高光线，替代此前各组件
+   自己拼 border/bg 导致深浅不一的做法。 */
+.surface {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+.surface::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--highlight) 18%, var(--highlight) 82%, transparent);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  pointer-events: none;
+}
+.surface-flat {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+/* 顶栏用实色半透明而不是 backdrop-filter：blur 在滚动长列表时每帧都要
+   重采样背后内容，低端机与软件渲染下会明显掉帧（实测截图/滚动都会卡住）。
+   层次靠颜色与边框区分已经足够，不必付这个代价。 */
+.glass {
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+}
+/* 顶部/底部滚动渐隐：长列表不再硬切 */
+.fade-y {
+  mask-image: linear-gradient(to bottom, transparent, #000 12px, #000 calc(100% - 12px), transparent);
+}
+.fade-b {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+}
+
+/* 焦点环统一（替代浏览器默认 outline，键盘可用性不变） */
+.ring-focus:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-glow);
+}
+
+/* 强调色光晕：只用于主要 CTA 与激活态，不铺满 */
+.glow-accent {
+  box-shadow: 0 0 0 1px var(--accent-glow), 0 6px 20px -6px var(--accent-glow);
+}
+
+/* 网格背景：空态/欢迎页用，给平面一点结构感 */
+.grid-bg {
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 44px 44px;
+  background-position: center;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 20%, transparent 75%);
+  opacity: 0.5;
 }
 
 :focus-visible {
@@ -169,9 +263,27 @@ button:disabled {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
+/* 弹层进场：带一点过冲的弹簧，比线性位移更有"落位"感 */
+@keyframes overlay-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 @keyframes pulse-dot {
   0%, 100% { opacity: 0.25; transform: scale(0.85); }
   50% { opacity: 1; transform: scale(1); }
+}
+/* 生成中：光带沿内容顶部扫过，替代静止的"思考中…"文字 */
+@keyframes breathe {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+@keyframes sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(200%); }
 }
 @keyframes caret-blink {
   0%, 60%, 100% { opacity: 1; }
@@ -190,9 +302,22 @@ button:disabled {
 }
 
 .anim-fade { animation: fade-in 0.16s ease-out; }
-.anim-fade-up { animation: fade-slide-up 0.2s ease-out; }
-.anim-msg { animation: msg-in 0.18s ease-out; }
-.anim-toast { animation: toast-in 0.18s cubic-bezier(0.2, 0.8, 0.3, 1); }
+.anim-fade-up { animation: fade-slide-up 0.2s var(--ease-out); }
+.anim-msg { animation: msg-in 0.22s var(--ease-out); }
+.anim-toast { animation: toast-in 0.22s var(--ease-out); }
+.anim-overlay { animation: overlay-in 0.22s var(--ease-out); }
+.anim-scrim { animation: scrim-in 0.16s ease-out; }
+.breathe { animation: breathe 1.8s ease-in-out infinite; }
+/* 生成中的顶部光带：放在消息容器上，指示"还在产出" */
+.streaming-sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: sweep 1.8s var(--ease) infinite;
+  opacity: 0.85;
+}
 .spin { animation: spin 0.9s linear infinite; }
 .caret::after {
   content: "";
