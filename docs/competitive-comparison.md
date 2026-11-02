@@ -120,8 +120,8 @@
 | 审批弹窗粒度 | ✅ 允许/始终允许/拒绝（相同签名复用） | codex：命令前缀 / 文件集合两种粒度；ZCode：Allow/Always/Reject/Always Reject + 5 分钟倒计时（权限问题不受限） |
 | 规则引擎 | ✅ `[[permissions]]` 通配 + 最后匹配生效 | opencode 13 键 pattern→动作；codex execpolicy `.rules` + `--ignore-rules` |
 | OS 级沙箱 | ⚠️ bwrap（Linux 可选）+ 纯策略 | codex 三平台（Seatbelt/Landlock/Windows 沙箱）+ 默认断网；Qoder/ZCode 为策略级 |
-| 网络限制开关 | ❌ | codex `sandbox_workspace_write.network_access` |
-| AI 审 AI（自动审查） | ❌ | codex Guardian（自动审查 + `/approve` 放行 + OTLP 审计） |
+| 网络限制开关 | ✅ `agent.network_access`（bwrap 真隔离，其它平台如实降级） | codex `sandbox_workspace_write.network_access` |
+| AI 审 AI（自动审查） | ✅ `agent.auto_review`（独立调用审单次动作，block 即拒） | codex Guardian（自动审查 + `/approve` 放行 + OTLP 审计） |
 | 输出脱敏 | ✅ 三层（密钥/主目录/堆栈） | — |
 | 第三方输出防注入 | ✅ untrusted 围栏 | 无同等显式机制（ZCode 浏览器"页面文本不作指令"） |
 | Web 控制面保护 | ✅ loopback 默认 + X-Spark-Token（非本机启动时打印） | opencode `OPENCODE_SERVER_PASSWORD`；ZCode `--token` |
@@ -151,7 +151,7 @@
 | 定时任务 | ✅ `automations.py`（cron + skipped 语义 + 停机补跑） | ZCode Automations（模板/聊天创建 + 四种频率 + skipped 语义）；Qoder `/crontab` |
 | 空闲算力队列 | ❌ | ZCode Idle-time task（免费跑、超时回队列续跑）—— 独特 |
 | 桌面通知/声音 | ✅ Web Notification（回合结束/等待审批，页面不可见时才发；设置可开） | opencode attention 声音包；codex notifications（osc9/bel）+ `/warnings` |
-| 主题 | ⚠️ Web light/dark/system；TUI 固定 | opencode 10+ 主题 + 自定义 JSON；codex `/theme` + `$CODEX_HOME/themes` |
+| 主题 | ✅ Web light/dark/system × 5 套配色（正交）；TUI 固定 | opencode 10+ 主题 + 自定义 JSON；codex `/theme` + `$CODEX_HOME/themes` |
 | 快捷键重绑 | ❌ | codex `/keymap` 交互重绑；ZCode 自定义键位 |
 | 状态栏定制 | ⚠️ TUI 单行 | codex `tui.status_line` 有序项；ZCode 命令中心 |
 | 通知/远程 | ❌ | ZCode 手机 Remote Control + 飞书/微信 Bot；Qoder Mobile |
@@ -187,7 +187,7 @@
 - ~~`exec --json`~~（第七轮完成，见 §3）
 - ~~LSP 只读工具~~（已用 `find_symbol` 语法级实现；刻意不拉起语言服务器子进程，见 tools/symbols.py 的边界说明）
 - ~~会话分享~~（第七轮完成：单文件 HTML，见 §4）
-- ~~快捷键可配置~~（已完成）+ 主题扩展（未做，仅 light/dark/system）
+- ~~快捷键可配置~~（已完成）+ ~~主题扩展~~（已完成：5 套配色，与明暗正交）
 
 **第七轮（2026-10-23）已关闭**：一键安装、自动更新、`exec --json`、`spark review`、
 `!cmd` 内联 shell、桌面通知、HTML 分享、会话导入、全局规则、small_model、（另已存在）
