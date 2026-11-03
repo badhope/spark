@@ -360,7 +360,11 @@ def test_network_denied_reports_when_it_cannot_be_enforced(tmp_path: Path, monke
     """配置要断网但平台做不到时必须如实告警，不能假装已断网。"""
     import spark.tools.shell as shell
 
-    monkeypatch.setattr(shell.os, "name", "nt")  # 模拟 Windows：bwrap 永远不可用
+    # 只把 bwrap 置为不可用，不要 patch 全局 os.name：monkeypatch 改的是共享
+    # 的 os 模块，Linux 上测试一旦失败，pytest 在补丁恢复前格式化报告，
+    # Path() 会被派生成 WindowsPath 直接 INTERNALERROR 炸掉整个测试进程
+    # （CI ubuntu 自 bbc7d87 起的实际故障路径）。
+    monkeypatch.setattr(shell, "_bwrap_path", lambda: None)
     cfg = SparkConfig(agent=AgentConfig(network_access=False, approval="full-auto"))
     sandbox = WorkdirSandbox(tmp_path, cfg)
     result = shell.run_shell(
