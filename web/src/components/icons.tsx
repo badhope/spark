@@ -234,3 +234,12 @@ export const IconBrain = (p: P) =>
       <path d="M9 9h.01M14 9h.01M9 14h.01M14 14h.01M10 11h4M10 14.5h4" />
     </>
   ))
+
+// Bug glyph: 调试面板入口。用"甲虫"轮廓，与 Spark/Spark 等产品图标区分开。
+export const IconBug = (p: P) => base(p, (
+  <>
+    <path d="M8 6a4 4 0 0 1 8 0" />
+    <rect x="6" y="8" width="12" height="11" rx="5" />
+    <path d="M3 11h3M18 11h3M3 16h3M18 16h3M12 8v11" />
+  </>
+))

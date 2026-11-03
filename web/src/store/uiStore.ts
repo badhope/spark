@@ -18,6 +18,7 @@ export type SettingsTab =
   | "knowledge"
   | "project"
   | "automations"
+  | "debug"
   | "advanced"
 
 export interface ToastItem {

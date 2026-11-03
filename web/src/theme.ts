@@ -2,6 +2,15 @@ export type Theme = "light" | "dark" | "system"
 
 const STORAGE_KEY = "spark-theme"
 
+/**
+ * 默认亮色。
+ *
+ * 之前默认 "system"，在深色系统的机器上首次打开就是深色。产品定位是
+ * 白天对着代码长时间使用的工具，亮色对多数人更友好；暗色仍然是一键可切
+ * 的一等公民，只是不再替用户做决定。
+ */
+export const DEFAULT_THEME: Theme = "light"
+
 export function getStoredTheme(): Theme {
   try {
     const v = localStorage.getItem(STORAGE_KEY)
@@ -9,7 +18,7 @@ export function getStoredTheme(): Theme {
   } catch {
     /* ignore */
   }
-  return "system"
+  return DEFAULT_THEME
 }
 
 export function systemPrefersDark(): boolean {
@@ -32,7 +41,9 @@ export function applyTheme(theme: Theme): void {
     /* ignore */
   }
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.setAttribute("content", resolved === "light" ? "#fafafa" : "#101012")
+  // 与 index.css 的 --bg 保持同源：旧值 #fafafa/#101012 是上一版设计的色，
+  // 换肤后浏览器地址栏会和新界面不一致。
+  if (meta) meta.setAttribute("content", resolved === "light" ? "#f2f2f4" : "#0b0b0d")
   // 过渡结束移除 class，避免常驻 transition 干扰滚动性能
   window.setTimeout(() => {
     document.documentElement.classList.remove("theme-transition")

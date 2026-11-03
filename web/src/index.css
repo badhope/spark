@@ -100,18 +100,21 @@
 /* ---------------- 亮色 ---------------- */
 [data-theme="light"] {
   color-scheme: light;
-  --bg: #f7f7f8;
+  /* 亮色下层次靠"更深的外壳 + 更白的内容面"：侧栏/顶栏比画布深一档，
+     面板纯白，边框清晰可辨。第一版把三层都放在 #efefef~#ffffff 之间，
+     结果顶栏和侧栏糊进背景，边界只剩一条几乎看不见的灰线。 */
+  --bg: #f2f2f4;
   --panel: #ffffff;
-  --panel-2: #fafafa;
-  --panel-3: #f1f1f3;
-  --sidebar: #efeff1;
-  --hover: #ececee;
-  --selected: #e2e2e6;
-  --line: #e3e3e7;
-  --line-2: #cfcfd6;
-  --text: #15151a;
-  --text-2: #4d4d57;
-  --text-3: #8a8a95;
+  --panel-2: #f7f7f9;
+  --panel-3: #ebebef;
+  --sidebar: #e9e9ed;
+  --hover: #e4e4e9;
+  --selected: #dcdce2;
+  --line: #dcdce2;
+  --line-2: #c2c2cb;
+  --text: #14141a;
+  --text-2: #4a4a55;
+  --text-3: #86868f;
   --accent: #e8620c;
   --accent-strong: #c2410c;
   --accent-soft: rgba(232, 98, 12, 0.1);
@@ -121,11 +124,11 @@
   --err: #d92d20;
   --warn: #b45309;
   --info: #1d4ed8;
-  --code-bg: #f6f6f8;
-  --user-bubble: #e9e9ee;
-  --user-bubble-text: #15151a;
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
-  --shadow: 0 10px 34px rgba(16, 24, 40, 0.1);
+  --code-bg: #f4f4f7;
+  --user-bubble: #e6e6ec;
+  --user-bubble-text: #14141a;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.07);
+  --shadow: 0 10px 34px rgba(16, 24, 40, 0.11);
   --shadow-lg: 0 24px 64px rgba(16, 24, 40, 0.16);
   --caret: #e8620c;
   --highlight: rgba(255, 255, 255, 0.9);

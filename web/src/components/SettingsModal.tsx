@@ -8,11 +8,12 @@ import PluginsSection from "./PluginsSection"
 import ShortcutsSection from "./ShortcutsSection"
 import KnowledgeSection from "./KnowledgeSection"
 import AutomationsSection from "./AutomationsSection"
+import DebugSection from "./DebugSection"
 import { McpRegistryModal } from "./McpRegistryModal"
 import type { McpRegistryItem } from "../api"
 import { PALETTES, type Palette, type Theme } from "../theme"
 import { Badge, Button, Field, IconButton, Select, Spinner, TextArea, TextInput, Toggle, cls } from "./ui"
-import { IconBrain, IconCheck, IconClock, IconCommand, IconFile, IconFolder, IconGlobe, IconKey, IconLayers, IconMoon, IconPlus, IconRefresh, IconSettings, IconSpark, IconStethoscope, IconSun, IconTerminal, IconTrash, IconWrench, IconX } from "./icons"
+import { IconBrain, IconBug, IconCheck, IconClock, IconCommand, IconFile, IconFolder, IconGlobe, IconKey, IconLayers, IconMoon, IconPlus, IconRefresh, IconSettings, IconSpark, IconStethoscope, IconSun, IconTerminal, IconTrash, IconWrench, IconX } from "./icons"
 import { useSessionStore } from "../store/sessionStore"
 import { useUiStore } from "../store/uiStore"
 import { t, type TranslationKey } from "../i18n"
@@ -59,6 +60,7 @@ type Tab =
   | "knowledge"
   | "project"
   | "automations"
+  | "debug"
   | "advanced"
 
 // 预装模型预设：国内可用优先，用户选一个自动填 provider/base_url/model，只需填 API Key
@@ -87,6 +89,7 @@ const TABS: { key: Tab; labelKey: TranslationKey; icon: React.ReactNode }[] = [
   { key: "knowledge", labelKey: "tab.knowledge", icon: <IconBrain size={14} /> },
   { key: "project", labelKey: "tab.project", icon: <IconSettings size={14} /> },
   { key: "automations", labelKey: "tab.automations", icon: <IconClock size={14} /> },
+  { key: "debug", labelKey: "tab.debug", icon: <IconBug size={14} /> },
   { key: "advanced", labelKey: "tab.advanced", icon: <IconStethoscope size={14} /> },
 ]
 
@@ -229,6 +232,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
   const [headerText, setHeaderText] = useState<Record<string, string>>({})
   // Empty = keep the stored embedding key (same contract as provider.api_key).
   const [embeddingKeyInput, setEmbeddingKeyInput] = useState("")
+  // Debug 页签（运行时诊断）
   // 治理面：权限规则/审批档案走各自的即时端点（与模型档案同构），
   // 不塞进 /api/settings 的统一保存——它们是安全边界变更，需要独立反馈。
   const [ruleBusy, setRuleBusy] = useState(false)
@@ -1767,6 +1771,8 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
 
           {tab === "automations" && <AutomationsSection />}
 
+          {tab === "debug" && <DebugSection />}
+
           {tab === "advanced" && (
             <div className="flex flex-col gap-4">
               <section className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-4">
@@ -1908,7 +1914,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
         {/* 底部保存：skills/prompts/plugins/shortcuts/knowledge/automations
             都有自己的即时操作，不该出现统一的"保存设置"按钮；
             memory 页含记忆配置区块，需要统一保存 */}
-        {tab !== "skills" && tab !== "prompts" && tab !== "plugins" && tab !== "shortcuts" && tab !== "knowledge" && tab !== "automations" && (
+        {tab !== "skills" && tab !== "prompts" && tab !== "plugins" && tab !== "shortcuts" && tab !== "knowledge" && tab !== "automations" && tab !== "debug" && (
           <div className="border-t border-line bg-panel2 px-4 py-3">
             <Button variant="primary" full onClick={handleSave} disabled={busy === "save"}>
               {busy === "save" ? (

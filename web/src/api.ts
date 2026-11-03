@@ -1029,3 +1029,59 @@ export async function cronCheck(cron: string): Promise<{
     }),
   )
 }
+
+/* ------------------------------------------------------------------ */
+/* 调试诊断                                                            */
+/* ------------------------------------------------------------------ */
+
+export interface DebugSnapshot {
+  ok: boolean
+  collected_ms: number
+  env: {
+    python: string
+    platform: string
+    cwd: string
+    pid: number
+    spark_home: string
+    env_present: string[]
+  }
+  runtime: {
+    loop_ready: boolean
+    loop_session: string | null
+    provider_class: string | null
+    registry_tools: number
+    mcp_servers: string[]
+    mcp_errors: string[]
+    sandbox_mode: string | null
+    extra_roots_count: number
+  }
+  locks: { turn_locked: boolean | null; settings_locked: boolean | null }
+  threads: { count: number; by_name: Record<string, number> }
+  scheduler: { running: boolean; tick_sec: number | null }
+  store: { available: boolean; sessions?: number; checkpoints_current?: number; automations?: number }
+  busy: boolean
+  features?: Record<string, boolean | number>
+}
+
+export async function fetchDebug(): Promise<DebugSnapshot> {
+  return readJson(await fetchWithTimeout("/api/debug"))
+}
+
+/** 前端异常上报：服务端日志能看到浏览器里发生了什么。 */
+export function reportClientError(payload: {
+  kind: string
+  message: string
+  stack?: string
+  where?: string
+}): void {
+  // fire-and-forget；上报失败绝不能影响页面本身（否则错误处理变成新错误源）
+  try {
+    void fetchWithTimeout("/api/debug/client_log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {})
+  } catch {
+    /* ignore */
+  }
+}
