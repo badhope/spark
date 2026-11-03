@@ -11,6 +11,10 @@ export interface SubtaskTrace {
   answerChars: number
   tools: number
   phase: "thinking" | "answering" | "done"
+  /** 子代理收到的任务描述（subtask_start 自带）。UI 靠它区分"哪个子任务"。 */
+  prompt?: string
+  /** 声明的子代理名（若通过 task(agent=...) 派发）。 */
+  agent?: string
 }
 
 export interface ToolCallState {
@@ -417,7 +421,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
                       ...seg.tool,
                       subtasks: [
                         ...(seg.tool.subtasks ?? []).filter((s) => s.index !== idx),
-                        { index: idx, thinkingChars: 0, answerChars: 0, tools: 0, phase: "thinking" as const },
+                        {
+                          index: idx,
+                          thinkingChars: 0,
+                          answerChars: 0,
+                          tools: 0,
+                          phase: "thinking" as const,
+                          prompt: typeof ev.data?.prompt === "string" ? ev.data.prompt : "",
+                          agent: typeof ev.data?.agent === "string" ? ev.data.agent : "",
+                        },
                       ].sort((a, b) => a.index - b.index),
                     },
                   }

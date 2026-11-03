@@ -21,6 +21,7 @@
 | 权限/审批治理写接口 | ✅ | `web/_handlers_governance.py` |
 | 消息级 undo 带文件还原 | ✅ | `/api/messages/truncate` `restore_files` |
 | 子代理独立模型 | ✅ | `DeclaredAgent.model` |
+| 子会话导航（子代理树） | ✅ | `subtask_start` 事件携带 `agent`/`prompt`（`core/loop.py`）+ ToolBlock 子代理轨迹卡片（声明名/任务描述/进度条） |
 
 ## 待做（按"能不能直接动手"排序）
 
@@ -28,7 +29,6 @@
 
 | 能力 | 状态 | 完成标准 |
 | --- | --- | --- |
-| 子会话导航（子代理树） | 📋 | Web 侧能展开父 turn 看到每个子代理的独立轨迹；`subtask_*` 事件已有，缺 UI 聚合 |
 | `spark uninstall` 卸载命令 | 📋 | 一条命令清干净：venv/配置/会话/knowledge，且先打印将删除的清单等确认 |
 | 包管理器分发（brew/scoop） | 📋 | 至少一份 scoop manifest + 安装文档；brew 需要 tap 仓库 |
 | 状态栏定制（TUI） | 📋 | 有序项配置，复用 `agent.display` 思路 |

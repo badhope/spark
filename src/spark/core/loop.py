@@ -1609,12 +1609,14 @@ class AgentLoop:
                 result = self._single_task_result(summaries, sub_errors)
             else:
                 prompts, system_extras, allowlists, models = self._parallel_task_params(items)
+                agent_names = [a.name if a else "" for _, a in items[:4]]
                 async for sub_event in self._forward_subtask_events(
                     self.spawn_subtasks_parallel(
                         prompts,
                         system_extras=system_extras,
                         tools_allowlists=allowlists,
                         models=models,
+                        agent_names=agent_names,
                     ),
                     summaries,
                     sub_errors,
@@ -1740,6 +1742,7 @@ class AgentLoop:
         system_extras: list[str] | None = None,
         tools_allowlists: list[list[str] | None] | None = None,
         models: list[str] | None = None,
+        agent_names: list[str] | None = None,
     ):
         """Run several sub-agents concurrently; each gets its own context. Yields each sub-agent's
         tool/plan events live, then one combined turn_end carrying all summaries.
@@ -1787,9 +1790,15 @@ class AgentLoop:
 
         tasks = [_asyncio.create_task(runner(i, p)) for i, p in enumerate(prompts)]
         for i, prompt in enumerate(prompts):
+            # 带上声明式子代理名：UI 靠它区分"并行跑的到底是哪几个专家"，
+            # 否则三行都只写着 subtask 1/2/3，看起来一模一样。
+            extra: dict = {}
+            declared_name = agent_names[i] if agent_names and i < len(agent_names) else ""
+            if declared_name:
+                extra["agent"] = declared_name
             yield TurnEvent(
                 type="subtask_start",
-                data={"index": i, "prompt": prompt[:200], "total": len(prompts)},
+                data={"index": i, "prompt": prompt[:200], "total": len(prompts), **extra},
             )
         try:
             # Drive the whole fan-out from the queue so a sub-agent that is waiting

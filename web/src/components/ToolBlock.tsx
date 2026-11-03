@@ -64,25 +64,63 @@ function resultTextOf(tool: ToolCallState): string {
   }
 }
 
+/**
+ * 子代理轨迹列表。
+ *
+ * 之前每行只有 "#1 thinking 1.2k chars" —— 看不出这个子任务**在做什么**，
+ * 并行三个的时候完全无法对应。现在带上收到的任务描述（subtask_start 就有，
+ * 只是一直没存），并把字符数换成更直观的进度与工具调用次数。
+ */
 function SubtaskTraceList({ traces }: { traces: SubtaskTrace[] }) {
   const lang = useUiStore((s) => s.lang)
   return (
     <div className="mb-2 flex flex-col gap-1.5">
-      {traces.map((s) => (
-        <div key={s.index} className="flex items-center gap-2 rounded-md border border-line bg-panel2 px-2.5 py-1.5 text-[11px]">
-          <span className="font-mono text-ink3">#{s.index + 1}</span>
-          <span className={cls("font-medium", s.phase === "done" ? "text-ok" : "text-accent")}>
-            {s.phase === "done"
-              ? t("subtask.done", lang)
-              : t(s.phase === "thinking" ? "subtask.thinking" : "subtask.answering", lang)}
-          </span>
-          <span className="ml-auto flex gap-3 font-mono text-[10px] text-ink3">
-            <span>{t("subtask.thinkingChars", lang, { n: s.thinkingChars })}</span>
-            <span>{t("subtask.answerChars", lang, { n: s.answerChars })}</span>
-            <span>{t("subtask.toolCount", lang, { n: s.tools })}</span>
-          </span>
-        </div>
-      ))}
+      {traces.map((s) => {
+        const running = s.phase !== "done"
+        return (
+          <div
+            key={s.index}
+            className={cls(
+              "rounded-md border px-2.5 py-1.5 text-[11px] transition-colors duration-150",
+              running ? "border-accent/35 bg-accent-soft/30" : "border-line bg-panel2",
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] bg-hover font-mono text-[9px] font-semibold text-ink2">
+                {s.index + 1}
+              </span>
+              {s.agent && (
+                <span className="shrink-0 rounded-[4px] bg-accent-soft px-1 py-px font-mono text-[9.5px] text-accent">
+                  {s.agent}
+                </span>
+              )}
+              <span className={cls("shrink-0 font-medium", running ? "text-accent" : "text-ok")}>
+                {s.phase === "done"
+                  ? t("subtask.done", lang)
+                  : t(s.phase === "thinking" ? "subtask.thinking" : "subtask.answering", lang)}
+              </span>
+              <span className="ml-auto flex shrink-0 gap-2.5 font-mono text-[9.5px] text-ink3">
+                <span title={t("subtask.thinkingChars", lang, { n: s.thinkingChars })}>
+                  {s.thinkingChars > 0 ? `${(s.thinkingChars / 1000).toFixed(1)}k` : "—"}
+                </span>
+                <span title={t("subtask.toolCount", lang, { n: s.tools })}>
+                  {t("subtask.toolShort", lang, { n: s.tools })}
+                </span>
+              </span>
+            </div>
+            {s.prompt && (
+              <p className="mt-1 line-clamp-2 text-[10.5px] leading-snug text-ink3" title={s.prompt}>
+                {s.prompt}
+              </p>
+            )}
+            {running && (
+              <div className="mt-1.5 h-0.5 overflow-hidden rounded-full bg-line">
+                <div className="h-full w-1/3 rounded-full bg-accent" style={{ animation: "sweep 1.6s ease-in-out infinite" }} />
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

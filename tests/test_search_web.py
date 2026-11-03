@@ -1,3 +1,4 @@
+import socket
 from pathlib import Path
 
 import pytest
@@ -66,11 +67,20 @@ def test_fetch_page_parses_html() -> None:
     import httpx._transports.mock
 
     original = httpx.Client
+    # DNS 也要密封：fake-IP 代理环境（198.18.0.0/15）下 getaddrinfo 会把
+    # 任何域名解析到非公网地址，被 SSRF 防护拒绝——HTTP 已 mock，这里
+    # 把解析结果也固定为公网地址，测试不再依赖真实 DNS。
+    original_getaddrinfo = socket.getaddrinfo
+    fake_getaddrinfo = lambda host, *a, **kw: [  # noqa: E731
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+    ]
     try:
         httpx.Client = lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs)
+        socket.getaddrinfo = fake_getaddrinfo
         page = web.fetch_page("https://example.com/x", 5000)
     finally:
         httpx.Client = original
+        socket.getaddrinfo = original_getaddrinfo
     assert page["title"] == "T"
     assert "hello world" in page["content"]
     assert "bad()" not in page["content"]

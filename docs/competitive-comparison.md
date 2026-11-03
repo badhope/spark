@@ -134,7 +134,7 @@
 | 子代理独立模型 | ✅ `.claude/agents/*.md` 的 `model:` 字段，按声明切 provider | ZCode subagent `model`/`thoughtLevel`；codex `default_subagent_model` |
 | 专业团队编排 | ❌ | Qoder Experts Mode（Lead + 6 专家 + Team Canvas）；ZCode Dynamic Workflows（JS 编排） |
 | 主 agent 切换 | ❌（单 agent） | opencode Tab 切 build/plan；codex `/agents` 指挥中心 |
-| 子会话导航 | ❌ | opencode 子会话树（leader+方向键）；codex `/subagents` |
+| 子会话导航 | ✅ 子代理轨迹卡片带声明名 + 任务描述 + 实时进度（`subtask_start` 事件携带 `agent`/`prompt`，UI 逐卡区分） | opencode 子会话树（leader+方向键）；codex `/subagents` |
 
 ## 9. 回滚 / 检查点
 

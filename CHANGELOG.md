@@ -2,6 +2,16 @@
 
 本项目遵循语义化版本。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [Unreleased] - 2026-11-03（第十轮：子会话导航）
+
+### 新增
+
+- **子会话导航（子代理树）**：并行 `task` 派发的子代理在 UI 里终于"看得清是谁在干什么"。
+  `subtask_start` 事件现在携带声明式子代理名（`agent`）与任务描述（`prompt`）；
+  ToolBlock 的子代理轨迹卡片显示声明名徽章、任务描述（两行截断、悬停看全文）、
+  思考量与工具调用计数，进行中状态带扫光进度条。补 `subtask.toolShort` 中英文文案，
+  `ChatEvent` 类型同步 `agent?: string` 字段。
+
 ## [Unreleased] - 2026-10-25（第九轮：全面 UI 走查与前后端 1:1 审计）
 
 ### 前端（UI 走查修复）

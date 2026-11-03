@@ -226,7 +226,7 @@ export type ChatEvent =
   | { type: "text_delta"; text: string }
   | { type: "reasoning_delta"; text: string }
   | { type: "tool_start"; tool: ToolCall; data?: { subtask_index?: number } }
-  | { type: "subtask_start"; data: { index: number; prompt: string; total: number } }
+  | { type: "subtask_start"; data: { index: number; prompt: string; total: number; agent?: string } }
   | { type: "subtask_end"; text?: string; data: { index: number; summary: string } }
   | { type: "subtask_progress"; data: { index: number; phase: "thinking" | "answering"; chars: number } }
   | { type: "subtask_trace"; data: { index: number; thinking_chars: number; answer_chars: number; tools: number } }

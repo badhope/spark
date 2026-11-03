@@ -498,6 +498,80 @@ def test_session_export_rejects_unknown_format(live) -> None:
     assert err.value.code == 400
 
 
+def test_subtask_start_carries_agent_name_and_prompt(tmp_path: Path) -> None:
+    """子会话导航：UI 要能区分"并行跑的到底是哪几个专家"。
+
+    subtask_start 事件必须带声明式子代理名（agent=...）和任务描述（prompt），
+    否则三行轨迹都只写着 #1/#2/#3，无法对应。
+    """
+    import asyncio
+
+    from spark.core.loop import AgentLoop
+    from spark.models import ChatDelta, ToolCall
+    from spark.sandbox import WorkdirSandbox
+    from spark.tools.registry import ToolContext, ToolRegistry
+
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "reader.md").write_text(
+        "---\nname: reader\ndescription: reads code\nwhen_to_use: reading\ntools: read_file\n---\n"
+        "You are a code reader.\n",
+        encoding="utf-8",
+    )
+    (agents_dir / "tester.md").write_text(
+        "---\nname: tester\ndescription: runs tests\nwhen_to_use: testing\ntools: run_shell\n---\n"
+        "You are a test runner.\n",
+        encoding="utf-8",
+    )
+
+    cfg = SparkConfig()
+    cfg.provider.name = "mock"
+    cfg.provider.model = "m"
+    cfg.agent.approval = "full-auto"
+    cfg.agent.max_tool_rounds = 3
+    store = SessionStore(tmp_path / "sub2.db")
+    sid = store.create_session(tmp_path, "m")
+    reg = ToolRegistry(ToolContext(sandbox=WorkdirSandbox(tmp_path, cfg), config=cfg))
+    provider = MockProvider(
+        rounds=[
+            [
+                ChatDelta(
+                    type="tool_call",
+                    tool_call=ToolCall(
+                        id="t1",
+                        name="task",
+                        arguments={
+                            "tasks": [
+                                {"prompt": "inspect module", "agent": "reader"},
+                                {"prompt": "run the suite", "agent": "tester"},
+                            ]
+                        },
+                    ),
+                ),
+                ChatDelta(type="end"),
+            ],
+            [ChatDelta(type="text", text="done"), ChatDelta(type="end")],
+        ]
+    )
+    loop = AgentLoop(
+        workdir=tmp_path, cfg=cfg, provider=provider, registry=reg, store=store, session_id=sid
+    )
+
+    async def collect() -> list:
+        return [e async for e in loop.iter_turn("go")]
+
+    events = asyncio.run(collect())
+    starts = [e for e in events if e.type == "subtask_start"]
+    assert len(starts) == 2
+    by_index = {e.data["index"]: e.data for e in starts}
+    assert by_index[0]["agent"] == "reader"
+    assert by_index[1]["agent"] == "tester"
+    assert by_index[0]["prompt"] == "inspect module"
+    assert by_index[1]["prompt"] == "run the suite"
+    # 无声明的普通并行 fanout 不携带 agent 字段（前端按缺省处理）。
+    store.close()
+
+
 def test_subtask_tool_events_are_tagged_with_their_child(tmp_path: Path) -> None:
     """A child's tools must carry its index, or the graph draws them as siblings.
 
