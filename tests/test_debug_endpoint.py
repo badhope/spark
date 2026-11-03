@@ -50,7 +50,8 @@ def web(tmp_path: Path, monkeypatch):
     cfg = SparkConfig()
     cfg.provider.name = "mock"
     cfg.provider.model = "mock-model"
-    cfg.provider.api_key = "sk-super-secret-value-do-not-leak"
+    # 哑值夹具：不带 sk- 前缀，避免 trufflehog 把测试夹具当真实密钥拦截。
+    cfg.provider.api_key = "dummy-api-key-value-for-redaction-test"
     cfg.agent.approval = "full-auto"
     cfg.agent.auto_review = True
     cfg.agent.network_access = False
@@ -117,7 +118,7 @@ def test_debug_never_leaks_secrets(web) -> None:
     )
     _status, body = _request(base, "/api/debug")
     dumped = json.dumps(body, ensure_ascii=False)
-    assert "sk-super-secret" not in dumped
+    assert "dummy-api-key-value-for-redaction-test" not in dumped
     assert "my private prompt text" not in dumped
     # 只报"哪些环境变量存在"，绝不报值
     assert "env_present" in body["env"]
