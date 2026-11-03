@@ -69,9 +69,14 @@ def _handle_automations(handler: HandlerBase, body: dict) -> None:
             return
 
         if action == "update":
-            name = str(body.get("name") or existing["name"]).strip()
-            prompt = str(body.get("prompt") or existing["prompt"]).strip()
-            cron = str(body.get("cron") or existing["cron"]).strip()
+            # 区分"未提供"和"提供了空值"：`body.get(k) or existing[k]` 会把空串
+            # 当成没传，于是 UI 清空名称时静默保留旧名——用户以为改了、其实没改。
+            def _pick(key: str) -> str:
+                return str(body[key]).strip() if key in body else str(existing[key]).strip()
+
+            name = _pick("name")
+            prompt = _pick("prompt")
+            cron = _pick("cron")
             if not name or not prompt:
                 handler._json(400, {"error": "name and prompt are required"})
                 return

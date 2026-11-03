@@ -29,6 +29,8 @@ from spark.web._handlers import (  # noqa: F401  (re-export for backward-compat)
     _handle_chat_stream,
     _handle_checkpoints_rollback,
     _handle_diagnostics,
+    handle_debug,
+    handle_debug_client_log,
     _handle_knowledge,
     _handle_memory,
     _handle_messages_delete,
@@ -399,6 +401,9 @@ def build_handler_class(html: str):
             if path == "/api/diagnostics":
                 _handle_diagnostics(self, {})
                 return
+            if path == "/api/debug":
+                handle_debug(self, {})
+                return
             if path == "/api/openapi.json":
                 # P1：OpenAPI 合同层（前端 codegen 单一事实来源；见 web/api_spec.py）
                 from spark.web.api_spec import OpenApiUnavailable, openapi_schema
@@ -699,6 +704,7 @@ _POST_HANDLERS: dict[str, Any] = {
     "/api/models/save": _handle_models_save,
     "/api/models/delete": _handle_models_delete,
     "/api/models/activate": _handle_models_activate,
+    "/api/debug/client_log": handle_debug_client_log,
     "/api/automations": _handle_automations,
     "/api/automations/cron_check": _handle_automations_cron_check,
     "/api/permissions/rules": _handle_permissions_rules,

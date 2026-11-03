@@ -33,6 +33,10 @@ from spark.web._handlers_content import (  # noqa: F401
     _handle_prompts,
     _handle_skills,
 )
+from spark.web._handlers_debug import (  # noqa: F401
+    handle_debug,
+    handle_debug_client_log,
+)
 from spark.web._handlers_governance import (  # noqa: F401
     _handle_approval_profiles_activate,
     _handle_approval_profiles_delete,
@@ -76,6 +80,8 @@ from spark.web._handlers_settings import (  # noqa: F401
 
 __all__ = [
     "_handle_agents_md",
+    "handle_debug",
+    "handle_debug_client_log",
     "_handle_automations",
     "_handle_automations_cron_check",
     "_handle_approval",
