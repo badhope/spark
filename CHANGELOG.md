@@ -2,6 +2,36 @@
 
 本项目遵循语义化版本。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [0.11.0] - 2026-11-04（第十二轮：协议拼图补全 + 生态对标审查）
+
+### 新增
+
+- **A2A Server（`spark a2a-serve`）**：以 Linux Foundation Agent2Agent 标准
+  （JSON-RPC over HTTP）把 Spark 暴露给跨编排器委派——Agent Card 发现
+  （`/.well-known/agent-card.json`）、`message/send`（非流式 turn + artifact）、
+  `tasks/get`、`ping`；按 contextId 分会话（LRU 64 上限），未声明能力按规范
+  拒绝。MCP（agent→工具）/ ACP（编辑器）/ A2A（agent→agent）三协议全就位。
+  9 条新测试。协议选型与诚实边界见 `docs/A2A.md`。
+- **生态对标审查报告**：`docs/reviews/2026-11-04-ecosystem-audit.md`——
+  2026-11 协议生态（MCP/A2A/AG-UI/ANP）调研结论、12 个同类项目
+  （opencode/codex/Claude Code/aider/gemini-cli/goose/cline/kilocode/Zed/
+  Warp/Muse/Continue）逐家学习点映射、7 项批判性发现（含撤回记录）。
+- **全功能端到端验证记录**：CLI 16 项 / Web 4 项 / MCP 握手 / A2A 9 项 /
+  本地 onefile EXE 构建（166MB，`--version`、web、mock 聊天）全部真实跑通。
+- **scoop bucket**（`bucket/spark.json`，autoupdate 哈希取自 Release API digest）。
+
+### 文档
+
+- README：七形态总览、徽章加 scoop、协议边界表述更新、文档索引补 A2A；
+  中文 README 同步"七种形态"。
+- REMAINING：A2A 流式列为 ⏸（需拍板）；AG-UI 记为明确不做（自有 SSE 已覆盖同语义）。
+- 竞品矩阵：安装形态与独有项补 A2A。
+
+### 修复
+
+- 撤回一条误报发现：EXE 首聊 turn_error 系测试环境差异（全新 home + 假 key
+  → 默认 openai_compat 真请求失败），复核确认两端行为一致、无缺陷。
+
 ## [Unreleased] - 2026-11-03（第十一轮：REMAINING「可直接做」清零）
 
 ### 新增

@@ -12,7 +12,7 @@
 
 | 产品 | 开发商 | 形态 | 开源 | 模型策略 |
 |---|---|---|---|---|
-| **spark** | badhope（本仓库） | TUI + Web + Desktop(EXE) + CLI + `mcp-serve` | MIT | BYO（OpenAI 兼容 / Ollama / mock） |
+| **spark** | badhope（本仓库） | TUI + Web + Desktop(EXE) + CLI + `mcp-serve` + `a2a-serve` + ACP | MIT | BYO（OpenAI 兼容 / Ollama / mock） |
 | **Qoder** | 阿里 | VS Code 系 IDE + 独立桌面 App + CLI + Web + Mobile + JetBrains 插件 + Cloud Agents | 闭源 | 订阅 Credits；内置 Qwen/DeepSeek/GLM/Kimi 等 + BYOK |
 | **ZCode** | 智谱 Z.ai | Desktop(Electron) + Web + CLI/TUI + 手机遥控 + 飞书/微信 Bot | Apache-2.0 | GLM 系为主 + 第三方 provider |
 | **opencode** | sst | TUI + Web + 桌面 App + ACP(编辑器协议) | 开源 | models.dev 目录，任意 provider |
@@ -167,6 +167,8 @@
 3. **任务即分支**（`task_begin/step_commit/finish`）：绿测门控自动提交、失败自动废弃——竞品无同类一等功能。
 4. **MCP 注册表搜索**：内置中国可用性评估 + Glama 评分 + 离线数据集兜底；stdio 与 sse/streamable_http 三种传输都能一键添加（早期只认 stdio，见 2026-10-22 审查 D-01）。
 5. **`spark mcp-serve`**：把自己反向暴露为 MCP server。
+6. **`spark a2a-serve`**：A2A（Linux Foundation agent-to-agent 标准）Server——Agent Card 发现 + message/send + tasks/get，编排器可直接委派 Spark；MCP/ACP/A2A 三协议全就位，开源编码 agent 中少见。
+7. **A2A/AG-UI/ANP 协议调研决策记录**：AG-UI 明确不做（自有 SSE 已覆盖同语义），理由与边界见 docs/A2A.md 与 docs/reviews/2026-11-04-ecosystem-audit.md。
 6. **`/test` 失败回灌闭环**：traceback 自动作为 user 消息让 agent 自修。
 7. **完全本地数据面**：无任何云依赖可全功能运行（含离线 mock）。
 8. **tree-sitter 语法门禁**：写文件前 AST 检查（语法错误拒写 + 符号删除警告），竞品未见同款内建。

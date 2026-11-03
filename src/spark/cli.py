@@ -1410,6 +1410,44 @@ def uninstall_cmd(
     typer.echo(f"已删除 {home}")
 
 
+@app.command("a2a-serve", help="以 A2A 协议（Agent2Agent）暴露本 agent，供跨编排器调用")
+def a2a_serve_cmd(
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    host: str = typer.Option("127.0.0.1", "--host", help="监听地址（默认仅本机）"),
+    port: int = typer.Option(41241, "--port", help="监听端口（0 = 随机）"),
+    approval: str = typer.Option(
+        "full-auto", "--approval", help="无人值守服务的审批模式（默认 full-auto）"
+    ),
+) -> None:
+    """Serve the agent over the A2A protocol (JSON-RPC over HTTP).
+
+    Agent Card 在 /.well-known/agent-card.json；message/send 为非流式实现。
+    """
+    from spark.config import load_config as _load
+
+    try:
+        cfg = _load(workdir=workdir.resolve(), approval=approval)  # type: ignore[arg-type]
+    except SparkError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    from spark.a2a_server import serve_a2a
+
+    try:
+        server, base_url = serve_a2a(workdir.resolve(), cfg, host=host, port=port)
+    except OSError as exc:
+        typer.echo(f"A2A server 启动失败：{exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(f"◆ Spark A2A  →  {base_url}")
+    typer.echo(f"  Agent Card: {base_url}/.well-known/agent-card.json")
+    typer.echo("  Ctrl+C 停止")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.shutdown()
+
+
 config_app = typer.Typer(help="查看或修改配置", no_args_is_help=True)
 app.add_typer(config_app, name="config")
 

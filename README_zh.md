@@ -1,6 +1,6 @@
 > 🌐 [English](README.md) | [中文](README_zh.md)
 
-# Spark — 一个大脑，六种形态，可审计的工程级护栏
+# Spark — 一个大脑，七种形态，可审计的工程级护栏
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-brightgreen.svg)](https://www.python.org/)
@@ -10,7 +10,7 @@
 
 一个把**审批、沙箱、回滚、供应商韧性做成工程级**而不是事后补丁的 AI 编程 Agent：
 同一套大脑同时运行在 Web UI、桌面窗口、TUI、可脚本化 CLI、ACP（IDE）与 MCP Server
-六种形态上。自带任意 OpenAI 兼容端点；无账号、无遥测、无厂商锁定。
+七种形态上。自带任意 OpenAI 兼容端点；无账号、无遥测、无厂商锁定。
 
 ```bash
 # Linux / macOS —— 一行安装，SHA256 校验
@@ -106,7 +106,7 @@ spark web           # 打开界面（自动挑一个空闲端口）
 
 ![移动端设置](assets/screenshots/18-mobile-settings.png)
 
-## 六种形态
+## 七种形态
 
 | 形态 | 命令 | 适用场景 |
 |------|------|----------|

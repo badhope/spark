@@ -26,6 +26,7 @@
 | 包管理器分发（brew/scoop） | ✅ | `bucket/spark.json`（scoop bucket，带 autoupdate，哈希取自 Release asset digest）；brew 需独立 tap 仓库，仍未做 |
 | 状态栏定制（TUI） | ✅ | `agent.status_items` 有序项（`tui/welcome.py:status_text`），未知项跳过、目录空自动省略 |
 | 压缩提示词可编程干预 | ✅ | `.spark/prompts/compact.md`（项目）→ `~/.spark/prompts/compact.md`（全局）覆盖内置提示词，摘要与合并两路径都生效 |
+| A2A Server（Agent2Agent 协议） | ✅ | `spark a2a-serve`：Agent Card + message/send + tasks/get（`a2a_server.py`，9 测试）；流式列为 ⏸ |
 
 ## 待做（按"能不能直接动手"排序）
 
@@ -43,6 +44,7 @@
 | Goal 长程模式（`/goal`） | ⏸ | 需要定义"目标—证据—验收"的推进协议；没有证据门槛的 goal 只是自动循环，会烧钱 |
 | 主 agent 切换（build/plan 双档） | ⏸ | 与现有 approval profile 语义重叠，合并还是并存需要拍板 |
 | 插件市场 | ⏸ | 涉及签名、安装权限、沙箱边界。没有签名机制的市场是供应链攻击面 |
+| A2A 流式（message/stream SSE） | ⏸ | 当前 A2A 非流式已满足编排器主路径；流式要引入 SSE 事件转发与取消语义，成本/收益需拍板 |
 
 ### 成本明显更高
 

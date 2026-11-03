@@ -1,12 +1,13 @@
 > 🌐 [English](README.md) | [中文](README_zh.md)
 
-# Spark — One agent brain. Six form factors. Guardrails you can audit.
+# Spark — One agent brain. Seven surfaces. Guardrails you can audit.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-brightgreen.svg)](https://www.python.org/)
 [![Node 18+](https://img.shields.io/badge/node-18%2B-339933.svg)](https://nodejs.org/)
 [![CI](https://github.com/badhope/spark/actions/workflows/ci.yml/badge.svg)](https://github.com/badhope/spark/actions/workflows/ci.yml)
 [![Security](https://github.com/badhope/spark/actions/workflows/security.yml/badge.svg)](https://github.com/badhope/spark/actions/workflows/security.yml)
+[![Scoop](https://img.shields.io/badge/scoop-bucket-8A2BE2)](https://github.com/badhope/spark/tree/main/bucket)
 
 An AI coding agent where **approval, sandboxing, rollback and provider resilience are
 engineered, not bolted on** — the same brain runs as Web UI, desktop window, TUI,
@@ -33,13 +34,13 @@ the next turn uses the real model — no restart.
 
 | | |
 |---|---|
-| **Six surfaces, one brain** | Web UI · native desktop window · Textual TUI · scriptable CLI · ACP (Zed & co.) · MCP server. Same agent loop, same tools, same permissions — a policy set once applies everywhere. |
+| **Seven surfaces, one brain** | Web UI · native desktop window · Textual TUI · scriptable CLI · ACP (Zed & co.) · MCP server · A2A server. Same agent loop, same tools, same permissions — a policy set once applies everywhere. |
 | **Approval you can audit** | Six approval modes × four sandbox levels, wildcard rule engine where `deny` wins across user/project/local scopes, protected credential paths, token-level shell checks, optional bwrap isolation. |
 | **Checkpoint instead of fear** | Every turn snapshots the workspace (tar.gz + manifest verification). Roll back files *and* conversation, including in non-git directories. |
 | **Task-as-branch** | `task_begin` / `task_step_commit` / `task_finish`: green tests gate each commit, failures abandon the branch. Not a demo — a first-class tool. |
 | **AI reviews AI** | `spark review` audits your uncommitted diff (or a commit range) in a forced read-only, sandbox-only turn and returns severity-ranked findings, with `--json` for CI. |
 | **Provider resilience, built-in** | A credential pool (multiple keys rotated on failure), a fallback model chain, and a `small_model` for compression/summary calls — one exhausted key or rate limit never blocks a turn. |
-| **MCP in both directions** | Spark is simultaneously an MCP *client* (stdio/SSE/HTTP, least-privilege allowlists, OAuth) and an MCP *server* (`spark mcp-serve`) exposing its 36 tools to other agents. |
+| **Protocols at every boundary** | MCP *client + server* (stdio/SSE/HTTP, allowlists, OAuth), ACP for editors, and an **A2A server** (`spark a2a-serve`) so orchestrators can delegate tasks under the Linux Foundation agent-to-agent standard. |
 | **`!cmd` inline shell** | Run any command inside a chat message — zero tokens, zero approval noise — rendered as a collapsible result card. |
 | **Memory with governance** | AGENTS.md hierarchy (global `~/.agents` + project + nested) plus vector long-term memory with auto-extraction, dedup merge (UPDATE/NOOP) and capacity eviction — all manageable from the web UI. |
 
@@ -115,7 +116,7 @@ horizontally, and the composer stays reachable.
 
 ![Mobile settings](assets/screenshots/18-mobile-settings.png)
 
-## Six Form Factors
+## Seven Surfaces, One Brain
 
 | Form | Command | Use case |
 |------|---------|----------|
@@ -125,6 +126,7 @@ horizontally, and the composer stays reachable.
 | CLI | `spark exec "task" --json` | Automation, CI, piping (NDJSON event stream) |
 | IDE (ACP) | `spark acp` | Zed and other ACP clients — see [docs/ACP.md](docs/ACP.md) |
 | MCP server | `spark mcp-serve` | Expose all built-in tools to other MCP clients |
+| **A2A server** | `spark a2a-serve` | Agent-to-agent delegation (Linux Foundation standard) — see [docs/A2A.md](docs/A2A.md) |
 
 ## Feature Overview
 
@@ -139,7 +141,7 @@ horizontally, and the composer stays reachable.
 | Knowledge | Import docs, BM25 retrieval injected per turn as read-only reference — no extra vector store |
 | Persistence | Sessions, checkpoint rollback (works without git), hot config reload, token usage stats, full-text session search |
 | Models | Any OpenAI-compatible endpoint, Ollama, multi-profile switching, `small_model` for cheap auxiliary calls, `--probe` endpoint audit |
-| Extension | MCP client (stdio/SSE/HTTP + OAuth), MCP registry with one-click add, skills `.spark/skills/`, slash commands, plugins, hooks |
+| Extension | MCP client (stdio/SSE/HTTP + OAuth), MCP registry with one-click add, A2A server, skills `.spark/skills/`, slash commands, plugins, hooks, scoop bucket |
 | Interface | zh/en, light/dark, command palette, rebindable shortcuts, file viewer, terminal, web reader, execution graph, desktop notifications |
 | Workflow | `spark review` (AI diff audit), `spark exec --json`, `!cmd` inline shell, single-file HTML session sharing, session import, `spark update` |
 | Operations | `doctor --fix` self-healing, `doctor --backup` (VACUUM INTO), structured audit log, CSP + security headers, auto-update notify |
@@ -186,7 +188,8 @@ mock-mode agent eval suite.
 
 | Document | Contents |
 |----------|----------|
-| [docs/INSTALL.md](docs/INSTALL.md) | Install, packaging, desktop build, auto-update |
+| [docs/INSTALL.md](docs/INSTALL.md) | Install (script / scoop / source), packaging, desktop build, auto-update, uninstall |
+| [docs/A2A.md](docs/A2A.md) | A2A server: agent-to-agent delegation |
 | [docs/CONFIG.md](docs/CONFIG.md) | Configuration reference (config.toml / env vars / limits) |
 | [docs/API.md](docs/API.md) | HTTP API and SSE event protocol |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture notes |
