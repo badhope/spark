@@ -22,6 +22,10 @@
 | 消息级 undo 带文件还原 | ✅ | `/api/messages/truncate` `restore_files` |
 | 子代理独立模型 | ✅ | `DeclaredAgent.model` |
 | 子会话导航（子代理树） | ✅ | `subtask_start` 事件携带 `agent`/`prompt`（`core/loop.py`）+ ToolBlock 子代理轨迹卡片（声明名/任务描述/进度条） |
+| `spark uninstall` 卸载命令 | ✅ | `cli.py uninstall_cmd`：清单 + 确认 + 家目录守卫；`--list` / `--yes`；文档见 INSTALL.md |
+| 包管理器分发（brew/scoop） | ✅ | `bucket/spark.json`（scoop bucket，带 autoupdate，哈希取自 Release asset digest）；brew 需独立 tap 仓库，仍未做 |
+| 状态栏定制（TUI） | ✅ | `agent.status_items` 有序项（`tui/welcome.py:status_text`），未知项跳过、目录空自动省略 |
+| 压缩提示词可编程干预 | ✅ | `.spark/prompts/compact.md`（项目）→ `~/.spark/prompts/compact.md`（全局）覆盖内置提示词，摘要与合并两路径都生效 |
 
 ## 待做（按"能不能直接动手"排序）
 
@@ -29,10 +33,7 @@
 
 | 能力 | 状态 | 完成标准 |
 | --- | --- | --- |
-| `spark uninstall` 卸载命令 | 📋 | 一条命令清干净：venv/配置/会话/knowledge，且先打印将删除的清单等确认 |
-| 包管理器分发（brew/scoop） | 📋 | 至少一份 scoop manifest + 安装文档；brew 需要 tap 仓库 |
-| 状态栏定制（TUI） | 📋 | 有序项配置，复用 `agent.display` 思路 |
-| 压缩提示词可编程干预 | 📋 | 允许 `prompts/compact.md` 覆盖内置压缩提示词 |
+| （空） | — | 上表四项已全部关闭；新的可直接做项出现时在此登记 |
 
 ### 需要产品决策（会改变交互形态）
 

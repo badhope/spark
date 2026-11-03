@@ -34,6 +34,16 @@ fields and limitations. The code is authoritative for defaults.
 | `max_repeat_calls` | `4` | Circuit-breaker threshold for a repeated (tool, arguments) signature (0 = off) |
 | `max_turn_tokens` | `0` | Per-turn token budget (0 = off) |
 | `max_output_chars` | `8000` | Tool output truncation (200–1,000,000) |
+| `status_items` | `[]` | Ordered items for the TUI status bar; empty = default (model / base_url / key / approval / sandbox / workdir / session). Valid items: `model` `base_url` `key` `approval` `sandbox` `workdir` `session`; unknown items are skipped |
+
+## Compaction prompt override
+
+The built-in compaction prompt can be overridden with a file: the
+project-level `<workdir>/.spark/prompts/compact.md` wins over the global
+`~/.spark/prompts/compact.md`; with neither present the built-in 5-section
+structured prompt is used. An empty file counts as "not provided" and the
+lookup continues. The custom prompt applies to both summarization and
+multi-round merging.
 | `show_thinking` / `show_tools` / `show_plan` / `show_context` / `show_keywords` / `show_notices` | `true` | Frontend display toggles |
 
 ## `[context]` — context window

@@ -33,6 +33,15 @@
 | `max_turn_tokens` | `0` | 单回合 token 预算（0 = 关闭） |
 | `max_output_chars` | `8000` | 工具输出截断长度（200–1,000,000） |
 | `show_thinking` / `show_tools` / `show_plan` / `show_context` / `show_keywords` / `show_notices` | `true` | 前端显示开关 |
+| `status_items` | `[]` | TUI 状态栏有序项；空 = 默认（模型/接口/密钥/审批/访问/目录/会话）。合法项：`model` `base_url` `key` `approval` `sandbox` `workdir` `session`；未知项静默跳过 |
+
+## 压缩提示词覆盖
+
+上下文压缩（`compact`）的内置提示词可用文件覆盖：项目级
+`<workdir>/.spark/prompts/compact.md` 优先，其次全局
+`~/.spark/prompts/compact.md`，都没有时使用内置 5 段结构化提示词。
+空文件视为"未提供"，继续向后查找；自定义提示词同时作用于摘要与
+多轮合并两条路径。
 
 ## `[context]` — 上下文窗口
 
@@ -178,15 +187,25 @@ small_model = "deepseek-v4-flash"
 
 ## 本地数据文件
 
+即 `spark uninstall` 会清除的全部落点（清单可用 `spark uninstall --list` 实时查看）：
+
 | 路径 | 说明 |
 |------|------|
 | `~/.spark/config.toml` | 配置文件（含模型档案与密钥） |
+| `~/.spark/.env` | 全局环境变量文件 |
 | `~/.spark/sessions.db` | SQLite：会话、消息、工具事件、检查点、后台任务记录 |
 | `~/.spark/checkpoints/*.tar.gz` | 工作区快照（回滚用） |
-| `~/.spark/memory.db` | 长期记忆库 |
-| `~/.spark/spark.log` | 运行日志 |
+| `~/.spark/checkpoints.db` | turn 级 checkpointer 存储 |
+| `~/.spark/memory.db` + `~/.spark/memory_chroma/` | 长期记忆库（SQLite + ChromaDB 向量目录） |
+| `~/.spark/knowledge/<project_hash>/` | 项目知识库导入文档（按工作目录哈希分目录） |
+| `~/.spark/replays/<session_id>.jsonl` | turn 回放记录 |
 | `~/.spark/backups/*.db` | `doctor --backup` 的在线快照（VACUUM INTO） |
+| `~/.spark/cache/models-dev.json` | 模型目录缓存 |
 | `~/.spark/update-check.json` | 最近一次版本检查缓存（24h） |
+| `~/.spark/audit.jsonl` | 结构化审计日志（`SPARK_AUDIT_LOG` 开启时） |
+| `~/.spark/desktop-crash.log` | 桌面版崩溃日志（GUI 子系统排障用） |
+
+进程日志走 stderr（由启动方式决定去向），Spark 自身不写运行日志文件。
 
 后台任务（`bg_start`）记录持久化在 `sessions.db` 的 `bg_jobs` 表：服务器重启后
 `bg_list` 仍可列出历史任务（标记为 lost），`bg_output` 返回最后一次持久化的输出。

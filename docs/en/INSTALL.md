@@ -55,4 +55,32 @@ bash scripts/build.sh            # output: dist/spark/spark
 - Need a proxy → set `proxy` in config or `HTTPS_PROXY` env var
 - Windows SmartScreen → click "More info → Run anyway" (unsigned build)
 
+### Windows package manager (scoop)
+
+The repo ships its own scoop bucket (`bucket/`):
+
+```powershell
+scoop install https://raw.githubusercontent.com/badhope/spark/main/bucket/spark.json
+# or
+scoop bucket add spark https://github.com/badhope/spark
+scoop install spark/spark
+```
+
+The manifest has `autoupdate`; hashes come from the GitHub Release API asset digest.
+
+## Uninstall
+
+```bash
+spark uninstall --list   # print what would be deleted, touch nothing
+spark uninstall          # list → confirm → wipe ~/.spark
+spark uninstall --yes    # skip confirmation
+```
+
+This clears the data directory (config / sessions / vector memory /
+knowledge / checkpoints / backups). The Python package itself is removed
+with `pip uninstall spark-agent`, scoop installs with
+`scoop uninstall spark`. Per-project `.spark/` workspace files are not
+touched. A safety guard refuses to run when `SPARK_HOME` points at the
+user's home directory or a drive root.
+
 > AI生成

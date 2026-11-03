@@ -12,6 +12,7 @@ while preserving:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, cast
 
 import litellm
@@ -98,6 +99,40 @@ The single most important next action to take.
 
 ## Relevant Files
 List every file path that was created, modified, or is otherwise relevant. Use `- path/to/file` format. If none, write (none)."""
+
+
+def load_custom_compact_prompt(
+    workdir: Path | str | None = None,
+    home: Path | str | None = None,
+) -> str | None:
+    """读取用户自定义压缩提示词；未提供时返回 None（用内置 STRUCTURED_SUMMARY_PROMPT）。
+
+    查找顺序（前者覆盖后者）：
+
+    1. 项目级 ``<workdir>/.spark/prompts/compact.md``
+    2. 全局 ``<home>/prompts/compact.md``（home 缺省为 default_home()）
+
+    空文件 / 纯空白视为"未提供"，继续向后查找——用户建了空文件不代表想
+    把提示词清空。读不了的文件（权限等）按不存在处理，绝不让压缩失败。
+    """
+    candidates: list[Path] = []
+    if workdir is not None:
+        candidates.append(Path(workdir) / ".spark" / "prompts" / "compact.md")
+    if home is not None:
+        candidates.append(Path(home) / "prompts" / "compact.md")
+    else:
+        from spark.config import default_home
+
+        candidates.append(default_home() / "prompts" / "compact.md")
+    for path in candidates:
+        try:
+            if path.is_file():
+                text = path.read_text(encoding="utf-8").strip()
+                if text:
+                    return text
+        except OSError:
+            logger.debug("读取自定义压缩提示词失败：%s", path, exc_info=True)
+    return None
 
 
 class LlmAdapter(LLM):
@@ -228,9 +263,12 @@ class Compactor:
     prior-summary merging for multi-round compaction contexts.
     """
 
-    def __init__(self, provider: Any, cfg: Any) -> None:
+    def __init__(
+        self, provider: Any, cfg: Any, workdir: Path | str | None = None
+    ) -> None:
         self._cfg = cfg
         self._provider = provider  # P1 修复：保留 Provider 引用，摘要优先走抽象而非直连 litellm
+        self._workdir = Path(workdir) if workdir is not None else None
         # P1：小模型分工——摘要/合并等辅助调用优先用 small_model（留空 = 主模型）
         self._summary_model = (
             getattr(cfg.provider, "small_model", "") or getattr(cfg.provider, "model", "mock")
@@ -242,6 +280,10 @@ class Compactor:
             model_name=model_name,
             context_window=token_limit,
         )
+
+    def _summary_prompt(self) -> str:
+        """本次压缩使用的提示词：用户自定义（prompts/compact.md）优先，缺省用内置。"""
+        return load_custom_compact_prompt(self._workdir) or STRUCTURED_SUMMARY_PROMPT
 
     async def _provider_completion(self, prompt_text: str) -> str | None:
         """通过 Provider 抽象取一次非流式补全文本（单一真相源）。
@@ -370,7 +412,7 @@ class Compactor:
             "4. Next Move: use the latest (new) next move.\n"
             "5. Relevant Files: union of all files mentioned in both summaries.\n\n"
             "Output ONLY the merged summary in this exact 5-section format — no preamble:\n\n"
-            + STRUCTURED_SUMMARY_PROMPT
+            + self._summary_prompt()
             + "\n\n---\n\n## EXISTING SUMMARY\n\n"
             + prior_summary
             + "\n\n---\n\n## NEW SUMMARY\n\n"
@@ -421,7 +463,7 @@ class Compactor:
         base_url = getattr(self._cfg.provider, "base_url", None)
         api_key = getattr(self._cfg.provider, "api_key", None)
 
-        prompt_text = STRUCTURED_SUMMARY_PROMPT + "\n\n---\n\n## CONVERSATION TRANSCRIPT\n\n" + transcript_text
+        prompt_text = self._summary_prompt() + "\n\n---\n\n## CONVERSATION TRANSCRIPT\n\n" + transcript_text
 
         # P1 修复：优先走 Provider 抽象（鉴权/重试/映射单一真相源，mock 不再误触 litellm）；
         # litellm 直连降为兜底（provider 无 stream 能力或调用失败时）。

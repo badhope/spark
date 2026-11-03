@@ -146,3 +146,86 @@ def test_trim_recent_exceeds_budget():
     ]
     result = Compactor.trim_recent(msgs, 800)
     assert len(result) < 4  # at least one message trimmed
+
+
+# ---------------------------------------------------------------------------
+# Custom compact prompt override (.spark/prompts/compact.md)
+# ---------------------------------------------------------------------------
+
+def _write_custom_prompt(workdir, text: str) -> None:
+    d = workdir / ".spark" / "prompts"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "compact.md").write_text(text, encoding="utf-8")
+
+
+def test_load_custom_compact_prompt_none_when_absent(tmp_path, monkeypatch) -> None:
+    from spark.core.compact import load_custom_compact_prompt
+
+    monkeypatch.setenv("SPARK_HOME", str(tmp_path / "home"))
+    assert load_custom_compact_prompt(tmp_path) is None
+    assert load_custom_compact_prompt(None) is None
+
+
+def test_load_custom_compact_prompt_project_beats_home(tmp_path, monkeypatch) -> None:
+    from spark.core.compact import load_custom_compact_prompt
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "prompts").mkdir()
+    (home / "prompts" / "compact.md").write_text("GLOBAL PROMPT", encoding="utf-8")
+    monkeypatch.setenv("SPARK_HOME", str(home))
+    # 只有全局：返回全局
+    assert load_custom_compact_prompt(tmp_path) == "GLOBAL PROMPT"
+    # 项目级出现后覆盖全局
+    _write_custom_prompt(tmp_path, "PROJECT PROMPT")
+    assert load_custom_compact_prompt(tmp_path) == "PROJECT PROMPT"
+
+
+def test_load_custom_compact_prompt_ignores_empty_file(tmp_path, monkeypatch) -> None:
+    from spark.core.compact import load_custom_compact_prompt
+
+    home = tmp_path / "home"
+    (home / "prompts").mkdir(parents=True)
+    (home / "prompts" / "compact.md").write_text("   \n", encoding="utf-8")
+    monkeypatch.setenv("SPARK_HOME", str(home))
+    # 空文件 = 未提供，回退全局/内置
+    assert load_custom_compact_prompt(tmp_path) is None
+    assert load_custom_compact_prompt(None) is None
+
+
+def test_compactor_uses_custom_prompt_in_summary(tmp_path) -> None:
+    from spark.core.compact import Compactor
+
+    cfg = SparkConfig()
+    cfg.provider.name = "mock"
+    cfg.provider.model = "mock"
+    provider = MockProvider(rounds=[[ChatDelta(type="text", text="stub")]])
+    compactor = Compactor(provider=provider, cfg=cfg, workdir=tmp_path)
+    _write_custom_prompt(tmp_path, "MY CUSTOM COMPACT RULES")
+    assert compactor._summary_prompt().startswith("MY CUSTOM COMPACT RULES")
+    # 无自定义文件时回退内置
+    compactor_builtin = Compactor(provider=provider, cfg=cfg, workdir=tmp_path / "elsewhere")
+    assert compactor_builtin._summary_prompt() == STRUCTURED_SUMMARY_PROMPT
+
+
+@pytest.mark.asyncio
+async def test_merge_summaries_includes_custom_prompt(tmp_path) -> None:
+    from spark.core.compact import Compactor
+
+    cfg = SparkConfig()
+    cfg.provider.name = "mock"
+    cfg.provider.model = "mock"
+    provider = MockProvider(rounds=[[ChatDelta(type="text", text="stub")]])
+    compactor = Compactor(provider=provider, cfg=cfg, workdir=tmp_path)
+    _write_custom_prompt(tmp_path, "MERGE RULES FROM USER")
+
+    captured: dict = {}
+
+    async def fake_provider_completion(prompt_text: str) -> str:
+        captured["prompt"] = prompt_text
+        return "merged summary"
+
+    with patch.object(compactor, "_provider_completion", side_effect=fake_provider_completion):
+        result = await compactor.merge_summaries("prior", "new")
+    assert result == "merged summary"
+    assert "MERGE RULES FROM USER" in captured["prompt"]

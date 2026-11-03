@@ -1,0 +1,38 @@
+{
+    "version": "0.9.6",
+    "description": "Spark — one agent brain, six form factors. Local-first AI coding agent with auditable approval, sandboxing, rollback and provider resilience. No account, no telemetry.",
+    "homepage": "https://github.com/badhope/spark",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/badhope/spark/releases/download/v0.9.6/spark-windows-x86_64.zip",
+            "hash": "ed45fe00a48a8027e386945dd3619b2ada72c13581a4f4758f47633f3e2fc761"
+        }
+    },
+    "bin": [
+        [
+            "spark/spark.exe",
+            "spark"
+        ],
+        [
+            "spark-desktop/spark-desktop.exe",
+            "spark-desktop"
+        ]
+    ],
+    "checkver": {
+        "url": "https://api.github.com/repos/badhope/spark/releases/latest",
+        "regex": "releases/tag/v([\\d.]+)"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/badhope/spark/releases/download/v$version/spark-windows-x86_64.zip"
+            }
+        },
+        "hash": {
+            "url": "https://api.github.com/repos/badhope/spark/releases/tags/v$version",
+            "regex": "\"name\":\\s*\"spark-windows-x86_64\\.zip\",[\\s\\S]{0,2000}?\"digest\":\\s*\"sha256:([a-fA-F0-9]{64})\""
+        }
+    },
+    "notes": "Spark does not manage its own venv — the bundled executables are self-contained. Run 'spark init' to configure any OpenAI-compatible endpoint; without a key Spark starts in demo mode."
+}

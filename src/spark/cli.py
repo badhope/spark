@@ -1304,7 +1304,9 @@ def doctor_cmd(
             store = SessionStore(db)
             try:
                 out = store.backup_to(target)
-                typer.echo(f"  已备份：{out}（{out.stat().st_size // 1024} KB，schema v{store.schema_version()}）")
+                typer.echo(
+                    f"  已备份：{out}（{_human_size(out.stat().st_size)}，schema v{store.schema_version()}）"
+                )
             finally:
                 store.close()
 
@@ -1326,6 +1328,86 @@ def doctor_cmd(
 
     typer.echo(render_health(rows, as_json=as_json))
     raise typer.Exit(health_exit_code(rows))
+
+
+def _dir_size(path: Path) -> int:
+    """目录/文件的累计字节数；统计失败按 0 处理（不能因为权限卡住卸载）。"""
+    try:
+        if path.is_file():
+            return path.stat().st_size
+        return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+    except OSError:
+        return 0
+
+
+def _human_size(num: int) -> str:
+    size = float(num)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"
+
+
+def _home_inventory(home: Path) -> list[tuple[str, int]]:
+    """Spark home 顶层落点清单（名称, 字节数），按名字排序；不存在则空。"""
+    if not home.is_dir():
+        return []
+    items = [(p.name, _dir_size(p)) for p in home.iterdir()]
+    return sorted(items, key=lambda item: item[0])
+
+
+@app.command("uninstall", help="清除 Spark 全部本地数据（配置/会话/记忆/知识库），先列清单再确认")
+def uninstall_cmd(
+    yes: bool = typer.Option(False, "--yes", "-y", help="跳过确认，直接删除"),
+    list_only: bool = typer.Option(
+        False, "--list", help="只打印将删除的清单，不做任何改动"
+    ),
+) -> None:
+    """Remove every on-disk artifact under the Spark home directory.
+
+    Spark 不自建 venv：Python 包本身属于安装它的环境，请用
+    ``pip uninstall spark-agent``（或对应包管理器）移除；这里清的是数据。
+    """
+    home = default_home()
+    inventory = _home_inventory(home)
+    if not inventory:
+        typer.echo(f"{home} 不存在或已是空目录，没有可清理的数据")
+        return
+    total = sum(size for _, size in inventory)
+    typer.echo(banner("卸载 Spark"))
+    typer.echo(f"数据目录：{home}")
+    for name, size in inventory:
+        typer.echo(f"  - {name}（{_human_size(size)}）")
+    typer.echo(f"共 {len(inventory)} 项，合计 {_human_size(total)}")
+    typer.echo(
+        "提示：Python 包本身不在这里，卸载请另执行 pip uninstall spark-agent；"
+        "各项目内的 .spark/ 工作区文件不受影响"
+    )
+    if list_only:
+        return
+    # 防御性守卫：SPARK_HOME 指向家目录本身、盘符根或任何不像 Spark 数据目录
+    # 的位置时拒绝删除——一个环境变量写错不该有能力删掉用户整个家目录。
+    resolved = home.resolve()
+    user_home = Path.home().resolve()
+    if resolved in (user_home, user_home.parent) or resolved.parent == resolved:
+        typer.echo(
+            f"拒绝删除：{resolved} 不是典型的 Spark 数据目录（应为 ~/.spark 或 "
+            "$SPARK_HOME 指向的专用目录）。请核对 SPARK_HOME 后重试。",
+            err=True,
+        )
+        raise typer.Exit(2)
+    if not yes and not typer.confirm("确认删除以上全部数据？此操作不可恢复"):
+        typer.echo("已取消，未删除任何文件")
+        return
+    try:
+        import shutil
+
+        shutil.rmtree(home)
+    except OSError as exc:
+        typer.echo(f"删除失败：{exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(f"已删除 {home}")
 
 
 config_app = typer.Typer(help="查看或修改配置", no_args_is_help=True)

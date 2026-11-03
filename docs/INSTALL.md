@@ -33,6 +33,25 @@ spark update             # 下载 → 校验 → 原子替换（旧版备份为 
 `spark update` 只对打包版有效；pip/源码安装用 `pip install -U spark-agent`。
 不想被检查打扰可在 `config.toml` 设 `[updater] mode = "off"`。
 
+## 方式 0½ — scoop（Windows 包管理器用户）
+
+本仓库自带 scoop bucket（`bucket/` 目录），两种装法任选：
+
+```powershell
+# 直接按 URL 安装（无需添加 bucket）
+scoop install https://raw.githubusercontent.com/badhope/spark/main/bucket/spark.json
+
+# 或把本仓库加为 bucket，之后可用 scoop update* 跟随版本
+scoop bucket add spark https://github.com/badhope/spark
+scoop install spark/spark
+```
+
+manifest（`bucket/spark.json`）带 `autoupdate`：新 Release 发布后
+`scoop update spark` 即可升级，哈希自动取自 GitHub Release API 的
+asset digest，无需手工维护。manifest 同时注册 `spark` 与
+`spark-desktop` 两个命令。卸载用 `scoop uninstall spark`；清理
+Spark 的本地数据（会话/配置/记忆）用 `spark uninstall`。
+
 
 ## 方式 A — 源码运行（最快）
 
@@ -109,5 +128,18 @@ pyinstaller spark-desktop.spec --distpath dist --workpath build
 - 模型报错 → 设置面板「测试连接」；检查 `base_url` / `model` / `api_key`
 - 需要代理 → 配置 `proxy` 或设 `HTTPS_PROXY` 环境变量
 - Windows SmartScreen 提示 → 「更多信息 → 仍要运行」（未签名构建）
+
+## 卸载
+
+```bash
+spark uninstall --list   # 只看将删除的清单，不动任何文件
+spark uninstall          # 列清单 → 确认 → 清掉 ~/.spark 全部数据
+spark uninstall --yes    # 跳过确认
+```
+
+清的是数据目录（配置 / 会话 / 向量记忆 / 知识库 / 检查点 / 备份）；
+Python 包本身用 `pip uninstall spark-agent`，scoop 安装的用
+`scoop uninstall spark`。各项目内的 `.spark/` 工作区文件不受影响。
+安全守卫：`SPARK_HOME` 指向家目录本身或盘符根时拒绝执行。
 
 > AI生成

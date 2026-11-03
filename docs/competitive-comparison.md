@@ -24,9 +24,9 @@
 |---|---|---|---|---|---|
 | 一键安装脚本 | ✅ `install.sh` / `install.ps1`（SHA256 校验、无 sudo） | 安装器 | dmg/exe/deb 包 | `curl … \| bash` | `curl … \| sh`（Win: irm \| iex） |
 | 免安装绿色包 | ✅ `spark-agent-*-win64.zip` 解压即用（含 GUI 子系统 exe，双击无黑框） | 安装器 | 安装包 | — | — |
-| 包管理器 | ❌ | 安装器 | ❌ | brew/npm/choco/scoop/pacman… | npm/brew/Releases |
+| 包管理器 | ✅ scoop bucket（`bucket/spark.json`，autoupdate + Release digest 哈希） | 安装器 | ❌ | brew/npm/choco/scoop/pacman… | npm/brew/Releases |
 | 自动更新 | ✅ `spark update`（SHA256 + 原子替换 + 旧版备份）+ doctor 提示，可 `mode=off` | 内置 | 内置 | ✅ auto/notify 三态 | ✅ check_for_update_on_startup |
-| 卸载命令 | ❌ | 安装器 | — | ✅ `opencode uninstall` | — |
+| 卸载命令 | ✅ `spark uninstall`（清单 + 确认 + 家目录守卫） | 安装器 | — | ✅ `opencode uninstall` | — |
 
 **spark 缺口**：发布渠道与自动更新。建议 P1（EXE 用户体感关键）。
 
@@ -82,7 +82,7 @@
 | 外部目录/仓库引用 | ✅ `--add-dir` / `agent.extra_dirs` | opencode `references`（别名+description）；codex `--add-dir` |
 | 图片输入 | ✅ Web 粘贴/拖拽 | opencode 自动缩放/5MB 上限；codex 剪贴板截图 + `view_image` |
 | 自动压缩 | ✅ 85% 阈值 + 保留 8 条 | opencode 三态（auto/prune/reserved）；codex 双阈值 + pre/post_compact hooks |
-| 压缩可编程干预 | ❌ | opencode 插件可换压缩提示词；codex hooks |
+| 压缩可编程干预 | ✅ `.spark/prompts/compact.md`（项目）→ `~/.spark/prompts/compact.md`（全局）覆盖，摘要+合并两路径 | opencode 插件可换压缩提示词；codex hooks |
 | 仓库地图/索引 | ✅ tree-sitter 符号地图（6000 字符） | opencode LSP 诊断；Qoder 云端向量索引（10 万文件）；ZCode Repo Wiki |
 | Repo Wiki（生成式知识文档） | ❌ | Qoder（含 Citation 开关，50 credits/仓）；ZCode（产物本地、带 file:line 溯源、Mermaid 图） |
 | 长期记忆 | ✅ 独立记忆库（embedding + auto_extract + Web 管理） | codex `/memories`（后台管线 + 合并）；ZCode Project Memory（默认关）；Qoder Auto-Memory |
@@ -153,7 +153,7 @@
 | 桌面通知/声音 | ✅ Web Notification（回合结束/等待审批，页面不可见时才发；设置可开） | opencode attention 声音包；codex notifications（osc9/bel）+ `/warnings` |
 | 主题 | ✅ Web light/dark/system × 5 套配色（正交）；TUI 固定 | opencode 10+ 主题 + 自定义 JSON；codex `/theme` + `$CODEX_HOME/themes` |
 | 快捷键重绑 | ❌ | codex `/keymap` 交互重绑；ZCode 自定义键位 |
-| 状态栏定制 | ⚠️ TUI 单行 | codex `tui.status_line` 有序项；ZCode 命令中心 |
+| 状态栏定制 | ✅ `agent.status_items` 有序项（模型/接口/密钥/审批/访问/目录/会话） | codex `tui.status_line` 有序项；ZCode 命令中心 |
 | 通知/远程 | ❌ | ZCode 手机 Remote Control + 飞书/微信 Bot；Qoder Mobile |
 | IDE 集成 | ❌ | opencode 自动装 VS Code 扩展 + ACP（Zed/JetBrains/neovim）；codex `/ide`；Qoder 本尊是 IDE |
 | Git PR 工作流 | ❌ | opencode `pr <num>` + GitHub Action（评论触发）；codex Cloud PR review |

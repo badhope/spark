@@ -44,18 +44,42 @@ def key_status(cfg: SparkConfig) -> tuple[str, str]:
     return "X", "缺少 API Key（按 ? 查看如何配置）"
 
 
+# 状态栏各项的中文标签：键名与 agent.status_items 的合法项一一对应。
+_STATUS_LABELS = {
+    "model": "模型",
+    "base_url": "接口",
+    "key": "密钥",
+    "approval": "审批",
+    "sandbox": "访问",
+    "workdir": "目录",
+    "session": "会话",
+}
+
+
 def status_text(cfg: SparkConfig, session_id: str, workdir: str = "") -> str:
+    """构建 TUI 底部状态栏文本。
+
+    项的顺序与取舍由 ``cfg.agent.status_items`` 决定（有序项配置，空 = 默认
+    顺序）；未知项静默跳过，目录为空自动省略——错配置不应撑破状态栏。
+    """
     marker, _key_label = key_status(cfg)
+    values: dict[str, str] = {
+        "model": cfg.provider.model,
+        "base_url": cfg.provider.base_url,
+        "key": marker,
+        "approval": cfg.agent.approval,
+        "sandbox": cfg.agent.sandbox_mode,
+        "workdir": workdir,
+        "session": session_id[:8],
+    }
+    order = [item.strip() for item in cfg.agent.status_items if item.strip()]
+    if not order:
+        order = list(values)
     parts = [
-        f"模型 {cfg.provider.model}",
-        f"接口 {cfg.provider.base_url}",
-        f"密钥 {marker}",
-        f"审批 {cfg.agent.approval}",
-        f"访问 {cfg.agent.sandbox_mode}",
+        f"{_STATUS_LABELS.get(name, name)} {values[name]}"
+        for name in order
+        if name in values and (name != "workdir" or workdir)
     ]
-    if workdir:
-        parts.append(f"目录 {workdir}")
-    parts.append(f"会话 {session_id[:8]}")
     return "  |  ".join(parts)
 
 

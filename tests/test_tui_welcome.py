@@ -228,3 +228,52 @@ def test_key_status_treats_ollama_as_usable_without_key() -> None:
     cfg.provider.api_key_env = ""
     marker, _label = key_status(cfg)
     assert marker == "OK"
+
+
+def test_status_text_default_order_unchanged() -> None:
+    cfg = make_cfg(provider__api_key="sk-abcdefghijkl", agent__sandbox_mode="workspace")
+    text = status_text(cfg, "sess-1234", workdir="/tmp/wd")
+    assert text.startswith("模型 demo-model")
+    assert text.endswith("会话 sess-123")
+    # 无 workdir 时目录项自动省略，不出现空的"目录 "标签
+    text_no_wd = status_text(cfg, "sess-1234")
+    assert "目录" not in text_no_wd
+
+
+def test_status_items_reorder_and_filter() -> None:
+    cfg = make_cfg(provider__api_key="sk-abcdefghijkl")
+    cfg.agent.status_items = ["session", "model"]
+    text = status_text(cfg, "sess-1234", workdir="/tmp/wd")
+    assert text == "会话 sess-123  |  模型 demo-model"
+
+
+def test_status_items_unknown_entries_are_skipped() -> None:
+    cfg = make_cfg(provider__api_key="sk-abcdefghijkl")
+    cfg.agent.status_items = ["bogus_item", "model"]
+    text = status_text(cfg, "sess-1234")
+    assert "bogus_item" not in text
+    assert "demo-model" in text
+
+
+def test_status_items_empty_string_entries_ignored() -> None:
+    cfg = make_cfg(provider__api_key="sk-abcdefghijkl")
+    cfg.agent.status_items = ["", "  ", "session"]
+    text = status_text(cfg, "sess-1234")
+    assert text == "会话 sess-123"
+
+
+def test_status_items_round_trip_via_save_and_load(tmp_path) -> None:
+    from spark.config import load_config, save_config
+
+    cfg = make_cfg()
+    cfg.agent.status_items = ["session", "approval", "key"]
+    path = tmp_path / "config.toml"
+    save_config(cfg, path)
+    loaded = load_config(config_path=path, workdir=tmp_path)
+    assert loaded.agent.status_items == ["session", "approval", "key"]
+    # 默认值不落盘：未定制时不产生 status_items 行
+    cfg2 = make_cfg()
+    cfg2.agent.status_items = []
+    p2 = tmp_path / "default.toml"
+    save_config(cfg2, p2)
+    assert "status_items" not in p2.read_text(encoding="utf-8")

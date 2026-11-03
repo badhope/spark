@@ -465,7 +465,7 @@ class AgentLoop:
         if self._compactor is None:
             from spark.core.compact import Compactor
 
-            self._compactor = Compactor(provider=self.provider, cfg=self.cfg)
+            self._compactor = Compactor(provider=self.provider, cfg=self.cfg, workdir=self.workdir)
         return self._compactor
 
     def _compact_boundary(self) -> int:

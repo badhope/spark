@@ -541,3 +541,72 @@ def test_update_pip_install_is_redirected_to_pip(tmp_path, monkeypatch) -> None:
     r = runner.invoke(cli.app, ["update"])
     assert r.exit_code == 2
     assert "pip install -U spark-agent" in r.stdout
+
+
+# ---------- uninstall ----------
+
+
+def _make_spark_home(home: Path) -> None:
+    """伪造一个已使用过的 Spark home：配置、会话库、知识库各占一项。"""
+    home.mkdir(parents=True)
+    (home / "config.toml").write_text("[agent]\napproval = 'full-auto'\n", encoding="utf-8")
+    (home / "sessions.db").write_bytes(b"sqlite" * 100)
+    (home / "knowledge" / "abc123").mkdir(parents=True)
+    (home / "knowledge" / "abc123" / "doc.md").write_text("k", encoding="utf-8")
+
+
+def test_uninstall_list_shows_inventory_and_keeps_files(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    _make_spark_home(home)
+    monkeypatch.setattr(cli, "default_home", lambda: home)
+    monkeypatch.setenv("SPARK_HOME", str(home))
+    r = runner.invoke(cli.app, ["uninstall", "--list"])
+    assert r.exit_code == 0, r.stdout
+    assert "config.toml" in r.stdout and "sessions.db" in r.stdout
+    assert "knowledge" in r.stdout
+    assert home.exists(), "--list 不得删除任何文件"
+
+
+def test_uninstall_requires_confirmation_by_default(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    _make_spark_home(home)
+    monkeypatch.setattr(cli, "default_home", lambda: home)
+    monkeypatch.setenv("SPARK_HOME", str(home))
+    r = runner.invoke(cli.app, ["uninstall"], input="n\n")
+    assert r.exit_code == 0, r.stdout
+    assert "已取消" in r.stdout + (r.stderr or "")
+    assert home.exists(), "未确认时不得删除"
+
+
+def test_uninstall_yes_removes_home(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    _make_spark_home(home)
+    monkeypatch.setattr(cli, "default_home", lambda: home)
+    monkeypatch.setenv("SPARK_HOME", str(home))
+    r = runner.invoke(cli.app, ["uninstall", "--yes"])
+    assert r.exit_code == 0, r.stdout
+    assert not home.exists()
+    # 项目内的 .spark/ 工作区不在清理范围（清单里根本不该出现 workdir 路径）
+    assert str(tmp_path / "home" / "knowledge") not in r.stdout.split("数据目录：")[1].split("\n")[0]
+
+
+def test_uninstall_refuses_to_delete_home_directory_itself(tmp_path, monkeypatch) -> None:
+    """SPARK_HOME 指向用户家目录时必须拒绝——环境变量写错不能删掉整个家。"""
+    home = tmp_path / "userhome"
+    home.mkdir()
+    (home / "config.toml").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(cli, "default_home", lambda: home)
+    monkeypatch.setenv("SPARK_HOME", str(home))
+    monkeypatch.setattr(Path, "home", lambda: home)
+    r = runner.invoke(cli.app, ["uninstall", "--yes"])
+    assert r.exit_code == 2
+    assert "拒绝删除" in r.stdout + (r.stderr or "")
+    assert home.exists(), "守卫拦截后不得删除"
+
+
+def test_uninstall_empty_home_is_a_noop(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(cli, "default_home", lambda: tmp_path / "missing")
+    monkeypatch.setenv("SPARK_HOME", str(tmp_path / "missing"))
+    r = runner.invoke(cli.app, ["uninstall", "--yes"])
+    assert r.exit_code == 0, r.stdout
+    assert "没有可清理的数据" in r.stdout

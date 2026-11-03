@@ -146,6 +146,10 @@ class AgentConfig(BaseModel):
     show_notices: bool = True
     # 自定义系统提示词：留空 = 使用内置 prompts/system.md；填写后覆盖默认
     system_prompt: str = ""
+    #: TUI 状态栏有序项：空 = 默认顺序（模型/接口/密钥/审批/访问/目录/会话）。
+    #: 合法项：model, base_url, key, approval, sandbox, workdir, session；
+    #: 未知项静默跳过，目录为空时自动省略——错配置不应撑破状态栏。
+    status_items: list[str] = Field(default_factory=list)
 
 
 class ContextConfig(BaseModel):
@@ -864,6 +868,9 @@ def _agent_table(cfg: SparkConfig) -> tomlkit.items.Table:
     agent.add("show_notices", cfg.agent.show_notices)
     agent.add("effort", cfg.agent.effort)
     agent.add("system_prompt", cfg.agent.system_prompt or "")
+    if cfg.agent.status_items:
+        # 有序项列表只在用户真的定制过时写入，保持配置文件干净。
+        agent.add("status_items", list(cfg.agent.status_items))
     return agent
 
 

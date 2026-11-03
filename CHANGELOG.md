@@ -2,6 +2,24 @@
 
 本项目遵循语义化版本。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [Unreleased] - 2026-11-03（第十一轮：REMAINING「可直接做」清零）
+
+### 新增
+
+- **`spark uninstall` 卸载命令**：打印 `~/.spark` 全部数据落点清单（含逐项大小）→
+  确认 → 删除；`--list` 只看不删、`--yes` 跳过确认。内置守卫：`SPARK_HOME`
+  指向家目录本身或盘符根时拒绝执行——环境变量写错不该有能力删掉整个家目录。
+  Spark 不自建 venv，Python 包请用 `pip uninstall spark-agent` 移除。
+- **scoop 分发**：仓库自带 scoop bucket（`bucket/spark.json`），支持
+  `scoop install <manifest-url>` 或 `scoop bucket add spark <repo>`；manifest
+  带 `autoupdate`，哈希自动取自 GitHub Release API 的 asset digest。
+- **TUI 状态栏定制**：`agent.status_items` 有序项配置（model/base_url/key/
+  approval/sandbox/workdir/session），空 = 默认顺序；未知项静默跳过、目录为空
+  自动省略，错配置不会撑破状态栏。仅在定制过时写入 config.toml。
+- **压缩提示词可编程干预**：`<workdir>/.spark/prompts/compact.md`（项目级）→
+  `~/.spark/prompts/compact.md`（全局）→ 内置 5 段结构化提示词，逐级回退；
+  空文件视为未提供；自定义提示词同时作用于摘要与多轮合并两条路径。
+
 ## [Unreleased] - 2026-11-03（第十轮：子会话导航）
 
 ### 新增
