@@ -53,6 +53,16 @@ asset digest，无需手工维护。manifest 同时注册 `spark` 与
 Spark 的本地数据（会话/配置/记忆）用 `spark uninstall`。
 
 
+### macOS（Homebrew）
+
+```bash
+brew tap badhope/spark https://github.com/badhope/homebrew-spark
+brew install spark
+```
+
+（Apple Silicon 打包版，哈希与 Release 的 SHA256SUMS 一致。）
+
+
 ## 方式 A — 源码运行（最快）
 
 ```bash

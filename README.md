@@ -8,6 +8,7 @@
 [![CI](https://github.com/badhope/spark/actions/workflows/ci.yml/badge.svg)](https://github.com/badhope/spark/actions/workflows/ci.yml)
 [![Security](https://github.com/badhope/spark/actions/workflows/security.yml/badge.svg)](https://github.com/badhope/spark/actions/workflows/security.yml)
 [![Scoop](https://img.shields.io/badge/scoop-bucket-8A2BE2)](https://github.com/badhope/spark/tree/main/bucket)
+[![Homebrew](https://img.shields.io/badge/homebrew-tap-FBB042)](https://github.com/badhope/homebrew-spark)
 
 An AI coding agent where **approval, three-OS sandboxing (bwrap / Job Object / sandbox-exec), rollback and provider resilience are
 engineered, not bolted on** — the same brain runs as Web UI, desktop window, TUI,
