@@ -32,7 +32,7 @@ dependencies = [
     "langgraph-checkpoint-sqlite>=3.1.1,<4.0",
     # 上游（langgraph-checkpoint-sqlite 2.0.x）依赖 aiosqlite Connection 的
     # Thread.is_alive()；aiosqlite 0.22 移除了该 API——显式锁住兼容窗。
-    "aiosqlite>=0.20,<0.22",
+    "aiosqlite>=0.20,<0.23",
     "mcp>=1.0,<2.0; python_version>=\"3.10\"",
     "pydantic>=2.7,<3.0",
     "pydantic-settings>=2.0,<3.0",
