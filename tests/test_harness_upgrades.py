@@ -357,7 +357,13 @@ def test_bwrap_unavailable_returns_none(monkeypatch) -> None:
 
 
 def test_network_denied_reports_when_it_cannot_be_enforced(tmp_path: Path, monkeypatch) -> None:
-    """配置要断网但平台做不到时必须如实告警，不能假装已断网。"""
+    """配置要断网时：做得到就真断（并标注 network_blocked），做不到必须如实告警。
+
+    macOS（sandbox-exec 可用）能真断网；bwrap/sandbox-exec 都不可用的平台
+    降级为普通执行——此时绝不能假装已断网。
+    """
+    import sys as _sys
+
     import spark.tools.shell as shell
 
     # 只把 bwrap 置为不可用，不要 patch 全局 os.name：monkeypatch 改的是共享
@@ -371,8 +377,15 @@ def test_network_denied_reports_when_it_cannot_be_enforced(tmp_path: Path, monke
         sandbox, shell.RunShellArgs(command="echo hi"), timeout_sec=10, max_output_chars=2000
     )
     assert result.ok
-    assert "network_warning" in result.payload
-    assert "network" not in result.payload or result.payload.get("network") != "blocked"
+    sandbox_info = result.payload.get("sandbox") or {}
+    if _sys.platform == "darwin":
+        # sandbox-exec 真断网：标注 network_blocked，且不需要告警
+        assert sandbox_info.get("kind") == "sandbox-exec"
+        assert sandbox_info.get("network_blocked") is True
+        assert result.payload.get("network") == "blocked"
+    else:
+        assert "network_warning" in result.payload
+        assert "network" not in result.payload or result.payload.get("network") != "blocked"
 
 
 # ---------------------------------------------------------------------------

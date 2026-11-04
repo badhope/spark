@@ -92,7 +92,7 @@ def _make_job_object(memory_limit: int = _WINDOWS_JOB_MEMORY_LIMIT) -> Any:
     if not kernel32.SetInformationJobObject(
         job, JobObjectExtendedLimitInformation, ctypes.byref(info), ctypes.sizeof(info)
     ):
-        code = ctypes.get_last_error()
+        code = ctypes.get_last_error()  # type: ignore[attr-defined]  # 仅 win32 typeshed
         ctypes.windll.kernel32.CloseHandle(job)  # type: ignore[attr-defined]
         raise OSError(f"SetInformationJobObject failed: {code}")
     return job
