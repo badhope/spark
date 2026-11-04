@@ -110,6 +110,56 @@ const UserMessage = memo(function UserMessage({ msg, actions }: { msg: ChatMsg; 
 })
 
 /* ---------------- 助手消息 ---------------- */
+function SideCard({ seg }: { seg: Extract<Segment, { kind: "side" }> }) {
+  const lang = useUiStore((s) => s.lang)
+  const t = (k: string) => (lang === "en" ? k : k)
+  return (
+    <div className={cls("my-1 rounded-lg border p-3 text-sm", seg.ok ? "border-sky-500/30 bg-sky-500/5" : "border-amber-500/40 bg-amber-500/5")}>
+      <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-sky-300">
+        <span>💬 旁支回答</span>
+        <span className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[10px] text-ink2">{seg.model}</span>
+        {!seg.ok && <span className="text-amber-300">⚠ {t("unavailable")}</span>}
+      </div>
+      <div className="mb-1 text-ink2">Q：{seg.question}</div>
+      <div className="whitespace-pre-wrap text-ink">{seg.answer || "（无回答）"}</div>
+    </div>
+  )
+}
+
+function GoalCard({ seg }: { seg: Extract<Segment, { kind: "goal" }> }) {
+  const g = seg.goal
+  const statusBadge =
+    g.status === "done"
+      ? { text: "已完成", cls: "bg-emerald-500/20 text-emerald-300" }
+      : g.status === "cancelled"
+        ? { text: "已取消", cls: "bg-white/10 text-ink2" }
+        : { text: "进行中", cls: "bg-accent/20 text-accent" }
+  return (
+    <div className="my-1 rounded-lg border border-accent/30 bg-accent/5 p-3 text-sm">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-base">🎯</span>
+        <span className="font-semibold text-ink">{g.objective}</span>
+        <span className={cls("rounded px-1.5 py-0.5 text-[10px] font-semibold", statusBadge.cls)}>{statusBadge.text}</span>
+      </div>
+      {g.checklist && g.checklist.length > 0 && (
+        <ul className="mb-2 space-y-1">
+          {g.checklist.map((c, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <span className={cls("mt-0.5 font-mono text-xs", c.done ? "text-emerald-400" : "text-ink3")}>{c.done ? "✓" : "○"}</span>
+              <span className={cls("flex-1", c.done ? "text-ink2" : "text-ink")}>
+                {c.item}
+                {c.evidence ? <span className="ml-1 text-xs text-ink3">（证据：{c.evidence}）</span> : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {g.note ? <div className="text-xs text-ink3">备注：{g.note}</div> : null}
+      {seg.label ? <div className="mt-2 border-t border-white/10 pt-2 text-xs text-ink2">{seg.label}</div> : null}
+    </div>
+  )
+}
+
 function SegmentRenderer({ seg, streaming }: { seg: Segment; streaming?: boolean }) {
   switch (seg.kind) {
     case "thinking":
@@ -118,6 +168,10 @@ function SegmentRenderer({ seg, streaming }: { seg: Segment; streaming?: boolean
       return <PlanCard steps={seg.steps} />
     case "tool":
       return <ToolBlock tool={seg.tool} />
+    case "side":
+      return <SideCard seg={seg} />
+    case "goal":
+      return <GoalCard seg={seg} />
     case "text":
       if (!seg.text) return null
       return (

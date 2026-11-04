@@ -27,6 +27,11 @@
 | 状态栏定制（TUI） | ✅ | `agent.status_items` 有序项（`tui/welcome.py:status_text`），未知项跳过、目录空自动省略 |
 | 压缩提示词可编程干预 | ✅ | `.spark/prompts/compact.md`（项目）→ `~/.spark/prompts/compact.md`（全局）覆盖内置提示词，摘要与合并两路径都生效 |
 | A2A Server（Agent2Agent 协议） | ✅ | `spark a2a-serve`：Agent Card + message/send + tasks/get（`a2a_server.py`，9 测试）；流式列为 ⏸ |
+| A2A 流式（message/stream SSE） | ✅ | capabilities.streaming=true；SSE 逐帧下发 TaskStatusUpdateEvent + TaskArtifactUpdateEvent（终帧全量替换），非流式 message/send 复用同一执行路径 |
+| 侧聊 / 旁支（`/side`） | ✅ | `/side <问题>`：辅助模型（small_model 优先）一次性作答，带主对话最近请求作背景；不污染主对话历史，UI 旁支卡片 |
+| Goal 长程模式（`/goal`） | ✅ | `/goal <目标>`：goals 表持久化 + 目标契约注入系统提示词 + `goal_update` 工具（**证据门槛**：complete 需至少一条 done 且带可核查 evidence，否则拒绝） |
+| 主 agent 切换（build/plan） | ✅ | `/plan`（切 plan-only 只读档）/`/build`（恢复并重套审批档案）；复用审批档案 override 机制，零配置突变 |
+| 插件市场 v1（策划式） | ✅ | `spark mcp search/add/list/remove` CLI 与 Web 注册表同源（live + 离线策划索引 + 中国可用性标注）；签名分发仍列在高成本项 |
 
 ## 待做（按"能不能直接动手"排序）
 
@@ -40,11 +45,7 @@
 
 | 能力 | 状态 | 为什么不能自己决定 |
 | --- | --- | --- |
-| 侧聊 / 旁支（`/side`） | ⏸ | 引入"一条主对话 + 多条分支"的状态模型；会话表结构要改，且 UI 需要新的导航层。做错比不做更糟 |
-| Goal 长程模式（`/goal`） | ⏸ | 需要定义"目标—证据—验收"的推进协议；没有证据门槛的 goal 只是自动循环，会烧钱 |
-| 主 agent 切换（build/plan 双档） | ⏸ | 与现有 approval profile 语义重叠，合并还是并存需要拍板 |
-| 插件市场 | ⏸ | 涉及签名、安装权限、沙箱边界。没有签名机制的市场是供应链攻击面 |
-| A2A 流式（message/stream SSE） | ⏸ | 当前 A2A 非流式已满足编排器主路径；流式要引入 SSE 事件转发与取消语义，成本/收益需拍板 |
+| （空） | — | 2026-11-04 全部关闭：侧聊 / Goal / build-plan 切换 / 插件市场 v1 / A2A 流式均已落地；新的决策项出现时在此登记 |
 
 ### 成本明显更高
 

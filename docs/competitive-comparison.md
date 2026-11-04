@@ -55,7 +55,7 @@
 | 非交互 exec | ✅ `spark exec`（stdout 纯文本）+ `--json`（NDJSON 事件流，末行 `{"type":"final"}`） | codex `exec --json/--output-schema/--ephemeral`；opencode `run --format` |
 | 代码审查命令 | ✅ `spark review [--commit/--base/--json]`，强制只读+仅沙箱，高危 findings 退出码 2 | codex `codex review --uncommitted/--base/--commit` |
 | 计划模式 | ✅ `plan-only` / `approve-plan` 两档 | codex `/plan`；opencode plan agent；Qoder Plan-driven；ZCode `/plan` |
-| Goal 长程模式 | ❌ | ZCode `/goal`（证据门槛 + 迭代验证）；Qoder `/goal` |
+| Goal 长程模式 | ✅ `/goal`：目标契约注入 + goal_update 工具（证据门槛：complete 需可核查 evidence） | ZCode `/goal`（证据门槛 + 迭代验证）；Qoder `/goal` |
 
 ## 4. 会话管理
 
@@ -69,7 +69,7 @@
 | 重命名 | ✅ 自动标题 | codex `/rename`；opencode ctrl+r |
 | 会话内 token 用量 | ✅ ContextMeter | codex `/status`；ZCode Usage Stats 面板 |
 | 消息级撤销/回滚 | ✅ 时间轴 undo，可选连文件一并还原到该消息前的检查点 | ZCode Undo/Reapply（全有或全无）；Qoder `/rewind`（会话/文件分别恢复）；codex `thread/revert` |
-| 侧聊/旁支 | ❌ | codex `/side`(`/btw`)；ZCode Side Conversation；Qoder Side task |
+| 侧聊/旁支 | ✅ `/side <问题>`：辅助模型一次性作答，不污染主对话历史 | codex `/side`(`/btw`)；ZCode Side Conversation；Qoder Side task |
 
 ## 5. 上下文 / 记忆 / 知识
 
@@ -110,7 +110,7 @@
 | 数据备份 | ✅ `VACUUM INTO` 在线快照 + `doctor --backup` | 均无 |
 | 快捷键帮助面板 | ✅ `?` 打开 | codex `?`；opencode 无 |
 | 技能（Skills） | ✅ `.spark/skills/**` + `load_skill` | ZCode 全生态（导入 CC/Codex 等 + 插件分发）；opencode 6 目录 search；codex bundled + 动态选择器 |
-| 插件系统 | ⚠️ 仅 MCP 注册 | opencode npm 插件（可注册覆盖内建工具）；codex plugin marketplace；ZCode Public/Personal marketplace |
+| 插件系统 | ✅ MCP 注册表搜索 + `spark mcp` CLI 市场（live+离线策划索引+中国可用性） | opencode npm 插件（可注册覆盖内建工具）；codex plugin marketplace；ZCode Public/Personal marketplace |
 
 ## 7. 权限 / 沙箱 / 安全
 
@@ -133,7 +133,7 @@
 | 子代理 | ✅ `task`（最多 4 并行）+ 声明式 `.claude/agents` | codex spawn_agent（并发/深度限制/消息板）；opencode general/explore/scout；ZCode subagents（frontmatter 超集）+ workflows |
 | 子代理独立模型 | ✅ `.claude/agents/*.md` 的 `model:` 字段，按声明切 provider | ZCode subagent `model`/`thoughtLevel`；codex `default_subagent_model` |
 | 专业团队编排 | ❌ | Qoder Experts Mode（Lead + 6 专家 + Team Canvas）；ZCode Dynamic Workflows（JS 编排） |
-| 主 agent 切换 | ❌（单 agent） | opencode Tab 切 build/plan；codex `/agents` 指挥中心 |
+| 主 agent 切换 | ✅ `/plan` `/build` 双档（plan-only 只读 ↔ 常规审批，复用审批档案 override） | opencode Tab 切 build/plan；codex `/agents` 指挥中心 |
 | 子会话导航 | ✅ 子代理轨迹卡片带声明名 + 任务描述 + 实时进度（`subtask_start` 事件携带 `agent`/`prompt`，UI 逐卡区分） | opencode 子会话树（leader+方向键）；codex `/subagents` |
 
 ## 9. 回滚 / 检查点

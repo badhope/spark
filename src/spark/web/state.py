@@ -213,6 +213,9 @@ class SparkWebState:
         self.memory = MemoryService(self.memory_store, cfg)
         self.env_info = self._detect_env()
         bg_tools.attach_store(self.store)
+        from spark.tools import goal as goal_tools
+
+        goal_tools.attach_bridges(self.store, lambda: self.session_id)
         # 定时任务：调度器只判"到点了"，执行走 run_due_automations（由
         # 后台线程调，且与普通回合共用 turn_lock，保证不会和用户抢会话）。
         from spark.automations import AutomationScheduler

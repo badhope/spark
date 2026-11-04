@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 from spark.models import ChatMessage, ToolCall, ToolResult
 
@@ -77,6 +78,16 @@ class SessionStore:
                     finished_at REAL,
                     exit_code INTEGER,
                     output TEXT NOT NULL DEFAULT ''
+                );
+                CREATE TABLE IF NOT EXISTS goals (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    objective TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    checklist TEXT NOT NULL DEFAULT '[]',
+                    note TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS token_usage (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -624,6 +635,83 @@ class SessionStore:
                 "SELECT * FROM bg_jobs WHERE id = ?", (job_id,)
             ).fetchone()
             return dict(row) if row else None
+
+    # ------------------------------------------------------------------ goals
+    # Goal 长程模式（/goal）：一个会话同时只有一个 active 目标；checklist
+    # 以 JSON 存储（[{item, done, evidence}]），证据门槛由工具层把关。
+
+    @staticmethod
+    def _goal_row(row: Any) -> dict:
+        data = dict(row)
+        try:
+            data["checklist"] = json.loads(data.get("checklist") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            data["checklist"] = []
+        return data
+
+    def upsert_goal(self, goal: dict) -> dict:
+        """创建或更新目标；checklist 以 JSON 序列化存储。返回带 checklist 的完整行。"""
+        import json as _json
+        import time as _time
+
+        now = _time.time()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO goals (id, session_id, objective, status, checklist, note, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     objective=excluded.objective, status=excluded.status,
+                     checklist=excluded.checklist, note=excluded.note,
+                     updated_at=excluded.updated_at""",
+                (
+                    goal["id"],
+                    goal["session_id"],
+                    goal["objective"],
+                    goal.get("status", "active"),
+                    _json.dumps(goal.get("checklist") or [], ensure_ascii=False),
+                    goal.get("note", ""),
+                    goal.get("created_at", now),
+                    now,
+                ),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT * FROM goals WHERE id = ?", (goal["id"],)
+            ).fetchone()
+            return self._goal_row(row)
+
+    def get_active_goal(self, session_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM goals WHERE session_id = ? AND status = 'active' "
+                "ORDER BY created_at DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+            return self._goal_row(row) if row else None
+
+    def list_goals(self, session_id: str, active_only: bool = False) -> list[dict]:
+        sql = "SELECT * FROM goals WHERE session_id = ?"
+        if active_only:
+            sql += " AND status = 'active'"
+        sql += " ORDER BY created_at DESC LIMIT 50"
+        with self._lock:
+            rows = self._conn.execute(sql, (session_id,)).fetchall()
+            return [self._goal_row(r) for r in rows]
+
+    def close_goal(self, goal_id: str, status: str) -> dict | None:
+        """终态收口（done / cancelled）；返回更新后的完整行。"""
+        import time as _time
+
+        with self._lock:
+            self._conn.execute(
+                "UPDATE goals SET status = ?, updated_at = ? WHERE id = ?",
+                (status, _time.time(), goal_id),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT * FROM goals WHERE id = ?", (goal_id,)
+            ).fetchone()
+            return self._goal_row(row) if row else None
 
     # ---- token usage audit ----
 

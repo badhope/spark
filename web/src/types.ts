@@ -233,12 +233,24 @@ export type ChatEvent =
   | { type: "question"; data: { question: string; options: string[]; tool_id: string } }
   | { type: "tool_end"; tool: ToolCall; ok: boolean; result: unknown; data?: { subtask_index?: number } }
   | { type: "approval_needed"; approval: ApprovalInfo; tool: ToolCall }
+  | { type: "approval_changed"; data: { approval: string; base: string; mode: "plan" | "build"; label?: string } }
+  | { type: "side_answer"; data: { question: string; answer: string; model: string; ok: boolean } }
+  | { type: "goal_status"; data: { goal?: GoalState | null; label?: string } }
   | { type: "compaction"; data: { before_tokens?: number; after_tokens?: number; limit?: number; summarized_messages?: number; usage?: ContextUsage } }
   | { type: "context"; data: { usage: ContextUsage } }
   | { type: "plan"; data: { steps: PlanStep[] } }
   | { type: "turn_end"; text?: string }
   | { type: "turn_error"; text?: string }
   | { type: "done" }
+
+/** Goal 长程模式的目标状态（/goal 设立，goal_update 工具回报） */
+export interface GoalState {
+  id: string
+  objective: string
+  status: "active" | "done" | "cancelled"
+  checklist: { item: string; done: boolean; evidence?: string }[]
+  note?: string
+}
 
 export interface ContextUsage {
   used: number

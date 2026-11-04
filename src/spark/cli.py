@@ -160,6 +160,9 @@ def _launch_tui(
     tool_ctx.mcp_call = bridge.call
     tool_ctx.mcp_bridge = bridge
     bridge.set_sampling_handler(prov)
+    from spark.tools import goal as goal_tools
+
+    goal_tools.attach_bridges(store, lambda: session_id or "")
     SparkApp(
         workdir=workdir,
         cfg=cfg,
@@ -279,6 +282,9 @@ async def _exec_async(
     tool_ctx.mcp_call = bridge.call
     tool_ctx.mcp_bridge = bridge
     bridge.set_sampling_handler(prov)
+    from spark.tools import goal as goal_tools
+
+    goal_tools.attach_bridges(store, lambda: session_id)
     # One-shot CLI: the process *is* the turn, so there is nothing to resume
     # after a crash. The default in-memory saver still backs in-process
     # approval interrupts without paying for a durable DB.
@@ -470,6 +476,9 @@ async def _review_async(
     tool_ctx.mcp_call = bridge.call
     tool_ctx.mcp_bridge = bridge
     bridge.set_sampling_handler(prov)
+    from spark.tools import goal as goal_tools
+
+    goal_tools.attach_bridges(store, lambda: session_id)
     loop = _agent_loop()(
         workdir=workdir,
         cfg=cfg,
@@ -1446,6 +1455,143 @@ def a2a_serve_cmd(
         pass
     finally:
         server.shutdown()
+
+
+mcp_app = typer.Typer(help="MCP 插件市场：搜索/添加/移除 MCP server（与 Web 设置面板同一配置面）")
+app.add_typer(mcp_app, name="mcp")
+
+
+@mcp_app.command("list")
+def mcp_list_cmd(
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    config: Path | None = typer.Option(None, "--config"),
+) -> None:
+    """列出当前配置的 MCP server。"""
+    cfg = _common_cfg(workdir, config, None, None, None)
+    if not cfg.mcp_servers:
+        typer.echo("（未配置任何 MCP server）用 `spark mcp search <关键词>` 发现并添加。")
+        return
+    for s in cfg.mcp_servers:
+        target = (
+            f"{s.command} {' '.join(s.args)}".strip()
+            if s.transport == "stdio"
+            else (s.http.url if s.http else "?")
+        )
+        ro = f" · 只读白名单 {len(s.readonly_tools)} 项" if s.readonly_tools else ""
+        at = f" · 工具白名单 {len(s.allowed_tools)} 项" if s.allowed_tools else ""
+        typer.echo(f"  {s.name}  [{s.transport}]  {target}{ro}{at}")
+
+
+@mcp_app.command("search")
+def mcp_search_cmd(
+    query: str = typer.Argument(..., help="关键词，如 github / sqlite / browser"),
+    limit: int = typer.Option(8, "--limit", help="返回条数（1-50）"),
+) -> None:
+    """搜索 MCP 注册表（离线时自动回退内置策划索引）。"""
+    from spark.mcp_registry import search_servers
+
+    try:
+        result = search_servers(query, limit=limit)
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"搜索失败：{exc}", err=True)
+        raise typer.Exit(1) from exc
+    items = result.get("items") or []
+    typer.echo(f"来源：{result.get('source')}（{'离线兜底' if result.get('source') == 'offline' else '在线'}）")
+    if not items:
+        typer.echo("（无匹配结果）")
+        return
+    for it in items:
+        china = it.get("china") or {}
+        flag = "🇨🇳可用" if china.get("available") else "⚠直连存疑"
+        typer.echo(f"  {it['name']}  [{it['transport']}]  {flag}")
+        if it.get("description"):
+            typer.echo(f"    {str(it['description'])[:110]}")
+        if it.get("suggested_command"):
+            typer.echo(f"    启动：{it['suggested_command']} {' '.join(it.get('suggested_args') or [])}")
+        elif it.get("remote_url"):
+            typer.echo(f"    远程：{it['remote_url']}")
+    typer.echo("添加：spark mcp add <name>（--env KEY=VALUE 补充必需环境变量）")
+
+
+@mcp_app.command("add")
+def mcp_add_cmd(
+    name: str = typer.Argument(..., help="注册表里的 server 名（先 search 找到）"),
+    env: list[str] = typer.Option(
+        None, "--env", help="环境变量 KEY=VALUE（可重复；必需变量缺失会被提醒）"
+    ),
+    readonly: bool = typer.Option(
+        False, "--readonly", help="最小权限：只注册该 server 声明为只读的工具"
+    ),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    config: Path | None = typer.Option(None, "--config"),
+) -> None:
+    """从注册表按名添加一个 MCP server 到配置。"""
+    from spark.config import McpServerConfig, McpTransportConfig
+    from spark.mcp_registry import search_servers
+
+    cfg = _common_cfg(workdir, config, None, None, None)
+    if any(s.name == name for s in cfg.mcp_servers):
+        typer.echo(f"{name} 已在配置中（spark mcp remove {name} 可移除）", err=True)
+        raise typer.Exit(2)
+    result = search_servers(name, limit=10)
+    items = result.get("items") or []
+    hit = next((it for it in items if it.get("name") == name), None)
+    if hit is None:
+        typer.echo(
+            f"注册表里没找到 {name}（来源 {result.get('source')}）。先 `spark mcp search {name}` 核对名称。",
+            err=True,
+        )
+        raise typer.Exit(2)
+    env_map: dict[str, str] = {}
+    for pair in env or []:
+        k, _, v = pair.partition("=")
+        if k.strip():
+            env_map[k.strip()] = v
+    required = [e["name"] for e in hit.get("required_env") or [] if e.get("required")]
+    missing = [k for k in required if k not in env_map]
+    if missing:
+        typer.echo(f"缺少必需环境变量：{', '.join(missing)}（--env KEY=VALUE 提供）", err=True)
+        raise typer.Exit(2)
+    if hit.get("transport") == "stdio" and hit.get("suggested_command"):
+        server = McpServerConfig(
+            name=name,
+            command=hit["suggested_command"],
+            args=list(hit.get("suggested_args") or []),
+            env=env_map,
+            readonly_tools=["*"] if readonly else [],
+        )
+    elif hit.get("remote_url"):
+        server = McpServerConfig(
+            name=name,
+            transport="streamable_http",
+            http=McpTransportConfig(url=str(hit["remote_url"])),
+            readonly_tools=["*"] if readonly else [],
+        )
+    else:
+        typer.echo(f"{name} 没有可用的启动命令或远程地址，无法自动添加。", err=True)
+        raise typer.Exit(2)
+    cfg.mcp_servers = [*(cfg.mcp_servers or []), server]
+    written = save(cfg, config)
+    typer.echo(f"已添加 {name}（{server.transport}）→ {written}")
+    if result.get("source") == "offline":
+        typer.echo("（注意：本次来自离线策划索引，字段可能略有出入，建议 Web 设置面板核对）")
+
+
+@mcp_app.command("remove")
+def mcp_remove_cmd(
+    name: str = typer.Argument(...),
+    config: Path | None = typer.Option(None, "--config"),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+) -> None:
+    """从配置移除一个 MCP server。"""
+    cfg = _common_cfg(workdir, config, None, None, None)
+    before = len(cfg.mcp_servers or [])
+    cfg.mcp_servers = [s for s in (cfg.mcp_servers or []) if s.name != name]
+    if len(cfg.mcp_servers) == before:
+        typer.echo(f"配置里没有 {name}", err=True)
+        raise typer.Exit(2)
+    written = save(cfg, config)
+    typer.echo(f"已移除 {name} → {written}")
 
 
 config_app = typer.Typer(help="查看或修改配置", no_args_is_help=True)

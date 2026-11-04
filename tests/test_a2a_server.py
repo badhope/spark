@@ -54,7 +54,7 @@ def test_agent_card_discovery(a2a) -> None:
         card = _get(base, path)
         assert card["name"] == "spark"
         assert card["url"] == base, "card.url 必须是真实绑定地址"
-        assert card["capabilities"]["streaming"] is False
+        assert card["capabilities"]["streaming"] is True
         assert card["skills"], "至少声明一个 skill"
 
 
@@ -128,19 +128,87 @@ def test_tasks_get_unknown_task(a2a) -> None:
     assert resp["error"]["code"] == -32001
 
 
-def test_unsupported_streaming_capability_is_rejected(a2a) -> None:
+def test_unsupported_push_capability_is_rejected(a2a) -> None:
     base, _ = a2a
     resp = _post(
         base,
         {
             "jsonrpc": "2.0",
             "id": 5,
-            "method": "message/stream",
-            "params": {"message": {"role": "user", "parts": [{"kind": "text", "text": "x"}]}},
+            "method": "tasks/pushNotificationConfig/set",
+            "params": {},
         },
     )
     assert resp["error"]["code"] == -32601
     assert "not supported" in resp["error"]["message"]
+
+
+def test_message_stream_sse_sequence(a2a) -> None:
+    """message/stream：SSE 帧序 = working 状态 → artifact 增量 → completed 终态。"""
+    base, _ = a2a
+    req = urllib.request.Request(
+        f"{base}/",
+        data=json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 10,
+                "method": "message/stream",
+                "params": {
+                    "message": {
+                        "role": "user",
+                        "parts": [{"kind": "text", "text": "hello"}],
+                        "taskId": "task-stream-1",
+                        "contextId": "ctx-s",
+                    }
+                },
+            }
+        ).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    frames: list[dict] = []
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        assert resp.headers.get("Content-Type", "").startswith("text/event-stream")
+        for raw in resp:
+            line = raw.decode("utf-8").strip()
+            if line.startswith("data: "):
+                frames.append(json.loads(line[len("data: ") :]))
+    assert frames, "至少要有一帧"
+    assert all(f["jsonrpc"] == "2.0" and f["id"] == 10 for f in frames)
+    kinds = [f["result"]["kind"] for f in frames]
+    assert kinds[0] == "status-update"
+    assert frames[0]["result"]["status"]["state"] == "working"
+    assert frames[0]["result"]["final"] is False
+    assert kinds[-1] == "status-update"
+    assert frames[-1]["result"]["status"]["state"] == "completed"
+    assert frames[-1]["result"]["final"] is True
+    artifact_frames = [f["result"] for f in frames if f["result"]["kind"] == "artifact-update"]
+    assert artifact_frames, "有文本就必须有 artifact 帧"
+    assert artifact_frames[-1]["lastChunk"] is True
+    assert artifact_frames[-1]["append"] is False, "终帧是全量替换帧"
+    # 增量帧（非终帧）按序拼接 == 终帧的权威全文
+    deltas = "".join(
+        f["artifact"]["parts"][0]["text"]
+        for f in artifact_frames[:-1]
+        if f["artifact"]["parts"][0]["text"]
+    )
+    assert artifact_frames[-1]["artifact"]["parts"][0]["text"] == deltas
+
+
+def test_message_stream_invalid_params_returns_json_error(a2a) -> None:
+    base, _ = a2a
+    req = urllib.request.Request(
+        f"{base}/",
+        data=json.dumps(
+            {"jsonrpc": "2.0", "id": 11, "method": "message/stream", "params": {}}
+        ).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        assert resp.headers.get("Content-Type", "").startswith("application/json")
+        body = json.loads(resp.read().decode("utf-8"))
+    assert body["error"]["code"] == -32602
 
 
 def test_unknown_method_and_protocol_errors(a2a) -> None:

@@ -32,6 +32,24 @@ def _handle_chat(handler: HandlerBase, body: dict) -> None:
     if state.loop is None:
         handler._json(500, {"error": "agent not ready"})
         return
+    slash = parse_slash(prompt)
+    if slash is not None and slash.name != "test":
+        # 非流式端点的 plan/build/side/goal：鸭子类型一个 Sink 复用流式分发。
+        class _Sink:
+            def __init__(self) -> None:
+                self.events: list[dict] = []
+
+            def submit_payload(self, payload: dict) -> bool:
+                self.events.append(payload)
+                return True
+
+            def finish(self) -> bool:
+                return True
+
+        sink = _Sink()
+        if _dispatch_slash(state, sink, slash):  # type: ignore[arg-type]
+            handler._json(200, {"events": sink.events})
+            return
     try:
         with state.turn_lock:
             # Drive the turn on the shared runtime loop: the durable turn
@@ -93,6 +111,222 @@ def _run_test_slash(state, stream: _SSESession, slash) -> tuple[object | None, b
         )
         stream.finish()
         return None, True
+
+
+def _set_agent_mode(state, mode: str) -> str:
+    """/plan /build 共用核心：会话内切换只读计划档 / 回到构建档。
+
+    不突变 cfg（与审批档案同一 override 机制）；/build 会重新套用审批档案，
+    使被 /plan 临时压制的档案恢复。返回生效模式名。
+    """
+    loop = state.loop
+    if loop is None:
+        return str(state.cfg.agent.approval)
+    if mode == "plan":
+        loop._approval_override = "plan-only"
+    else:
+        loop._approval_override = None
+        try:
+            loop._apply_approval_profile(state.cfg)
+        except Exception:  # noqa: BLE001 — 档案缺失不应让 /build 失败
+            logger.debug("/build 重套审批档案失败", exc_info=True)
+    return state._effective_approval()
+
+
+def _run_mode_slash(state, stream: _SSESession, slash) -> bool:
+    """/plan /build：切换 agent 档位；返回 True 表示流已收尾（fatal）。"""
+    effective = _set_agent_mode(state, slash.name)
+    label = (
+        "🧭 已切换到 **plan 模式**（只读探索：写操作与命令将被拒绝，`/build` 返回）"
+        if slash.name == "plan"
+        else "🔨 已切换到 **build 模式**（恢复常规审批）"
+    )
+    stream.submit_payload(
+        {
+            "type": "approval_changed",
+            "data": {
+                "approval": effective,
+                "base": state.cfg.agent.approval,
+                "mode": slash.name,
+                "label": label,
+            },
+        }
+    )
+    stream.finish()
+    return True
+
+
+def _recent_user_context(state, limit: int = 3) -> str:
+    """侧聊的极简上下文：主对话最近几条用户消息（只读，不进侧聊历史）。"""
+    try:
+        rows = state.store.list_messages(state.session_id) or []
+    except Exception:  # noqa: BLE001 — 上下文取不到就让侧聊裸答
+        return ""
+    users = [
+        str(r.get("content") or "")[:400]
+        for r in rows
+        if r.get("role") == "user" and r.get("content")
+    ]
+    return "\n".join(f"- {u}" for u in users[-limit:])
+
+
+def _run_side_slash(state, stream: _SSESession, slash) -> bool:
+    """/side <问题>：辅助模型一次性作答，不污染主对话历史。fatal 收尾。"""
+    from spark.providers.auxiliary import chat_once
+    from spark.web.state import run_coroutine_sync
+
+    question = slash.args.strip()
+    if not question:
+        stream.submit_payload(
+            {"type": "turn_error", "text": "用法：`/side <问题>`（一次性旁支提问，不打断主对话）"}
+        )
+        stream.finish()
+        return True
+    provider = state.cfg.provider
+    model = getattr(provider, "small_model", "") or provider.model
+    api_key = provider.api_key or ""
+    base_url = provider.base_url.rstrip("/")
+    if provider.name == "mock" or (provider.name == "openai_compat" and not api_key):
+        stream.submit_payload(
+            {
+                "type": "side_answer",
+                "data": {
+                    "question": question,
+                    "answer": "（demo 模式）侧聊需要已配置的真实模型端点——主对话可继续用 mock。",
+                    "model": "mock",
+                    "ok": False,
+                },
+            }
+        )
+        stream.finish()
+        return True
+    context = _recent_user_context(state)
+    system = (
+        "你是编码会话的旁支助手（side channel）。用用户语言简洁回答，"
+        "不要执行任何工具。以下是目前主对话里用户提过的请求，仅作背景参考：\n"
+        f"{context or '（暂无）'}"
+    )
+    try:
+        answer = run_coroutine_sync(
+            chat_once(
+                base_url=base_url,
+                api_key=api_key,
+                model=model,
+                system=system,
+                user=question,
+                max_tokens=1500,
+            ),
+            timeout=90.0,
+        )
+        ok = bool(answer.strip())
+    except Exception as exc:  # noqa: BLE001 — 侧聊失败不影响主对话
+        logger.warning("/side 调用失败: %s", exc, exc_info=True)
+        answer = f"侧聊调用失败：{exc}"
+        ok = False
+    stream.submit_payload(
+        {
+            "type": "side_answer",
+            "data": {"question": question, "answer": answer, "model": model, "ok": ok},
+        }
+    )
+    stream.finish()
+    return True
+
+
+def _run_goal_slash(state, stream: _SSESession, slash) -> bool:
+    """/goal：设立/查看/收尾长程目标；返回 True 表示流已收尾。"""
+    import time as _time
+
+    store = state.store
+    args = slash.args.strip()
+    sub, _, rest = args.partition(" ")
+    sub = (sub or "status").lower()
+    if sub in ("status", ""):
+        goal = store.get_active_goal(state.session_id)
+        payload = {"type": "goal_status", "data": {"goal": goal}}
+        stream.submit_payload(payload)
+        stream.finish()
+        return True
+    if sub == "cancel":
+        goal = store.get_active_goal(state.session_id)
+        if goal:
+            store.close_goal(goal["id"], "cancelled")
+            stream.submit_payload(
+                {
+                    "type": "goal_status",
+                    "data": {"goal": {**goal, "status": "cancelled"}},
+                }
+            )
+        else:
+            stream.submit_payload(
+                {"type": "text_delta", "text": "当前会话没有活跃目标。"}
+            )
+        stream.finish()
+        return True
+    if sub == "done":
+        goal = store.get_active_goal(state.session_id)
+        if goal:
+            store.close_goal(goal["id"], "done")
+            stream.submit_payload(
+                {"type": "goal_status", "data": {"goal": {**goal, "status": "done"}}}
+            )
+        else:
+            stream.submit_payload(
+                {"type": "text_delta", "text": "当前会话没有活跃目标。"}
+            )
+        stream.finish()
+        return True
+    # /goal <objective>：设立目标（同一会话同时只允许一个活跃目标）
+    objective = args.strip()
+    if not objective:
+        stream.submit_payload(
+            {"type": "text_delta", "text": "用法：`/goal <目标>` · `/goal status` · `/goal done` · `/goal cancel`"}
+        )
+        stream.finish()
+        return True
+    existing = store.get_active_goal(state.session_id)
+    if existing:
+        stream.submit_payload(
+            {
+                "type": "text_delta",
+                "text": f"已有活跃目标：{existing['objective']}\n先 `/goal done` 或 `/goal cancel` 再设立新目标。",
+            }
+        )
+        stream.finish()
+        return True
+    goal = store.upsert_goal(
+        {
+            "id": f"goal-{int(_time.time() * 1000)}",
+            "session_id": state.session_id,
+            "objective": objective,
+            "status": "active",
+            "checklist": [],
+            "note": "",
+        }
+    )
+    stream.submit_payload(
+        {
+            "type": "goal_status",
+            "data": {
+                "goal": goal,
+                "label": "🎯 目标已设立——agent 每回合会收到目标契约（目标/证据/验收），"
+                "并用 goal_update 工具回报进展；完成需附证据。",
+            },
+        }
+    )
+    stream.finish()
+    return True
+
+
+def _dispatch_slash(state, stream: _SSESession, slash) -> bool:
+    """/test 之外的内置 slash 分发；返回 True 表示已收尾（调用方直接 return）。"""
+    if slash.name in ("plan", "build"):
+        return _run_mode_slash(state, stream, slash)
+    if slash.name == "side":
+        return _run_side_slash(state, stream, slash)
+    if slash.name == "goal":
+        return _run_goal_slash(state, stream, slash)
+    return False
 
 
 def _expand_turn_prompt(state, prompt: str) -> str:
@@ -283,6 +517,8 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
         slash_result, fatal = _run_test_slash(state, stream, slash)
         if fatal:
             return
+    elif slash is not None and _dispatch_slash(state, stream, slash):
+        return
 
     turn_prompt = _expand_turn_prompt(state, prompt)
 

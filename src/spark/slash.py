@@ -27,7 +27,7 @@ from spark.tools.gitops import RunTestsArgs, run_tests
 logger = logging.getLogger(__name__)
 
 #: 已实现的 slash 命令名（小写）。未知 ``/xxx`` 一律按普通 prompt 透传给模型。
-KNOWN_COMMANDS = {"test"}
+KNOWN_COMMANDS = {"test", "plan", "build", "side", "goal"}
 
 #: 测试运行器可替换（单测用 mock runner 先失败后成功来验证回灌）。
 TestRunner = Callable[[WorkdirSandbox, str], ToolResult]

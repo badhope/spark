@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import type { ChatEvent, PlanStep } from "../types"
+import type { ChatEvent, GoalState, PlanStep } from "../types"
 import { streamChat, fetchHistory, deleteMessage as deleteMessageApi, truncateFromMessage as truncateFromMessageApi, runInlineShell } from "../api"
 import { useSessionStore } from "./sessionStore"
 import { useUiStore } from "./uiStore"
@@ -35,6 +35,8 @@ export type Segment =
   | { kind: "thinking"; text: string }
   | { kind: "plan"; steps: PlanStep[] }
   | { kind: "tool"; tool: ToolCallState }
+  | { kind: "side"; question: string; answer: string; model: string; ok: boolean }
+  | { kind: "goal"; goal: GoalState; label?: string }
 
 export interface ChatMsg {
   id: string
@@ -562,6 +564,60 @@ export const useChatStore = create<ChatState>((set, get) => ({
               return { ...it, segments: segs }
             })
           }
+          break
+        }
+        case "approval_changed": {
+          // /plan /build：切换只读计划档 / 回到构建档（后端改的是会话内 override）
+          flush()
+          const label = ev.data?.label || ""
+          useSessionStore.getState().patchStatus?.({ approval: ev.data?.approval })
+          if (label) {
+            set((s) => ({
+              items: [...s.items, { id: uid(), role: "notice" as const, text: label, segments: [] }],
+            }))
+          }
+          break
+        }
+        case "side_answer": {
+          // /side <问题>：旁支一次性回答，独立卡片，不污染主对话
+          flush()
+          const d = ev.data || {}
+          set((s) => ({
+            items: [
+              ...s.items,
+              {
+                id: uid(),
+                role: "assistant" as const,
+                text: d.answer || "",
+                segments: [
+                  { kind: "side" as const, question: d.question || "", answer: d.answer || "", model: d.model || "", ok: !!d.ok },
+                ],
+              },
+            ],
+          }))
+          break
+        }
+        case "goal_status": {
+          // /goal：设立/查询/收口长程目标；goal 为 null = 无活跃目标
+          flush()
+          const goal = ev.data?.goal
+          if (!goal) {
+            set((s) => ({
+              items: [...s.items, { id: uid(), role: "notice" as const, text: "当前会话没有活跃目标（/goal <目标> 设立）", segments: [] }],
+            }))
+            break
+          }
+          set((s) => ({
+            items: [
+              ...s.items,
+              {
+                id: uid(),
+                role: "assistant" as const,
+                text: `🎯 ${goal.objective}`,
+                segments: [{ kind: "goal" as const, goal, label: ev.data?.label }],
+              },
+            ],
+          }))
           break
         }
         case "turn_end":

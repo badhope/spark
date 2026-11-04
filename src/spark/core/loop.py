@@ -855,6 +855,12 @@ class AgentLoop:
             messages[0] = messages[0].model_copy(
                 update={"content": f"{base_system}\n\n{self._extra_system_prompt}"}
             )
+        goal_block = self._goal_block()
+        if goal_block and messages and messages[0].role == "system":
+            base_system = messages[0].content or ""
+            messages[0] = messages[0].model_copy(
+                update={"content": f"{base_system}\n\n{goal_block}"}
+            )
         text_parts: list[str] = []
         reasoning_parts: list[str] = []
         tool_calls: list[ToolCall] = []
@@ -1035,6 +1041,44 @@ class AgentLoop:
         if self._approval_override:
             return cast(ApprovalMode, self._approval_override)
         return self.cfg.agent.approval
+
+    def _goal_block(self) -> str:
+        """Goal 长程模式：活跃目标存在时注入目标契约（目标/进展/规则）。
+
+        每回合动态读取（goal_update 工具会改 checklist，注入必须反映最新
+        状态）；读取失败静默跳过——目标系统故障不能阻断普通对话。
+        """
+        try:
+            goal = self.store.get_active_goal(self.session_id)
+        except Exception:  # noqa: BLE001
+            logger.debug("读取活跃目标失败", exc_info=True)
+            return ""
+        if not goal:
+            return ""
+        checklist = goal.get("checklist") or []
+        lines = [
+            "## 活跃目标（Goal 长程模式）",
+            f"目标：{goal['objective']}",
+            "",
+        ]
+        if checklist:
+            for c in checklist:
+                mark = "[x]" if c.get("done") else "[ ]"
+                ev = f" — 证据：{c['evidence']}" if c.get("evidence") else ""
+                lines.append(f"{mark} {c['item']}{ev}")
+        else:
+            lines.append("（清单为空：请先用 goal_update 拆解出可核查的步骤条目）")
+        if goal.get("note"):
+            lines.append(f"备注：{goal['note']}")
+        lines += [
+            "",
+            "规则：",
+            "1. 每回合结束前用 goal_update 工具回报最新 checklist（整表替换，别丢条目）。",
+            "2. 标记 done 的条目必须附可核查证据（测试输出/文件路径/命令结果）。",
+            "3. 全部条目 done 且证据充分后才可 complete=true；证据不足会被拒绝。",
+            "4. 目标由用户用 /goal done|cancel 收口，工具里的 complete 只是申请。",
+        ]
+        return "\n".join(lines)
 
     def _apply_approval_profile(self, cfg: SparkConfig) -> None:
         """激活的审批档案：approval 覆盖 + 工具 glob 白名单 + system prompt。"""

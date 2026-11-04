@@ -11,7 +11,7 @@ from spark.config import SparkConfig
 from spark.edit.tool import ApplyEditArgs, apply_edit, apply_edit_diff
 from spark.models import ToolCall, ToolResult
 from spark.sandbox import WorkdirSandbox
-from spark.tools import bg, diagnostics, fs, gitops, notebook, search, shell, web
+from spark.tools import bg, diagnostics, fs, gitops, goal, notebook, search, shell, web
 
 MCP_PREFIX = "mcp__"
 
@@ -360,6 +360,21 @@ class ToolRegistry:
                 "Returns the skill content to follow.",
                 {"name": {"type": "string", "description": "skill name from available_skills"}},
                 ["name"]),
+            _schema("goal_update",
+                "Report progress on the session's active long-range goal (set via /goal). "
+                "Replace the whole checklist each time with every item's latest state; "
+                "each done item MUST carry verifiable evidence (test output, file path, "
+                "command result). Set complete=true only when the evidence gate is satisfied.",
+                {"checklist": {"type": "array",
+                               "items": {"type": "object",
+                                         "properties": {"item": {"type": "string"},
+                                                        "done": {"type": "boolean"},
+                                                        "evidence": {"type": "string",
+                                                                     "description": "verifiable proof: test output, file path, command result"}},
+                                         "required": ["item"]}},
+                 "note": {"type": "string"},
+                 "complete": {"type": "boolean", "description": "declare the goal complete (evidence-gated)"}},
+                ["checklist"]),
         ]
         schemas = builtin + self._extra_schemas
         if self.tool_allowlist:
@@ -467,6 +482,8 @@ class ToolRegistry:
             # --- notebook ---
             "read_notebook": lambda a: notebook.read_notebook(ctx.sandbox, notebook.ReadNotebookArgs.model_validate(a)),
             "notebook_edit": lambda a: notebook.notebook_edit(ctx.sandbox, notebook.NotebookEditArgs.model_validate(a)),
+            # --- goal ---
+            "goal_update": lambda a: goal.goal_update_tool(goal.GoalUpdateArgs.model_validate(a)),
         }
         return out
 

@@ -40,7 +40,7 @@ the next turn uses the real model — no restart.
 | **Task-as-branch** | `task_begin` / `task_step_commit` / `task_finish`: green tests gate each commit, failures abandon the branch. Not a demo — a first-class tool. |
 | **AI reviews AI** | `spark review` audits your uncommitted diff (or a commit range) in a forced read-only, sandbox-only turn and returns severity-ranked findings, with `--json` for CI. |
 | **Provider resilience, built-in** | A credential pool (multiple keys rotated on failure), a fallback model chain, and a `small_model` for compression/summary calls — one exhausted key or rate limit never blocks a turn. |
-| **Protocols at every boundary** | MCP *client + server* (stdio/SSE/HTTP, allowlists, OAuth), ACP for editors, and an **A2A server** (`spark a2a-serve`) so orchestrators can delegate tasks under the Linux Foundation agent-to-agent standard. |
+| **Protocols at every boundary** | MCP *client + server* (stdio/SSE/HTTP, allowlists, OAuth), ACP for editors, and an **A2A server** (`spark a2a-serve`, streaming + non-streaming) so orchestrators can delegate tasks under the Linux Foundation agent-to-agent standard. |
 | **`!cmd` inline shell** | Run any command inside a chat message — zero tokens, zero approval noise — rendered as a collapsible result card. |
 | **Memory with governance** | AGENTS.md hierarchy (global `~/.agents` + project + nested) plus vector long-term memory with auto-extraction, dedup merge (UPDATE/NOOP) and capacity eviction — all manageable from the web UI. |
 
@@ -141,7 +141,8 @@ horizontally, and the composer stays reachable.
 | Knowledge | Import docs, BM25 retrieval injected per turn as read-only reference — no extra vector store |
 | Persistence | Sessions, checkpoint rollback (works without git), hot config reload, token usage stats, full-text session search |
 | Models | Any OpenAI-compatible endpoint, Ollama, multi-profile switching, `small_model` for cheap auxiliary calls, `--probe` endpoint audit |
-| Extension | MCP client (stdio/SSE/HTTP + OAuth), MCP registry with one-click add, A2A server, skills `.spark/skills/`, slash commands, plugins, hooks, scoop bucket |
+| Extension | MCP client (stdio/SSE/HTTP + OAuth), MCP registry with one-click add, `spark mcp` CLI marketplace, A2A server, skills `.spark/skills/`, slash commands (`/plan` `/build` `/side` `/goal` `/test`), plugins, hooks, scoop bucket |
+| Long-range | `/goal` evidence-gated goal mode (goal contract injected each turn, `goal_update` tool with proof-required completion), `/side` side-channel Q&A that never touches main history, `/plan`↔`/build` mode toggle |
 | Interface | zh/en, light/dark, command palette, rebindable shortcuts, file viewer, terminal, web reader, execution graph, desktop notifications |
 | Workflow | `spark review` (AI diff audit), `spark exec --json`, `!cmd` inline shell, single-file HTML session sharing, session import, `spark update` |
 | Operations | `doctor --fix` self-healing, `doctor --backup` (VACUUM INTO), structured audit log, CSP + security headers, auto-update notify |

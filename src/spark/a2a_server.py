@@ -105,8 +105,8 @@ class A2AState:
             return entry
 
     # ------------------------------------------------------------------ tasks
-    def send_message(self, request_id: Any, params: dict) -> dict:
-        """message/send：跑一个 turn，返回 A2A Task 对象。"""
+    def _validate_message(self, params: dict) -> tuple[str, str, str]:
+        """校验 message/send|stream 参数，返回 (prompt, context_id, task_id)。"""
         message = params.get("message")
         if not isinstance(message, dict):
             raise A2AError(-32602, "Invalid params: message is required")
@@ -123,44 +123,119 @@ class A2AState:
             message.get("contextId") or message.get("context_id") or "default"
         )
         task_id = str(message.get("taskId") or f"task-{int(time.time() * 1000)}")
+        return prompt, context_id, task_id
 
-        loop = self._loop_for(context_id)["loop"]
+    def _register_task(self, task_id: str, context_id: str) -> None:
         with self._lock:
             self._tasks[task_id] = {
                 "id": task_id,
                 "contextId": context_id,
                 "status": {"state": "working", "timestamp": _now()},
             }
+
+    def _finish_task(self, task_id: str, state_name: str, output: str = "") -> None:
+        with self._lock:
+            task = self._tasks.setdefault(
+                task_id, {"id": task_id, "contextId": "default"}
+            )
+            task["status"] = {"state": state_name, "timestamp": _now()}
+            if state_name == "completed":
+                task["artifacts"] = [
+                    {
+                        "artifactId": f"{task_id}-out",
+                        "parts": [{"kind": "text", "text": output}],
+                    }
+                ]
+
+    def stream_message(self, params: dict, emit: Callable[[dict], None]) -> None:
+        """message/stream 共用执行路径：边跑 turn 边回调 A2A 流事件帧。
+
+        ``emit`` 收到的每个 dict 都是一帧 ``SendStreamingResponse`` 的 result
+        （TaskStatusUpdateEvent / TaskArtifactUpdateEvent，A2A 规范的
+        ``kind`` 判别字段）。``send_message`` 复用本方法收集文本。
+        """
+        prompt, context_id, task_id = self._validate_message(params)
+        loop = self._loop_for(context_id)["loop"]
+        self._register_task(task_id, context_id)
+        artifact_id = f"{task_id}-out"
+        emitted = 0
+
+        def status_event(state_name: str, final: bool) -> dict:
+            return {
+                "kind": "status-update",
+                "taskId": task_id,
+                "contextId": context_id,
+                "status": {"state": state_name, "timestamp": _now()},
+                "final": final,
+            }
+
+        def artifact_event(text: str, last: bool, append: bool) -> dict:
+            return {
+                "kind": "artifact-update",
+                "taskId": task_id,
+                "contextId": context_id,
+                "artifact": {
+                    "artifactId": artifact_id,
+                    "parts": [{"kind": "text", "text": text}],
+                },
+                "append": append,
+                "lastChunk": last,
+            }
+
+        emit(status_event("working", final=False))
         text_parts: list[str] = []
+        failed = False
+
         try:
             import asyncio
 
             async def _run() -> None:
+                nonlocal emitted
                 async for event in loop.iter_turn(prompt):
+                    chunk = ""
                     if event.type == "text_delta" and event.text:
-                        text_parts.append(event.text)
+                        chunk = event.text
                     elif event.type == "turn_error":
-                        text_parts.append(f"\n[error] {event.text}")
+                        chunk = f"\n[error] {event.text}"
+                    if chunk:
+                        emit(artifact_event(chunk, last=False, append=emitted > 0))
+                        text_parts.append(chunk)
+                        emitted += 1
 
             asyncio.run(_run())
-        except Exception:  # noqa: BLE001 - 任何失败都转成 failed Task
+        except Exception:  # noqa: BLE001 - 任何失败都转成 failed 终态
             logger.warning("A2A turn 执行失败", exc_info=True)
-            with self._lock:
-                self._tasks[task_id]["status"] = {
-                    "state": "failed",
-                    "timestamp": _now(),
-                }
-            return _task_response(request_id, task_id, context_id, "failed")
+            failed = True
         output = "".join(text_parts).strip()
-        with self._lock:
-            self._tasks[task_id]["status"] = {
-                "state": "completed",
-                "timestamp": _now(),
-            }
-            self._tasks[task_id]["artifacts"] = [
-                {"artifactId": f"{task_id}-out", "parts": [{"kind": "text", "text": output}]}
-            ]
-        return _task_response(request_id, task_id, context_id, "completed", output)
+        if emitted:
+            # 终帧用全量替换（append=False, lastChunk=True）：客户端增量渲染
+            # 之后收到权威全文，无需担心分块边界。
+            emit(artifact_event(output, last=True, append=False))
+        emit(status_event("failed" if failed else "completed", final=True))
+        self._finish_task(task_id, "failed" if failed else "completed", output)
+
+    def send_message(self, request_id: Any, params: dict) -> dict:
+        """message/send：跑一个 turn，返回 A2A Task 对象（复用流式执行路径）。"""
+        buffer: dict = {}
+
+        def collect(frame: dict) -> None:
+            if frame.get("kind") == "artifact-update":
+                buffer["text"] = buffer.get("text", "") + frame["artifact"]["parts"][0][
+                    "text"
+                ]
+            elif frame.get("kind") == "status-update" and frame.get("final"):
+                buffer["task_id"] = frame["taskId"]
+                buffer["context_id"] = frame["contextId"]
+                buffer["state"] = frame["status"]["state"]
+
+        self.stream_message(params, collect)
+        return _task_response(
+            request_id,
+            str(buffer.get("task_id", "")),
+            str(buffer.get("context_id", "default")),
+            str(buffer.get("state", "failed")),
+            str(buffer.get("text", "")),
+        )
 
     def get_task(self, request_id: Any, params: dict) -> dict:
         task_id = str(params.get("id") or "")
@@ -231,7 +306,7 @@ def agent_card(cfg: SparkConfig, url: str) -> dict:
         "url": url,
         "version": _spark_version(),
         "protocolVersion": A2A_PROTOCOL_VERSION,
-        "capabilities": {"streaming": False, "pushNotifications": False},
+        "capabilities": {"streaming": True, "pushNotifications": False},
         "defaultInputModes": ["text/plain"],
         "defaultOutputModes": ["text/plain"],
         "skills": [
@@ -291,8 +366,13 @@ def make_handler(card_fn: Callable[[], dict], state: A2AState) -> type[BaseHTTPR
                     result = state.get_task(request_id, params)
                 elif method == "ping":
                     result = _rpc_result(request_id, {})
-                elif method in ("message/stream", "tasks/pushNotificationConfig/set"):
-                    # 未声明的能力按规范拒绝，客户端降级到 message/send。
+                elif method == "message/stream":
+                    # SSE 流式：TaskStatusUpdateEvent / TaskArtifactUpdateEvent
+                    # 逐帧下发；A2AError（参数错误）仍以普通 JSON-RPC 错误返回。
+                    self._send_sse(request_id, state, params)
+                    return
+                elif method == "tasks/pushNotificationConfig/set":
+                    # 未声明的能力按规范拒绝。
                     self._send_json(
                         200,
                         _rpc_error(
@@ -317,6 +397,37 @@ def make_handler(card_fn: Callable[[], dict], state: A2AState) -> type[BaseHTTPR
             except Exception:  # noqa: BLE001 - 兜底不让连接挂死
                 logger.exception("A2A 请求处理失败")
                 self._send_json(200, _rpc_error(request_id, -32603, "Internal error"))
+
+        def _send_sse(self, request_id: Any, a2a_state: A2AState, params: dict) -> None:
+            """message/stream：SSE 逐帧下发，每帧一条 SendStreamingResponse。"""
+            # 先校验参数再开流：A2AError 要以普通 JSON-RPC 错误返回，
+            # 不能写进已经发出的 SSE 流里。
+            a2a_state._validate_message(params)
+
+            def write_frame(result: dict) -> None:
+                frame = json.dumps(
+                    {"jsonrpc": "2.0", "id": request_id, "result": result},
+                    ensure_ascii=False,
+                )
+                self.wfile.write(f"data: {frame}\n\n".encode("utf-8"))
+                self.wfile.flush()
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            try:
+                a2a_state.stream_message(params, write_frame)
+            except A2AError as exc:
+                # 流开始前的参数错误：退回单帧 JSON-RPC 错误（规范允许）。
+                self._send_json(
+                    200, _rpc_error(request_id, exc.code, exc.message, exc.data)
+                )
+            except (BrokenPipeError, ConnectionResetError):
+                logger.debug("A2A 流式客户端提前断开")
+            except Exception:  # noqa: BLE001
+                logger.exception("A2A 流式处理失败")
 
     return Handler
 

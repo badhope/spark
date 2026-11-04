@@ -20,13 +20,16 @@ spark a2a-serve --workdir /your/project --port 41241
 ## 能力边界（诚实声明）
 
 - **Agent Card**：`GET /.well-known/agent-card.json`（兼答 `/agent.json`），
-  声明 `capabilities.streaming = false`
+  声明 `capabilities.streaming = true`
 - **`message/send`**：非流式——跑一个 turn，返回 `completed` Task +
   文本 artifact；同 contextId 的请求串行执行
+- **`message/stream`**：SSE 逐帧下发——先 `status-update (working, final=false)`，
+  文本增量以 `artifact-update (append=true)` 推送，收尾一帧全量替换的
+  `artifact-update (append=false, lastChunk=true)` + `status-update (completed, final=true)`；
+  与 `message/send` 复用同一执行路径，语义一致
 - **`tasks/get`**：查任务状态（进程内登记，重启即失）
 - **`ping`**：连通性探测
-- 未声明的能力（`message/stream`、push notifications）按规范返回 -32601，
-  客户端会自动降级到 `message/send`
+- 未声明的能力（push notifications）按规范返回 -32601
 
 ## 快速验证
 

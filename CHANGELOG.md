@@ -2,6 +2,35 @@
 
 本项目遵循语义化版本。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [0.12.0] - 2026-11-04（第十三轮：决策项清零——REMAINING 全表关闭）
+
+用户解除维护约定后，原先标 ⏸ 的五项决策项全部落地：
+
+### 新增
+
+- **A2A 流式（`message/stream` SSE）**：`capabilities.streaming=true`；
+  SSE 逐帧下发 `TaskStatusUpdateEvent`（working→completed/failed）与
+  `TaskArtifactUpdateEvent`（增量 append，终帧全量替换 `lastChunk=true`）；
+  非流式 `message/send` 复用同一执行路径（单一代码源）。11 条测试。
+- **主 agent 切换（`/plan` `/build`）**：会话内切 plan-only 只读档 ↔ 常规
+  审批档；复用审批档案 override 机制（零配置突变），`/build` 重套活跃档案；
+  `approval_changed` 事件同步 UI。
+- **侧聊（`/side <问题>`）**：辅助模型一次性作答（small_model 优先），
+  带主对话最近请求作背景；不写主对话历史；demo 模式如实降级提示；
+  UI 旁支卡片。
+- **Goal 长程模式（`/goal`）**：`goals` 表持久化（一会话一活跃目标），
+  目标契约每回合注入系统提示词（目标/清单/规则），`goal_update` 工具
+  回报进展；**证据门槛**——`complete=true` 必须至少一条 `done` 且带可核查
+  `evidence` 的条目，否则拒绝；`/goal status|done|cancel` 收口；UI 目标卡。
+- **插件市场 v1（`spark mcp` CLI）**：`search`（live 注册表 + 离线策划索引
+  兜底 + 中国可用性标注）/`add`（stdio/remote 一键写配置，必需环境变量
+  校验，`--readonly` 最小权限白名单）/`list`/`remove`——CLI 与 Web 设置
+  面板同源同一配置面。5 条测试。
+
+### 变更
+
+- REMAINING「需要产品决策」表清零；竞品矩阵 Goal/侧聊/主 agent/插件系统四行翻绿。
+
 ## [0.11.0] - 2026-11-04（第十二轮：协议拼图补全 + 生态对标审查）
 
 ### 新增
