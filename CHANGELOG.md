@@ -26,10 +26,21 @@
   兜底 + 中国可用性标注）/`add`（stdio/remote 一键写配置，必需环境变量
   校验，`--readonly` 最小权限白名单）/`list`/`remove`——CLI 与 Web 设置
   面板同源同一配置面。5 条测试。
+- **OS 级沙箱三平台 v1**：Linux bwrap（既有）之外，新增 **Windows Job
+  Object**（子进程树 kill-on-close + 8 GiB 进程内存上限；**不做**文件系统/
+  网络隔离，能力边界如实写入工具结果 `payload.sandbox`）与 **macOS
+  sandbox-exec**（写面收敛 workdir/临时目录 + 可断网）。真实 OS 行为测试
+  （kill-on-close、内存超额终止、整树清理）。8 条测试。
+- **VS Code 扩展（`vscode-spark/`）**：Open Web UI（起服务/解析端口/复用
+  实例）+ New TUI Session + Ask about selection；本地 VSIX 可装
+  （Marketplace 上架待签名与发布者账号）。
+- **截图自动化（`scripts/screenshots.py`）**：本机 Edge/Chrome headless +
+  真实 mock 服务（预置演示会话）重拍 `assets/screenshots/`，README 的 UI
+  图恢复与当前版本一致；Web 引导支持 `?onboarding=skip`（自动化测试用）。
 
 ### 变更
 
-- REMAINING「需要产品决策」表清零；竞品矩阵 Goal/侧聊/主 agent/插件系统四行翻绿。
+- REMAINING「需要产品决策」表清零；竞品矩阵 Goal/侧聊/主 agent/插件系统/OS 沙箱五行更新。
 
 ## [0.11.0] - 2026-11-04（第十二轮：协议拼图补全 + 生态对标审查）
 

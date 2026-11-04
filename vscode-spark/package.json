@@ -1,0 +1,60 @@
+{
+  "name": "spark-agent",
+  "displayName": "Spark Agent",
+  "description": "Spark — local-first AI coding agent. Launch the Web UI or a TUI session for your workspace from VS Code.",
+  "version": "0.12.0",
+  "publisher": "badhope",
+  "license": "MIT",
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Programming Languages"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/badhope/spark"
+  },
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "spark.openWeb",
+        "title": "Spark: Open Web UI",
+        "category": "Spark"
+      },
+      {
+        "command": "spark.openTui",
+        "title": "Spark: New TUI Session",
+        "category": "Spark"
+      },
+      {
+        "command": "spark.askAgent",
+        "title": "Spark: Ask about selection",
+        "category": "Spark"
+      }
+    ],
+    "configuration": {
+      "title": "Spark",
+      "properties": {
+        "spark.executable": {
+          "type": "string",
+          "default": "spark",
+          "description": "Path to the spark executable (packaged build or `pip install spark-agent` on PATH)."
+        },
+        "spark.approval": {
+          "type": "string",
+          "enum": ["suggest", "auto-edit", "full-auto", "plan-only", "approve-plan", "manual"],
+          "default": "suggest",
+          "description": "Approval mode for sessions started from VS Code."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "package": "vsce package"
+  }
+}

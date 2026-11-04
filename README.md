@@ -9,7 +9,7 @@
 [![Security](https://github.com/badhope/spark/actions/workflows/security.yml/badge.svg)](https://github.com/badhope/spark/actions/workflows/security.yml)
 [![Scoop](https://img.shields.io/badge/scoop-bucket-8A2BE2)](https://github.com/badhope/spark/tree/main/bucket)
 
-An AI coding agent where **approval, sandboxing, rollback and provider resilience are
+An AI coding agent where **approval, three-OS sandboxing (bwrap / Job Object / sandbox-exec), rollback and provider resilience are
 engineered, not bolted on** — the same brain runs as Web UI, desktop window, TUI,
 scriptable CLI, ACP (IDE) and MCP server. Bring your own OpenAI-compatible endpoint;
 no account, no telemetry, no vendor lock-in.
@@ -191,6 +191,7 @@ mock-mode agent eval suite.
 |----------|----------|
 | [docs/INSTALL.md](docs/INSTALL.md) | Install (script / scoop / source), packaging, desktop build, auto-update, uninstall |
 | [docs/A2A.md](docs/A2A.md) | A2A server: agent-to-agent delegation |
+| [vscode-spark/](vscode-spark/) | VS Code extension (open Web UI / TUI / ask about selection) |
 | [docs/CONFIG.md](docs/CONFIG.md) | Configuration reference (config.toml / env vars / limits) |
 | [docs/API.md](docs/API.md) | HTTP API and SSE event protocol |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture notes |

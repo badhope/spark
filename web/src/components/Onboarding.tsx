@@ -18,6 +18,17 @@ export const Onboarding = memo(function Onboarding() {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
+    // ?onboarding=skip：自动化测试/截图需要跳过引导（同时写入标记，
+    // 与用户手动跳过走同一条持久化路径）。
+    try {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get("onboarding") === "skip") {
+        localStorage.setItem(FLAG, "1")
+        return
+      }
+    } catch {
+      // localStorage 不可用（隐私模式）时按原逻辑显示
+    }
     if (localStorage.getItem(FLAG) !== "1") setVisible(true)
   }, [])
 

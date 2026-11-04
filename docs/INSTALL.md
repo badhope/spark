@@ -143,3 +143,22 @@ Python 包本身用 `pip uninstall spark-agent`，scoop 安装的用
 安全守卫：`SPARK_HOME` 指向家目录本身或盘符根时拒绝执行。
 
 > AI生成
+
+### VS Code 扩展
+
+仓库自带扩展（`vscode-spark/`），三条命令把工作区接入 Spark：
+**Open Web UI**（自动起服务、解析端口、复用实例）、**New TUI Session**、
+**Ask about selection**（选中代码带上下文提问）。本地 VSIX 安装：
+
+```bash
+code --install-extension vscode-spark/spark-agent-0.12.0.vsix
+```
+
+前提：已安装 Spark（打包版或 `pip install spark-agent`）；审批模式在
+扩展设置里选（默认 `suggest`）。
+
+### 截图自动化（维护者）
+
+`python scripts/screenshots.py` 用本机 Edge/Chrome headless 重拍
+`assets/screenshots/` 里的真实 UI 截图（起真实 mock 服务 + 预置演示
+会话）；UI 改版后跑一次即可让 README 的图保持真实。

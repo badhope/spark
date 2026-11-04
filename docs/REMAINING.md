@@ -52,7 +52,7 @@
 | 能力 | 状态 | 估算 |
 | --- | --- | --- |
 | Repo Wiki（生成式代码文档） | 📋 | 复用 tree-sitter + LLM 摘要，产物落本地带 file:line 溯源；需要分块、增量更新、引用校验 |
-| 三平台 OS 级沙箱 | 📋 | macOS Seatbelt / Linux Landlock / Windows job object 各一套；当前只有 bwrap（Linux） |
+| 三平台 OS 级沙箱 | 🟡 v1 已落地 | Linux bwrap（既有）+ Windows Job Object（进程树 kill-on-close + 8GiB 内存上限，**不做**文件系统/网络隔离——能力边界如实标注在工具结果 payload.sandbox）+ macOS sandbox-exec（写面收敛 workdir/临时目录 + 可断网）；真做 Windows AppContainer 级文件隔离仍列高成本 |
 | IDE/ACP 深度集成 | 📋 | ACP server 已有，缺的是 VS Code 扩展与自动安装 |
 | 内置可驱动浏览器 | 📋 | 现在的 web_fetch 是只读阅读，不是可点击/填表的浏览器 |
 | Git PR 工作流 | 📋 | `pr <num>` + GitHub Action；需要 token 权限模型 |

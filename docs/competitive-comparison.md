@@ -119,7 +119,7 @@
 | 审批档位 | ✅ 6 档（含 plan-only/approve-plan） | codex `-a on-request/never` + sandbox 双轴；opencode allow/ask/deny + `--auto`；Qoder 3 档；ZCode 4 档（Shift+Tab 循环） |
 | 审批弹窗粒度 | ✅ 允许/始终允许/拒绝（相同签名复用） | codex：命令前缀 / 文件集合两种粒度；ZCode：Allow/Always/Reject/Always Reject + 5 分钟倒计时（权限问题不受限） |
 | 规则引擎 | ✅ `[[permissions]]` 通配 + 最后匹配生效 | opencode 13 键 pattern→动作；codex execpolicy `.rules` + `--ignore-rules` |
-| OS 级沙箱 | ⚠️ bwrap（Linux 可选）+ 纯策略 | codex 三平台（Seatbelt/Landlock/Windows 沙箱）+ 默认断网；Qoder/ZCode 为策略级 |
+| OS 级沙箱 | ✅ 三平台 v1：bwrap（Linux）+ Job Object（Windows：kill-on-close+内存上限）+ sandbox-exec（macOS：写面收敛+可断网）；payload 如实标注隔离类型 | codex 三平台（Seatbelt/Landlock/Windows 沙箱）+ 默认断网；Qoder/ZCode 为策略级 |
 | 网络限制开关 | ✅ `agent.network_access`（bwrap 真隔离，其它平台如实降级） | codex `sandbox_workspace_write.network_access` |
 | AI 审 AI（自动审查） | ✅ `agent.auto_review`（独立调用审单次动作，block 即拒） | codex Guardian（自动审查 + `/approve` 放行 + OTLP 审计） |
 | 输出脱敏 | ✅ 三层（密钥/主目录/堆栈） | — |

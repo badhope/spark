@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -127,18 +128,22 @@ def run_shell(
     }
     process_kwargs.update(popen_kwargs(new_group=True))
 
-    # OS 级沙箱：workspace 模式且 bwrap 可用时走命名空间隔离；
+    # OS 级沙箱：workspace 模式且平台能力可用时走 OS 级隔离；
     # 不可用/更高权限档位时维持原路径（check_shell 仍在前面把关）。
+    # Linux=bwrap 命名空间（最强）；Windows=Job Object（进程树硬清理+内存上限，
+    # 不做文件系统/网络隔离——能力边界如实标注在 payload.sandbox）；macOS=
+    # sandbox-exec（写面收敛 workdir + 临时目录，可断网）。
     network_blocked = False
     network_note = ""
+    sandbox_kind = ""
     cfg = getattr(sandbox, "cfg", None)
     allow_network = bool(getattr(getattr(cfg, "agent", None), "network_access", True))
-    if (
-        os.name != "nt"
-        and not sandbox.full_access
+    in_workspace_mode = (
+        not sandbox.full_access
         and not sandbox.unrestricted
         and sandbox.sandbox_mode == "workspace"
-    ):
+    )
+    if os.name != "nt" and in_workspace_mode:
         isolated = bwrap_command(
             str(cwd), args.command, str(sandbox.root), allow_network=allow_network
         )
@@ -146,10 +151,29 @@ def run_shell(
             process_kwargs["shell"] = False
             command_to_run: list[str] = isolated
             network_blocked = not allow_network
+            sandbox_kind = "bwrap"
+        elif sys.platform == "darwin":
+            from spark.tools.os_sandbox import macos_sandbox_command
+
+            mac = macos_sandbox_command(
+                str(cwd), args.command, str(sandbox.root), allow_network=allow_network
+            )
+            if mac is not None:
+                process_kwargs["shell"] = False
+                command_to_run = mac
+                network_blocked = not allow_network
+                sandbox_kind = "sandbox-exec"
+            else:
+                command_to_run = args.command  # type: ignore[assignment]
         else:
             command_to_run = args.command  # type: ignore[assignment]
+    elif os.name == "nt" and in_workspace_mode:
+        # Windows：Job Object 在 Popen 之后挂（见下方 assign），不做命令替换。
+        command_to_run = args.command  # type: ignore[assignment]
+        sandbox_kind = "job-object"
     else:
         command_to_run = args.command  # type: ignore[assignment]
+        sandbox_kind = ""
 
     if not allow_network and not network_blocked:
         # 配置要求断网但当前平台无法真隔离：必须如实告知，不能假装已断网。
@@ -160,6 +184,11 @@ def run_shell(
         )
 
     process = subprocess.Popen(command_to_run, **process_kwargs)  # type: ignore[arg-type]
+    if sandbox_kind == "job-object":
+        from spark.tools.os_sandbox import assign_windows_job
+
+        if not assign_windows_job(process):
+            sandbox_kind = ""  # 分配失败降级为无 OS 沙箱（check_shell 仍在把关）
     stdout_result: list[tuple[bytes, bool]] = []
     stderr_result: list[tuple[bytes, bool]] = []
 
@@ -194,6 +223,10 @@ def run_shell(
                 pass
     for thread in (stdout_thread, stderr_thread):
         thread.join(timeout=1)
+    if sandbox_kind == "job-object":
+        from spark.tools.os_sandbox import release_windows_job
+
+        release_windows_job(process.pid)
     if timed_out or stdout_thread.is_alive() or stderr_thread.is_alive():
         _close_process_streams(process)
     if timed_out:
@@ -217,6 +250,7 @@ def run_shell(
     payload: dict[str, Any] = {
         "command": args.command,
         "exit_code": process.returncode,
+        "sandbox": {"kind": sandbox_kind, "network_blocked": network_blocked},
         "stdout": stdout,
         "stderr": stderr,
         "truncated": stdout_truncated or stderr_truncated,
