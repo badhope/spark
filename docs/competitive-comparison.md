@@ -84,7 +84,7 @@
 | 自动压缩 | ✅ 85% 阈值 + 保留 8 条 | opencode 三态（auto/prune/reserved）；codex 双阈值 + pre/post_compact hooks |
 | 压缩可编程干预 | ✅ `.spark/prompts/compact.md`（项目）→ `~/.spark/prompts/compact.md`（全局）覆盖，摘要+合并两路径 | opencode 插件可换压缩提示词；codex hooks |
 | 仓库地图/索引 | ✅ tree-sitter 符号地图（6000 字符） | opencode LSP 诊断；Qoder 云端向量索引（10 万文件）；ZCode Repo Wiki |
-| Repo Wiki（生成式知识文档） | ❌ | Qoder（含 Citation 开关，50 credits/仓）；ZCode（产物本地、带 file:line 溯源、Mermaid 图） |
+| Repo Wiki（生成式知识文档） | ✅ `spark wiki` / 设置→代码文档：tree-sitter 结构事实 + 真实行号 + 增量缓存 + 引用校验（无 Mermaid，仅静态符号表；不做云端生成） | Qoder（含 Citation 开关，50 credits/仓）；ZCode（产物本地、带 file:line 溯源、Mermaid 图） |
 | 长期记忆 | ✅ 独立记忆库（embedding + auto_extract + Web 管理） | codex `/memories`（后台管线 + 合并）；ZCode Project Memory（默认关）；Qoder Auto-Memory |
 | 记忆可视化管理 UI | ✅ Web 记忆面板 | Qoder `/memory manage`；ZCode 无管理页（手改文件） |
 
@@ -196,7 +196,6 @@
 `~/.agents` 全局层。
 
 **P2（高成本 / 需要产品决策）**
-- Repo Wiki（可复用现有 tree-sitter + LLM 摘要，产物落本地）
 - ~~定时 Automations~~（已实现：automations.py + 设置→定时任务）
 - IDE/ACP 集成（opencode 的 ACP 协议有开源实现可参考）
 - 插件市场（先做"本地目录 + git URL 安装"最小版）

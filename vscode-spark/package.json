@@ -2,7 +2,7 @@
   "name": "spark-agent",
   "displayName": "Spark Agent",
   "description": "Spark — local-first AI coding agent. Launch the Web UI or a TUI session for your workspace from VS Code.",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "publisher": "badhope",
   "license": "MIT",
   "icon": "icon.png",

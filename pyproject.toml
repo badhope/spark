@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spark-agent"
-version = "0.12.0"
+version = "0.13.0"
 description = "Spark [Ember] — local-first coding agent with a Codex-style loop"
 readme = "README.md"
 license = { text = "MIT" }
