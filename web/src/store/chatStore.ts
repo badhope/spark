@@ -603,7 +603,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const goal = ev.data?.goal
           if (!goal) {
             set((s) => ({
-              items: [...s.items, { id: uid(), role: "notice" as const, text: "当前会话没有活跃目标（/goal <目标> 设立）", segments: [] }],
+              items: [...s.items, { id: uid(), role: "notice" as const, text: t("goal.none", useUiStore.getState().lang), segments: [] }],
             }))
             break
           }

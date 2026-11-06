@@ -37,6 +37,19 @@ def test_format_result_roundtrip() -> None:
     assert '"ok": false' in err and "denied" in err
 
 
+def test_server_reports_spark_version_not_the_sdk_version(tmp_path: Path) -> None:
+    """`initialize` must answer with spark's version, not the MCP SDK's.
+
+    FastMCP leaves the low-level Server version unset, so the SDK falls back to
+    its own package version ("1.30.0"); a client logging serverInfo.version
+    would then see a number that tracks the SDK, not the build.
+    """
+    from spark import __version__
+
+    mcp = build_mcp_server(str(tmp_path), _cfg(tmp_path))
+    assert mcp._mcp_server.version == __version__
+
+
 def test_handler_executes_through_registry(tmp_path: Path) -> None:
     """动态生成的 handler 真实走 ToolRegistry.execute（沙箱生效）。"""
     (tmp_path / "a.txt").write_text("hello", encoding="utf-8")

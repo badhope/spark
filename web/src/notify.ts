@@ -1,5 +1,7 @@
 import { useSessionStore } from "./store/sessionStore"
 import { useChatStore } from "./store/chatStore"
+import { useUiStore } from "./store/uiStore"
+import { t } from "./i18n"
 
 /** 桌面通知开关（设置 → 展示页；localStorage 持久化，默认关）。 */
 const NOTIFY_KEY = "spark.notify.v1"
@@ -56,18 +58,28 @@ export function notify(title: string, body: string): void {
 export function installNotificationWatcher(): () => void {
   let wasStreaming = useChatStore.getState().streaming
   let wasWaiting = Boolean(useSessionStore.getState().approval)
+  // Read the language at fire time, not at mount time: a notification can
+  // arrive long after the user switched UI language.
+  const tr = (key: Parameters<typeof t>[0], fallback: string) => {
+    const lang = useUiStore.getState().lang
+    const text = t(key, lang)
+    return text === key ? fallback : text
+  }
   const unsubChat = useChatStore.subscribe((state) => {
     const streaming = state.streaming
     if (wasStreaming && !streaming) {
       const last = [...state.items].reverse().find((m) => m.role === "assistant" || m.role === "error")
-      notify("Spark · 回合结束", last?.text?.slice(0, 120) || "任务已完成")
+      notify(tr("notify.turnEnd", "Spark · turn finished"), last?.text?.slice(0, 120) || tr("notify.done", "Task completed"))
     }
     wasStreaming = streaming
   })
   const unsubSession = useSessionStore.subscribe((state) => {
     const waiting = Boolean(state.approval)
     if (!wasWaiting && waiting) {
-      notify("Spark · 等待审批", state.approval?.info?.summary || "有工具调用需要你确认")
+      notify(
+        tr("notify.approval", "Spark · waiting for approval"),
+        state.approval?.info?.summary || tr("notify.approvalBody", "A tool call needs your confirmation"),
+      )
     }
     wasWaiting = waiting
   })

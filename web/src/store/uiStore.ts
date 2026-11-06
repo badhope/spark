@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import { getDefaultLang, setDefaultLang, type Lang, type TranslationKey } from "../i18n"
+import { getDefaultLang, setDefaultLang, t, type Lang, type TranslationKey } from "../i18n"
 import type { Palette, Theme } from "../theme"
 import { applyPalette, applyTheme, getStoredPalette, getStoredTheme, initTheme } from "../theme"
 import type { CheckpointRow } from "../api"
@@ -169,6 +169,15 @@ export const useUiStore = create<UiState>((set) => ({
 
   setLang: (lang) => {
     setDefaultLang(lang)
+    // The static index.html ships zh-CN metadata; keep the document in sync so
+    // screen readers, browser translation prompts and share previews agree with
+    // the UI language the user actually picked.
+    try {
+      document.documentElement.setAttribute("lang", lang === "en" ? "en" : "zh-CN")
+      document.title = t("app.title", lang)
+    } catch {
+      /* non-browser (tests) */
+    }
     set({ lang })
   },
 

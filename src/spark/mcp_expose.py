@@ -23,6 +23,7 @@ import logging
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.tools.base import ToolAnnotations
 
+from spark import __version__
 from spark.config import SparkConfig
 from spark.models import ToolCall
 from spark.policy import READONLY_TOOLS
@@ -74,6 +75,11 @@ def build_mcp_server(workdir: str, cfg: SparkConfig) -> FastMCP:
     registry = ToolRegistry(ctx)
 
     mcp = FastMCP(name="spark", instructions=_INSTRUCTIONS)
+    # FastMCP leaves the low-level Server's version unset, so `initialize`
+    # answers with the MCP SDK's own package version (e.g. 1.30.0). Every other
+    # surface reports spark.__version__; a client that logs the server version
+    # would otherwise see a number that moves whenever the SDK is upgraded.
+    mcp._mcp_server.version = __version__  # noqa: SLF001 — SDK exposes no setter
 
     for schema in registry.schemas():
         fn = schema["function"]

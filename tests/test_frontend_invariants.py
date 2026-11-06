@@ -6,6 +6,7 @@ buttons still occupying the mobile header).
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -115,3 +116,54 @@ def test_advanced_settings_controls_reach_the_payload() -> None:
     # The embedding key must follow the same "blank = keep stored" contract as
     # provider.api_key; sending an empty string would clear it server-side.
     assert "embeddingKeyInput.trim() ? { embedding_api_key:" in save
+
+
+def test_zh_and_en_dictionaries_stay_key_identical() -> None:
+    """A key added to one language only renders as a raw `dotted.key` in the UI."""
+    src = _read("i18n.ts")
+    zh_block = src[src.index("  zh: {"): src.index("\n\n  en: {")]
+    en_block = src[src.index("  en: {"):]
+    keys = lambda block: set(re.findall(r'"([a-zA-Z][\w.]*)":', block))  # noqa: E731
+    zh, en = keys(zh_block), keys(en_block)
+    assert not zh - en, f"missing from en: {sorted(zh - en)}"
+    assert not en - zh, f"missing from zh: {sorted(en - zh)}"
+
+
+def test_every_t_call_resolves_to_a_real_key() -> None:
+    """`t("some.key")` with a missing key renders the key itself, not a fallback."""
+    src = _read("i18n.ts")
+    zh_block = src[src.index("  zh: {"): src.index("\n\n  en: {")]
+    known = set(re.findall(r'"([a-zA-Z][\w.]*)":', zh_block))
+    used: set[str] = set()
+    for path in WEB.rglob("*.tsx"):
+        for match in re.finditer(r'\bt\(\s*"([a-zA-Z][\w.]*)"', path.read_text(encoding="utf-8")):
+            used.add(match.group(1))
+    missing = used - known
+    assert not missing, f"t() keys with no dictionary entry: {sorted(missing)}"
+
+
+def test_shortcuts_help_reflects_user_bindings() -> None:
+    """Hardcoded Ctrl+K broke as soon as Settings → Shortcuts allowed rebinding."""
+    src = _read("components/ShortcutsHelp.tsx")
+    assert "loadBindings()" in src
+    assert "bindingSignature" in src
+    # Rows must be derived from the binding map, not literal key lists.
+    assert "ACTION_ROWS" in src
+    for hardcoded in ('keys: ["Ctrl", "K"]', 'keys: ["Ctrl", "N"]', 'keys: ["Ctrl", "\\\\"]'):
+        assert hardcoded not in src, f"shortcut row is hardcoded again: {hardcoded}"
+
+
+def test_side_and_goal_cards_do_not_shadow_the_translator() -> None:
+    """SideCard once defined `const t = (k) => k`, silently disabling i18n."""
+    src = _read("components/MessageItem.tsx")
+    assert "const t = (k: string)" not in src
+    for key in ("side.title", "side.noAnswer", "goal.status.done", "goal.evidence"):
+        assert f'"{key}"' in src, f"{key} should come from the dictionary"
+
+
+def test_document_language_follows_the_ui_language() -> None:
+    """A zh-CN document shell with an English UI misleads screen readers."""
+    main = _read("main.tsx")
+    assert 'setAttribute("lang"' in main
+    store = _read("store/uiStore.ts")
+    assert 'setAttribute("lang"' in store

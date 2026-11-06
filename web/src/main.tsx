@@ -4,8 +4,17 @@ import "./index.css"
 import App from "./App"
 import { initTheme } from "./theme"
 import { reportClientError } from "./api"
+import { getDefaultLang, t } from "./i18n"
 
 initTheme()
+
+// index.html is a static shell served as zh-CN; align document language and
+// title with the stored UI language before first paint.
+{
+  const lang = getDefaultLang()
+  document.documentElement.setAttribute("lang", lang === "en" ? "en" : "zh-CN")
+  document.title = t("app.title", lang)
+}
 
 /* ------------------------------------------------------------------ */
 /* 全局错误上报                                                         */
@@ -76,15 +85,14 @@ class RootErrorBoundary extends React.Component<{ children: React.ReactNode }, B
     if (!this.state.error) return this.props.children
 
     const { error, info, showDetail } = this.state
+    const lang = getDefaultLang()
     return (
       <div className="flex h-full items-center justify-center bg-canvas p-6 text-ink">
         <div className="anim-fade-up w-full max-w-lg space-y-4">
           <div className="space-y-1.5 text-center">
             <div className="text-2xl">⚠️</div>
-            <p className="text-[14px] font-semibold">界面渲染出错</p>
-            <p className="text-[12px] leading-relaxed text-ink3">
-              已自动上报到服务端日志。可以先刷新重试；如果反复出现，把下面的详情发出来。
-            </p>
+            <p className="text-[14px] font-semibold">{t("crash.title", lang)}</p>
+            <p className="text-[12px] leading-relaxed text-ink3">{t("crash.body", lang)}</p>
           </div>
 
           <div className="surface space-y-2 p-3">
@@ -94,7 +102,7 @@ class RootErrorBoundary extends React.Component<{ children: React.ReactNode }, B
               className="text-[11px] text-accent underline underline-offset-2"
               onClick={() => this.setState({ showDetail: !showDetail })}
             >
-              {showDetail ? "收起详情" : "展开详情"}
+              {showDetail ? t("crash.collapse", lang) : t("crash.expand", lang)}
             </button>
             {showDetail && (
               <pre className="max-h-56 overflow-auto rounded-md bg-code p-2 font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap text-ink3">

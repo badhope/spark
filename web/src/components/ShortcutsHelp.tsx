@@ -1,26 +1,44 @@
-import { memo, useEffect } from "react"
+import { memo, useEffect, useMemo } from "react"
 import { IconButton } from "./ui"
 import { IconCommand, IconX } from "./icons"
 import { useUiStore } from "../store/uiStore"
 import { t } from "../i18n"
+import { bindingSignature, loadBindings, type ShortcutAction } from "../shortcuts"
 
-const ROWS: Array<{ keys: string[]; zh: string; en: string }> = [
-  { keys: ["Ctrl", "K"], zh: "命令面板 / 搜索会话", en: "Command palette / search sessions" },
-  { keys: ["Ctrl", "N"], zh: "新建会话", en: "New session" },
-  { keys: ["Ctrl", "\\"], zh: "显示 / 隐藏侧栏", en: "Toggle sidebar" },
-  { keys: ["Ctrl", "`"], zh: "内置终端", en: "Built-in terminal" },
-  { keys: ["Enter"], zh: "发送（Shift+Enter 换行）", en: "Send (Shift+Enter for newline)" },
-  { keys: ["Esc"], zh: "停止生成 / 关闭弹层", en: "Stop generating / close overlay" },
-  { keys: ["/" ], zh: "斜杠命令补全（.spark/commands）", en: "Slash-command completion (.spark/commands)" },
-  { keys: ["@"], zh: "引用工作区文件", en: "Reference a workspace file" },
-  { keys: ["?"], zh: "打开这个帮助面板", en: "Open this help panel" },
+/**
+ * Rows are keyed by the rebindable action so the panel always shows the keys
+ * the user actually has. Hardcoding "Ctrl+K" here was wrong the moment
+ * Settings → Shortcuts shipped: a rebound palette key still rendered as Ctrl+K.
+ */
+const ACTION_ROWS: Array<{ action: ShortcutAction; hintKey: "shortcuts.hint.palette" | "shortcuts.hint.newSession" | "shortcuts.hint.toggleSidebar" | "shortcuts.hint.terminal" | "shortcuts.hint.send" | "shortcuts.hint.stop" | "shortcuts.hint.help" }> = [
+  { action: "palette", hintKey: "shortcuts.hint.palette" },
+  { action: "newSession", hintKey: "shortcuts.hint.newSession" },
+  { action: "toggleSidebar", hintKey: "shortcuts.hint.toggleSidebar" },
+  { action: "terminal", hintKey: "shortcuts.hint.terminal" },
+  { action: "send", hintKey: "shortcuts.hint.send" },
+  { action: "stop", hintKey: "shortcuts.hint.stop" },
+  { action: "help", hintKey: "shortcuts.hint.help" },
 ]
+
+/** Static rows: not rebindable (composer-local affordances). */
+const STATIC_ROWS: Array<{ keys: string[]; hintKey: "shortcuts.hint.slash" | "shortcuts.hint.at" }> = [
+  { keys: ["/"], hintKey: "shortcuts.hint.slash" },
+  { keys: ["@"], hintKey: "shortcuts.hint.at" },
+]
+
+/** 绑定串（"Mod+K"）→ 逐键展示（["Ctrl", "K"]）。 */
+function splitBinding(binding: string): string[] {
+  return bindingSignature(binding).split("+")
+}
 
 /** 快捷键帮助（Claude Code 的 `?` 面板）。 */
 export const ShortcutsHelp = memo(function ShortcutsHelp() {
   const open = useUiStore((s) => s.helpOpen)
   const close = useUiStore((s) => s.closeHelp)
   const lang = useUiStore((s) => s.lang)
+  // Re-read on every open: Settings → Shortcuts may have changed bindings while
+  // this panel stayed mounted.
+  const bindings = useMemo(() => (open ? loadBindings() : null), [open])
 
   useEffect(() => {
     if (!open) return
@@ -54,8 +72,28 @@ export const ShortcutsHelp = memo(function ShortcutsHelp() {
         <div className="overflow-y-auto p-3">
           <table className="w-full border-separate border-spacing-y-1 text-[12.5px]">
             <tbody>
-              {ROWS.map((row) => (
-                <tr key={row.keys.join("+") + row.en}>
+              {ACTION_ROWS.map((row) => {
+                const keys = bindings ? splitBinding(bindings[row.action]) : []
+                return (
+                  <tr key={row.action}>
+                    <td className="w-[38%] pr-3 align-middle">
+                      <span className="flex flex-wrap gap-1">
+                        {keys.map((k) => (
+                          <kbd
+                            key={k}
+                            className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-line bg-panel2 px-1 font-mono text-[10px] text-ink2"
+                          >
+                            {k}
+                          </kbd>
+                        ))}
+                      </span>
+                    </td>
+                    <td className="align-middle text-ink2">{t(row.hintKey, lang)}</td>
+                  </tr>
+                )
+              })}
+              {STATIC_ROWS.map((row) => (
+                <tr key={row.hintKey}>
                   <td className="w-[38%] pr-3 align-middle">
                     <span className="flex flex-wrap gap-1">
                       {row.keys.map((k) => (
@@ -68,7 +106,7 @@ export const ShortcutsHelp = memo(function ShortcutsHelp() {
                       ))}
                     </span>
                   </td>
-                  <td className="align-middle text-ink2">{lang === "zh" ? row.zh : row.en}</td>
+                  <td className="align-middle text-ink2">{t(row.hintKey, lang)}</td>
                 </tr>
               ))}
             </tbody>

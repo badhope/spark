@@ -30,11 +30,11 @@ function toolIcon(name: string) {
 }
 
 /** 参数摘要：优先 path/command/file 等关键字段 */
-function subtaskArgSummary(args: unknown): string {
+function subtaskArgSummary(args: unknown, lang: "zh" | "en" = "zh"): string {
   if (typeof args !== "object" || args === null) return ""
   const a = args as Record<string, unknown>
   const tasks = a.tasks
-  if (Array.isArray(tasks)) return `${tasks.length} 个子任务`
+  if (Array.isArray(tasks)) return t("tool.subtaskCount", lang, { n: tasks.length })
   if (typeof a.prompt === "string") return a.prompt.slice(0, 60)
   return argSummary(args)
 }
@@ -171,7 +171,7 @@ export const ToolBlock = memo(function ToolBlock({ tool }: { tool: ToolCallState
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-hover text-ink2">{toolIcon(name)}</span>
         <span className="font-mono text-xs font-semibold text-ink">{name}</span>
         <span className="min-w-0 truncate font-mono text-[11px] text-ink3">
-          {name === "task" ? subtaskArgSummary(args) : argSummary(args)}
+          {name === "task" ? subtaskArgSummary(args, lang) : argSummary(args)}
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {running ? (
