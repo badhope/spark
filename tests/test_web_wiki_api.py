@@ -139,3 +139,19 @@ def test_status_echoes_the_max_files_actually_used(live) -> None:
     _post(base, "/api/wiki", {"action": "generate", "max_files": 7})
     status = _post(base, "/api/wiki", {"action": "status"})
     assert status["max_files"] == 7
+
+
+def test_status_reads_parameters_written_by_the_cli(live) -> None:
+    """A wiki generated from the terminal must display correctly in the panel.
+
+    Regression: metadata was written by the HTTP handler only, so `spark wiki
+    --max-files 20` produced a 20-file wiki that the panel labelled 240.
+    """
+    from spark.wiki import WikiConfig, build_wiki
+
+    base, workdir = live
+    build_wiki(workdir, WikiConfig(max_files=5))
+    status = _post(base, "/api/wiki", {"action": "status"})
+    assert status["exists"] is True
+    assert status["modules"] <= 5
+    assert status["max_files"] == 5

@@ -7,8 +7,6 @@
 
 from __future__ import annotations
 
-import json
-import time
 from pathlib import Path
 
 from spark.web._httpbase import HandlerBase
@@ -26,30 +24,18 @@ def _wiki_root(workdir: Path) -> Path:
     return (workdir / WIKI_DIR).resolve()
 
 
-#: 记录上一次生成实际使用的 max_files，供 status 回显。
-META_NAME = ".meta.json"
-
-
-def _read_meta(root: Path) -> dict:
-    try:
-        return json.loads((root / META_NAME).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-
-
 def _last_max_files(root: Path) -> int:
+    """上次生成实际使用的 max_files。
+
+    元数据由 ``spark.wiki.build_wiki`` 写入（CLI 与 Web 共用一份），
+    所以通过 `spark wiki` 生成的产物在面板里也能显示正确上限。
+    """
+    from spark.wiki import read_meta
+
     try:
-        return int(_read_meta(root).get("max_files") or 0)
+        return int(read_meta(root).get("max_files") or 0)
     except (TypeError, ValueError):
         return 0
-
-
-def _write_meta(root: Path, max_files: int, stats: dict) -> None:
-    payload = {"max_files": max_files, "modules": stats.get("modules", 0), "written_at": int(time.time())}
-    try:
-        (root / META_NAME).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    except OSError:
-        pass
 
 
 def _safe_module(name: str) -> str | None:
@@ -104,7 +90,6 @@ def _handle_wiki(handler: HandlerBase, body: dict) -> None:
         except OSError as exc:
             handler._json(500, {"error": f"wiki generation failed: {exc}"})
             return
-        _write_meta(root, max_files, stats)
         handler._json(200, {"ok": True, "max_files": max_files, **stats})
         return
 

@@ -144,15 +144,24 @@ def main() -> int:
         return 0
     try:
         ok_all = True
+        # 深链（?panel=...&tab=...）让 headless 一次运行就能拍到指定面板，
+        # 不必模拟点击；这些链接对用户同样可用（见 App.tsx 的深链 effect）。
         shots = [
-            ("11-chat.png", url + "?onboarding=skip"),
+            ("11-chat.png", url + "?onboarding=skip", 9000),
+            ("12-settings-model.png", url + "?onboarding=skip&panel=settings&tab=model", 11000),
+            ("13-settings-permissions.png", url + "?onboarding=skip&panel=settings&tab=security", 11000),
+            ("14-settings-wiki.png", url + "?onboarding=skip&panel=settings&tab=wiki", 13000),
+            ("19-automations.png", url + "?onboarding=skip&panel=settings&tab=automations", 11000),
+            ("15-command-palette.png", url + "?onboarding=skip&panel=palette", 10000),
         ]
-        for name, target in shots:
+        for entry in shots:
+            name, target = entry[0], entry[1]
+            wait_ms = entry[2] if len(entry) > 2 else 9000
             out = OUT_DIR / name
-            ok = shoot(browser, target, out)
+            ok = shoot(browser, target, out, wait_ms=wait_ms)
             print(("PASS" if ok else "FAIL"), name)
             ok_all = ok_all and ok
-        # 空状态：另一个全新 home（无会话）——单独起服务太重，跳过则保留旧图
+        # 空状态图需要另一个全新 home（无会话）；单独起服务太重，保留旧图
     finally:
         server.shutdown()
     return 0 if ok_all else 1

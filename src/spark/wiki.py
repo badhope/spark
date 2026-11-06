@@ -32,6 +32,8 @@ from spark.repo_map import _EXT_LANG, RepoMapConfig, _iter_files
 INDEX_NAME = "INDEX.md"
 MODULE_DIR = "modules"
 CACHE_NAME = ".cache.json"
+#: 上次生成参数（max_files 等），供 Web 面板回显。
+META_NAME = ".meta.json"
 
 DEFAULT_MAX_FILES = 240
 #: 单个模块文档里列出的符号上限，避免一个巨型文件刷屏。
@@ -434,6 +436,10 @@ def build_wiki(
             stale.unlink(missing_ok=True)
 
     _write_cache(out, new_cache)
+    # 记录本次实际使用的参数，供 Web 面板回显。
+    # 不能只在 HTTP handler 里写：CLI 生成的 wiki 也要能被面板正确显示
+    # （否则面板会把 20 个文件的手册配上 240 的上限，自相矛盾）。
+    _write_meta(out, cfg)
     return {
         "modules": len(modules),
         "symbols": sum(len(m.symbols) for m in modules),
@@ -442,6 +448,27 @@ def build_wiki(
         "out_dir": str(out),
         "index": str(out / INDEX_NAME),
     }
+
+
+def _write_meta(out: Path, cfg: WikiConfig) -> None:
+    payload = {
+        "max_files": cfg.max_files,
+        "max_depth": cfg.max_depth,
+        "summarize": cfg.summarize,
+        "written_at": int(time.time()),
+    }
+    try:
+        (out / META_NAME).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def read_meta(out: Path) -> dict[str, Any]:
+    """读取上次生成参数；不存在或损坏时返回空 dict（调用方给默认值）。"""
+    try:
+        return json.loads((out / META_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
 
 
 def _render_index(root: Path, modules: list[ModuleDoc], cfg: WikiConfig) -> str:

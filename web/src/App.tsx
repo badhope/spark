@@ -56,6 +56,32 @@ export default function App() {
   // 回合结束 / 等待审批时的桌面通知（设置 → 展示页可开；默认关）
   useEffect(() => installNotificationWatcher(), [])
 
+  // 深链：`?panel=settings&tab=wiki` / `?panel=palette` / `?panel=files`。
+  //
+  // 两个用途：截图自动化能直接进到某个面板（不用模拟点击），
+  // 用户也能把"这个设置页在哪"直接发给同事。参数非法时静默忽略——
+  // 链接写错不该让应用弹错。
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const panel = params.get("panel")
+      if (!panel) return
+      const ui = useUiStore.getState()
+      if (panel === "settings") {
+        const tab = params.get("tab")
+        ui.openSettingsAt((tab || "model") as Parameters<typeof ui.openSettingsAt>[0])
+      } else if (panel === "palette") {
+        ui.setPaletteOpen(true)
+      } else if (panel === "files") {
+        ui.openFiles()
+      } else if (panel === "checkpoints") {
+        ui.openCheckpoints()
+      }
+    } catch {
+      /* malformed URL: ignore */
+    }
+  }, [])
+
   // 全局快捷键（可在设置 → 快捷键里改，绑定存 localStorage）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
