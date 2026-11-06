@@ -1,0 +1,2679 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="本地自托管 AI 编程智能体 · 代码在你手，密钥在你手">
+      
+      
+      
+      
+        <link rel="prev" href="../2026-10-17-master-plan/">
+      
+      
+        <link rel="next" href="../2026-10-17-session-digest/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>审查与方向 - Spark Agent</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#spark" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href="../.." title="Spark Agent" class="md-header__button md-logo" aria-label="Spark Agent" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Spark Agent
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              审查与方向
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="indigo"  aria-label="暗色"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="暗色" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-orange" data-md-color-accent="indigo"  aria-label="亮色"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="亮色" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜索" placeholder="搜索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="查找">
+        
+        <button type="reset" class="md-search__icon md-icon" title="清空当前内容" aria-label="清空当前内容" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜索引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/badhope/spark" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    badhope/spark
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="标签" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  首页
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../FEATURES/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  功能总览
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../INSTALL/" class="md-tabs__link">
+          
+  
+  
+  开始
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../ARCHITECTURE/" class="md-tabs__link">
+          
+  
+  
+  深入
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../diagrams-ops/" class="md-tabs__link">
+          
+  
+  
+  图表与运维
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../2026-10-17-master-plan/" class="md-tabs__link">
+          
+  
+  
+  工程决策与规划
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Spark Agent" class="md-nav__button md-logo" aria-label="Spark Agent" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Spark Agent
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/badhope/spark" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    badhope/spark
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    首页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../FEATURES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    功能总览
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    开始
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    开始
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../INSTALL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    安装
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../CONFIG/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    配置
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../CONFIG/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    配置
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    深入
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    深入
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    架构
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../API/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ACP/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ACP 接入
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../OBSERVABILITY/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    观测
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../model-routing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    模型路由
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../git-memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git 任务记忆
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../evals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    评测
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    图表与运维
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    图表与运维
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams-ops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    图表与密钥运维手册
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    工程决策与规划
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    工程决策与规划
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../2026-10-17-master-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    建设计划
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    审查与方向
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    审查与方向
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第一部分：源码审查记录（2026-10-17 全量走查）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第一部分：源码审查记录（2026-10-17 全量走查）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 缺陷清单
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 做得好的（保持）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 架构师视角缺失清单
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第二部分：方向讨论（回应五点输入）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第二部分：方向讨论（回应五点输入）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 定位重申（同意，并具体化）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 协议与框架生态地图（按时间，标注置信度与采用决策）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2.2 协议与框架生态地图（按时间，标注置信度与采用决策）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP"把能力拿完"差距表（重点）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#langgraph-a11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LangGraph 决策（A11 消除）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 竞品学习清单（能抄的抄，能用的用）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.4 横向 × 纵向扩展路线
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#25" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.5 模块化/标准化/可运维（参考前沿但不框架化）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-17-2035" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第三部分：待你拍板的问题（2026-10-17 20:35 已答复）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-17_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第四部分：第二轮调研与决策（2026-10-17 晚）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第四部分：第二轮调研与决策（2026-10-17 晚）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 两个名字的谜底
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 同类项目全景：架构级"值得拿"清单（全部拿来，不设上限）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 生态替换地图（"好的就换"——自研部件 → 生态件）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-ide-ide-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 IDE 模式设计（一键切换 IDE / 一键切换 Agent）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 分发双轨（确认不冲突）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#46" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.6 差异化头脑风暴（大胆版——与市面开源的真实区别）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#47" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.7 记录在案的其他好东西（未指定来源的"你觉得好就拿"授权项）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-17_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第五部分：独有性严格核验（2026-10-17 深夜，证伪式调研）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第五部分：独有性严格核验（2026-10-17 深夜，证伪式调研）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 逐条核验表
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 核验后的残余优势（就四条，全部是"组合与执行"不是"发明"）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-hr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 企业/HR 问"你到底有什么用"的现实话术（禁用"本地化"等烂大街词）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-17_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第六部分：全量采纳决议 + 横向扩展原则（2026-10-17 深夜第三轮）
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../2026-10-17-session-digest/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    会话锚点
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../competitive-comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    竞品对比
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第一部分：源码审查记录（2026-10-17 全量走查）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第一部分：源码审查记录（2026-10-17 全量走查）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 缺陷清单
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 做得好的（保持）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 架构师视角缺失清单
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第二部分：方向讨论（回应五点输入）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第二部分：方向讨论（回应五点输入）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 定位重申（同意，并具体化）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 协议与框架生态地图（按时间，标注置信度与采用决策）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2.2 协议与框架生态地图（按时间，标注置信度与采用决策）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP"把能力拿完"差距表（重点）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#langgraph-a11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LangGraph 决策（A11 消除）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 竞品学习清单（能抄的抄，能用的用）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.4 横向 × 纵向扩展路线
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#25" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.5 模块化/标准化/可运维（参考前沿但不框架化）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-17-2035" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第三部分：待你拍板的问题（2026-10-17 20:35 已答复）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-17_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第四部分：第二轮调研与决策（2026-10-17 晚）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第四部分：第二轮调研与决策（2026-10-17 晚）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 两个名字的谜底
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 同类项目全景：架构级"值得拿"清单（全部拿来，不设上限）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 生态替换地图（"好的就换"——自研部件 → 生态件）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-ide-ide-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 IDE 模式设计（一键切换 IDE / 一键切换 Agent）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 分发双轨（确认不冲突）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#46" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.6 差异化头脑风暴（大胆版——与市面开源的真实区别）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#47" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.7 记录在案的其他好东西（未指定来源的"你觉得好就拿"授权项）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-17_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第五部分：独有性严格核验（2026-10-17 深夜，证伪式调研）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第五部分：独有性严格核验（2026-10-17 深夜，证伪式调研）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 逐条核验表
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 核验后的残余优势（就四条，全部是"组合与执行"不是"发明"）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-hr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 企业/HR 问"你到底有什么用"的现实话术（禁用"本地化"等烂大街词）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-17_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第六部分：全量采纳决议 + 横向扩展原则（2026-10-17 深夜第三轮）
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="spark">Spark 审查记录与方向讨论<a class="headerlink" href="#spark" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p>日期：2026-10-17 · 状态：<strong>未动代码，仅记录</strong> · 基线：v0.9.2 @ a0f5769
+本文档两部分：①源码审查结论（修复清单）②方向讨论（定位/生态/竞品/扩展/工程化）</p>
+</blockquote>
+<hr />
+<h2 id="2026-10-17">第一部分：源码审查记录（2026-10-17 全量走查）<a class="headerlink" href="#2026-10-17" title="Permanent link">&para;</a></h2>
+<p>规模：Python 147 文件 / 29,594 行（src），前端 TS/TSX 6,634 行，测试 68 文件 / 11,046 行。</p>
+<h3 id="11">1.1 缺陷清单<a class="headerlink" href="#11" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>级别</th>
+<th>位置</th>
+<th>问题</th>
+<th>修复建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P0</td>
+<td>tools/shell.py</td>
+<td>bwrap 用 <code>--unshare-all</code>（含网络隔离），docstring 却说"不隔离网络"——装了 bwrap 的 Linux 在 workspace 模式下 pip/npm 等网络命令全部失败</td>
+<td>加 <code>--share-net</code>；沙箱参数表化</td>
+</tr>
+<tr>
+<td>P0</td>
+<td>store.py</td>
+<td><code>delete_messages_after</code> / <code>truncate_messages</code> 删 FTS 用 <code>rowid &gt; X</code> 无 session 过滤——单库多会话时把其他会话的搜索索引一起删掉</td>
+<td>删除条件加 session 维度或改用 rowid IN 子查询</td>
+</tr>
+<tr>
+<td>P0</td>
+<td>memory/service.py</td>
+<td>向量记忆默认 embedding_model=text-embedding-3-small，但请求走 provider.base_url（默认 DeepSeek chat 端点，无 /embeddings）→ 默认配置下向量检索永远失败降级关键词</td>
+<td>embedding 独立配置 base_url + 默认关闭并提示</td>
+</tr>
+<tr>
+<td>P1</td>
+<td>core/tokens.py + loop</td>
+<td>token 全部启发式估算（CJK=1 其他 4字符/token），用量表 source=estimated，无真实成本</td>
+<td>流式响应回填 usage；无法回填的才标 estimated</td>
+</tr>
+<tr>
+<td>P1</td>
+<td>core/compact.py</td>
+<td>Compactor 绕过 Provider 抽象直调 litellm.acompletion——mock provider 测试会意外走真路径，压缩行为与主循环不一致</td>
+<td>压缩也走 provider 接口，或声明依赖并注入</td>
+</tr>
+<tr>
+<td>P1</td>
+<td>providers/openai_compat.py</td>
+<td>多工具调用缺 id 时兜底都叫 <code>call_0</code>，同轮多调用撞 id；参数 JSON 解析失败静默变 <code>{}</code></td>
+<td>序号兜底 + 解析错误回显给模型</td>
+</tr>
+<tr>
+<td>P1</td>
+<td>core/loop.py</td>
+<td>压缩只在 turn 开始触发；超长 turn 中途不压缩，只靠 trim_recent 硬裁剪</td>
+<td>每轮工具循环后检查阈值</td>
+</tr>
+<tr>
+<td>P1</td>
+<td>tools/registry.py</td>
+<td><code>execute()</code> 每次调用重建整张 dispatch 表（全部 lambda 闭包）</td>
+<td>构建一次，<code>__init__</code> 缓存</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>core/compact.py</td>
+<td><code>trim_recent</code> 文档说 token-aware，实现按 chars</td>
+<td>统一口径</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>core/compact.py</td>
+<td>merge_summaries 失败回退把 prior 塞进 "## Objective"，格式失真</td>
+<td>独立小节</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>repo_map.py</td>
+<td>仅 py/ts/tsx/js 四种语法；无 git 热度排序；<code>_iter_files</code> 达 max_files 即 break，地图按遍历顺序偏置</td>
+<td>按语言增量补 grammar；git log 频次加权</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>config.py</td>
+<td><code>history_budget_chars</code> 按字符、<code>max_context_tokens</code> 按 token，两套单位并存</td>
+<td>统一 token 口径</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>sandbox.py</td>
+<td>shell 防泄漏为黑名单子串匹配（自述 best-effort）：<code>python -c "import os;os.environ"</code> 等可绕过读父进程环境变量</td>
+<td>子进程 env 白名单注入（至少剥离 <em>KEY</em>/TOKEN/SECRET）</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>core/context.py</td>
+<td>默认 <code>max_context_tokens=32768</code> 明显偏小（竞品 128k-200k）</td>
+<td>默认提到 131072</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>prompts/system.md</td>
+<td>仅 34 行，远薄于同类（无代码风格/提交规范/工具优先级细则），是行为质量天花板</td>
+<td>扩写到 150+ 行并按模式分节</td>
+</tr>
+</tbody>
+</table>
+<h3 id="12">1.2 做得好的（保持）<a class="headerlink" href="#12" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>安全意识</strong>：项目级 <code>.spark.toml</code> 清洗彻底；<code>$SPARK_HOME/.env</code> 只从用户主目录加载（防恶意仓库）；密钥文件 chmod 600 + Windows ACL；审批签名绑定 (tool,args) 防粘贴攻击；NEVER_PERSIST_ALLOW。</li>
+<li><strong>edit/core.py</strong>：aider SEARCH/REPLACE 三级容错（exact→尾空白→缩进漂移）、多块原子应用、唯一性强约束。</li>
+<li><strong>checkpoints.py</strong>：manifest 路径逃逸校验、tar filter=data、restore 防 unarchived 误删。</li>
+<li><strong>policy.py</strong>：resource 空值防全局放行、glob 深度防爆。</li>
+<li><strong>测试文化</strong>：68 个测试文件、对抗性安全测试、perf bounds、CI evals。</li>
+<li><strong>MCP 边界</strong>：SSRF 白名单、命名空间隔离、注册表国内可达性探测 + 离线兜底。</li>
+</ul>
+<h3 id="13">1.3 架构师视角缺失清单<a class="headerlink" href="#13" title="Permanent link">&para;</a></h3>
+<ul>
+<li>A1 无 LSP/编译诊断闭环（模型看不到类型错误，盲改）</li>
+<li>A2 无 IDE 集成路径（无 ACP/插件协议）</li>
+<li>A3 无真实 usage/成本计量（全部估算）</li>
+<li>A4 turn 中途不压缩、无上下文优先级分层</li>
+<li>A5 子代理只回传 summary，轨迹不可回放</li>
+<li>A6 无消息级回溯/分支重跑 UI（存储层已支持，UI 未接）</li>
+<li>A7 分发链缺失：无 PyPI/安装脚本/自动更新</li>
+<li>A8 无 review/PR 审查模式</li>
+<li>A9 Web 多会话并发无隔离（单 loop）</li>
+<li>A10 in-flight turn 崩溃不可恢复（checkpointer 只管工作区+索引）</li>
+<li>A11 LangGraph 参考实现与生产 while 循环<strong>两套真相源并存</strong>，迟早漂移</li>
+</ul>
+<hr />
+<h2 id="_1">第二部分：方向讨论（回应五点输入）<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
+<h3 id="21">2.1 定位重申（同意，并具体化）<a class="headerlink" href="#21" title="Permanent link">&para;</a></h3>
+<p>本地优先、代码和密钥不出本机、模型自带（BYO）、高度可定制——这四条不变。
+推论：<strong>所有新增能力优先选"协议/标准"而非"自建服务"</strong>，因为自建服务会慢慢把产品变成云厂商，跟定位打架。判据：一个新功能如果需要常驻服务端，先想协议方案（本地 daemon / 本地 MCP）能不能替代。</p>
+<h3 id="22">2.2 协议与框架生态地图（按时间，标注置信度与采用决策）<a class="headerlink" href="#22" title="Permanent link">&para;</a></h3>
+<p>置信度：✅=仓库竞品文档已逐条核查（2026-10-14）/ 📚=训练知识 / ❓=待核实。
+"采用"栏：现=已有 / 缺=缺失待补 / 半=部分实现 / 看=观望。</p>
+<table>
+<thead>
+<tr>
+<th>时间</th>
+<th>技术/事件</th>
+<th>对 Spark 的意义</th>
+<th>采用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2022-10</td>
+<td>LangChain 开源 📚</td>
+<td>编排框架先驱，但重；Spark 自研 loop 是对的</td>
+<td>不用</td>
+</tr>
+<tr>
+<td>2023-03</td>
+<td>AutoGPT/BabyAGI 爆火 📚</td>
+<td>证明"循环+工具"范式，也证明无护栏必翻车</td>
+<td>教训</td>
+</tr>
+<tr>
+<td>2023-06</td>
+<td>OpenAI Function Calling 📚</td>
+<td>工具调用成为标准接口</td>
+<td>✅现</td>
+</tr>
+<tr>
+<td>2023-11</td>
+<td>OpenAI Assistants API / GPTs 📚</td>
+<td>托管 agent 的第一波，锁定风险样本</td>
+<td>不用</td>
+</tr>
+<tr>
+<td>2024-09</td>
+<td>OpenAI o1 推理模型 📚</td>
+<td>reasoning_content 需要 provider 透传</td>
+<td>✅现</td>
+</tr>
+<tr>
+<td>2024-10</td>
+<td>Claude Computer Use 📚</td>
+<td>截图→操作，桌面自动化范式</td>
+<td>看</td>
+</tr>
+<tr>
+<td><strong>2024-11</strong></td>
+<td><strong>Anthropic 发布 MCP</strong> 📚</td>
+<td>工具/上下文接入的事实标准</td>
+<td>✅现（加强）</td>
+</tr>
+<tr>
+<td>2025-01</td>
+<td>DeepSeek R1 开源推理模型 📚</td>
+<td>国产低成本强模型，Spark 默认档</td>
+<td>✅现</td>
+</tr>
+<tr>
+<td>2025-02</td>
+<td>Claude Code 预览版 📚</td>
+<td>本品类标杆，交互/记忆/子代理全参考</td>
+<td>对标</td>
+</tr>
+<tr>
+<td>2025-03</td>
+<td>MCP Streamable HTTP 替代 SSE 传输 📚</td>
+<td>传输层升级</td>
+<td>⚠️缺（现仅 stdio）</td>
+</tr>
+<tr>
+<td>2025-03</td>
+<td>OpenAI Responses API + Agents SDK 📚</td>
+<td>官方 agent 框架；托管倾向</td>
+<td>不用</td>
+</tr>
+<tr>
+<td>2025-03</td>
+<td>OpenAI 宣布支持 MCP 📚</td>
+<td>MCP 跨厂商地位确立</td>
+<td>—</td>
+</tr>
+<tr>
+<td>2025-04</td>
+<td>Codex CLI 开源 📚</td>
+<td>apply_patch 格式成事实标准、OS 级沙箱（Linux Landlock/seccomp、macOS Seatbelt）</td>
+<td>✅现(patch格式) / ⚠️缺(沙箱)</td>
+</tr>
+<tr>
+<td><strong>2025-04</strong></td>
+<td><strong>Google A2A 协议</strong>（后捐 Linux 基金会）📚</td>
+<td>跨厂商 agent 互操作</td>
+<td>看（等生态成熟）</td>
+</tr>
+<tr>
+<td>2025-04</td>
+<td>Qwen3 📚</td>
+<td>国产能力档</td>
+<td>✅现</td>
+</tr>
+<tr>
+<td>2025-05</td>
+<td>Claude 4 系列 📚</td>
+<td>长程编码能力跳升</td>
+<td>—</td>
+</tr>
+<tr>
+<td><strong>2025-06</strong></td>
+<td><strong>Zed 发布 ACP（Agent Client Protocol）</strong>📚</td>
+<td>编辑器↔agent 开放协议，opencode/Gemini CLI 已接入——<strong>接 ACP=免费进 IDE，不用自己写插件</strong></td>
+<td>⚠️缺（高优先）</td>
+</tr>
+<tr>
+<td>2025-06</td>
+<td>MCP 规范 2025-06-26：OAuth 2.1 授权、Elicitation 📚</td>
+<td>服务端凭据安全 + 运行时询问用户</td>
+<td>⚠️缺</td>
+</tr>
+<tr>
+<td><strong>2025-07</strong></td>
+<td><strong>GLM-4.5 / Kimi K2 / Qwen3-Coder 集中发布</strong> ✅</td>
+<td>国产 agentic 三件套，路由矩阵已覆盖</td>
+<td>✅现</td>
+</tr>
+<tr>
+<td>2025-08</td>
+<td>DeepSeek V3.1 ✅</td>
+<td>混合思考</td>
+<td>✅现</td>
+</tr>
+<tr>
+<td>2025-08</td>
+<td>Qoder（阿里）发布 ✅</td>
+<td>竞品：重 IDE</td>
+<td>对标</td>
+</tr>
+<tr>
+<td><strong>2025-08</strong></td>
+<td><strong>AGENTS.md 规范站上线、获 OpenAI 等背书</strong> ✅</td>
+<td>项目指令事实标准</td>
+<td>✅现（三级加载）</td>
+</tr>
+<tr>
+<td>2025-09</td>
+<td>opencode 走向成熟（models.dev 目录、LSP 集成、TS 插件系统）✅</td>
+<td>三个可直接抄的能力：LSP、插件、模型目录</td>
+<td>⚠️缺×3</td>
+</tr>
+<tr>
+<td>2025-09</td>
+<td>MCP 官方 Registry 预览 📚</td>
+<td>服务发现标准化</td>
+<td>✅现（自建注册表+国内可达性）</td>
+</tr>
+<tr>
+<td>2025-09</td>
+<td>DeepSeek V3.2-Exp ✅</td>
+<td>成本档</td>
+<td>✅现</td>
+</tr>
+<tr>
+<td><strong>2025-10</strong></td>
+<td><strong>Anthropic Claude Skills（SKILL.md）</strong> 📚✅</td>
+<td>技能包格式开放，生态可复用</td>
+<td>⚠️半（格式兼容待对齐）</td>
+</tr>
+<tr>
+<td>2025-10</td>
+<td>OpenAI AgentKit 📚</td>
+<td>托管化路线，反例</td>
+<td>不用</td>
+</tr>
+<tr>
+<td>2026-H1</td>
+<td>ZCode（智谱）成型：消息级 Undo/Reapply、Usage 面板、手机遥控、飞书/微信 Bot、CC 一键导入 ✅</td>
+<td>竞品：Bot 渠道与回溯体验</td>
+<td>对标</td>
+</tr>
+<tr>
+<td>2026-10</td>
+<td>本仓库 v0.9.2 / 五平台矩阵</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>❓待你确认的两个名字：
+- <strong>hermes</strong>——指哪个？（Nous Research 的 Hermes 模型？还是某个 agent 框架/产品？）确认后我补进学习清单。
+- <strong>deepseed harness</strong>——是否指 DeepSeek 官方的 agent harness？还是 HuggingFace 系（smolagents 等）？确认后补。</p>
+<h4 id="mcp">MCP"把能力拿完"差距表（重点）<a class="headerlink" href="#mcp" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>MCP 能力</th>
+<th>Spark 现状</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tools 调用（stdio）</td>
+<td>✅ 已有</td>
+<td>保持</td>
+</tr>
+<tr>
+<td>作为 Server 暴露</td>
+<td>✅ mcp-serve</td>
+<td>保持，补 Streamable HTTP</td>
+</tr>
+<tr>
+<td>Streamable HTTP 传输（客户端+服务端）</td>
+<td>❌ 仅 stdio</td>
+<td>补——远程 MCP 市场基本全是 HTTP</td>
+</tr>
+<tr>
+<td>Resources（资源读取/订阅）</td>
+<td>❌</td>
+<td>补客户端支持</td>
+</tr>
+<tr>
+<td>Prompts（服务端提示模板）</td>
+<td>❌</td>
+<td>补，<code>/mcp:</code> 命令入口</td>
+</tr>
+<tr>
+<td>Sampling（服务端反向请求 LLM）</td>
+<td>❌</td>
+<td>补——agent↔server 双向的关键能力</td>
+</tr>
+<tr>
+<td>Elicitation（服务端运行时问询用户）</td>
+<td>❌</td>
+<td>补，接现有 Approval 通道</td>
+</tr>
+<tr>
+<td>OAuth 2.1 授权（远程 server）</td>
+<td>❌</td>
+<td>随 Streamable HTTP 一起补</td>
+</tr>
+<tr>
+<td>Roots（工作区边界声明）</td>
+<td>❓半</td>
+<td>对齐现有 sandbox root</td>
+</tr>
+<tr>
+<td>Notifications/进度</td>
+<td>❓半</td>
+<td>对齐事件流</td>
+</tr>
+</tbody>
+</table>
+<p>结论：MCP 是 Spark 最该"吃干净"的协议。吃干净后，Spark 自动成为任意 MCP 客户端（Claude Code/Codex/Zed）的<strong>本地引擎</strong>——这本身就是获客入口。</p>
+<h4 id="langgraph-a11">LangGraph 决策（A11 消除）<a class="headerlink" href="#langgraph-a11" title="Permanent link">&para;</a></h4>
+<p>二选一，不做第三种：
+- <strong>方案 A（推荐）</strong>：v0.10 把生产 loop 迁到 LangGraph（interrupt=审批、SqliteSaver=turn 级恢复、子图=子代理），graph.py 现状就是迁移蓝图；迁移期用现有 68 个测试当行为等价安全网。
+- <strong>方案 B</strong>：删除 graph.py，文档写明自研理由，止损漂移。</p>
+<p>倾向 A：我们要的"turn 级崩溃恢复 + plan/verify 双节点"，自研工作量大于接入。</p>
+<h3 id="23">2.3 竞品学习清单（能抄的抄，能用的用）<a class="headerlink" href="#23" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>来源</th>
+<th>学什么</th>
+<th>怎么落</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>opencode</td>
+<td>LSP 集成、TS 插件系统、models.dev 模型目录、@文件引用、share 会话导出、ACP 接入</td>
+<td>LSP/ACP/插件按 2.2 表落地；models.dev 当 provider 元数据源替代硬编码路由</td>
+</tr>
+<tr>
+<td>Codex CLI</td>
+<td>OS 级沙箱（Landlock/seccomp/Seatbelt）、apply_patch 格式、/status 透明度、thread/revert</td>
+<td>沙箱后端策略化：bwrap→landlock/seccomp（Windows 无对应时明确降级）；/status 等价物进 TUI</td>
+</tr>
+<tr>
+<td>ZCode</td>
+<td>消息级 Undo/Reapply、Usage Stats 面板、飞书/微信 Bot 遥控、CC 一键导入+技能市场</td>
+<td>回溯 UI（A6）、用量面板（A3）优先；Bot 渠道作为分发面</td>
+</tr>
+<tr>
+<td>Claude Code</td>
+<td>hooks 事件面、skills/子代理细节、memory hierarchy、压缩体验</td>
+<td>已有 hooks/skills 雏形，对齐事件集合与 SKILL.md 格式</td>
+</tr>
+<tr>
+<td>pi</td>
+<td>极简内核哲学：核心小、扩展用普通代码、不锁框架</td>
+<td>反向约束 2.5 的模块化设计，防止"策略化"变成"框架化"</td>
+</tr>
+</tbody>
+</table>
+<h3 id="24">2.4 横向 × 纵向扩展路线<a class="headerlink" href="#24" title="Permanent link">&para;</a></h3>
+<p><strong>横向（更多接入面，多借协议）</strong>：
+1. ACP 接入 → Zed 及全部 ACP 客户端（最高杠杆）
+2. mcp-serve 补 Streamable HTTP → 可托管给任意 MCP 客户端当本地引擎
+3. Bot 渠道：飞书/微信/Telegram（ZCode 已验证需求）
+4. CI 模式：GitHub Action 里当 reviewer/fixer（A8）
+5. PyPI + 一键安装脚本（A7，分发是横向前提）</p>
+<p><strong>纵向（同一循环更强，多借反馈信号）</strong>：
+1. LSP 诊断闭环：改完即读编译器/类型错误，自动修复（A1）
+2. plan/verify 双循环：计划批准后每步有验证节点（LangGraph 方案 A 顺带解决）
+3. 真实 usage 回填 + 成本报表（A3）
+4. 小模型分工：压缩/标题/事实抽取用便宜模型，主循环用强模型（默认 DeepSeek V3.2-thinking 主 + 非 thinking 辅）
+5. 记忆升级：抽取→巩固→遗忘（store 已有 importance 字段，缺 TTL 与衰减）
+6. evals 升级：场景库扩到 50+，加 LLM-as-judge
+7. turn 级崩溃恢复（A10，LangGraph checkpointer）</p>
+<h3 id="25">2.5 模块化/标准化/可运维（参考前沿但不框架化）<a class="headerlink" href="#25" title="Permanent link">&para;</a></h3>
+<p>原则（学 pi）：<strong>内核小而稳，变化点全部策略化，策略通过注册表插拔，插件就是普通代码</strong>。</p>
+<ol>
+<li><strong>包拆分</strong>：<code>spark-core</code>（loop/context/compact/checkpoint）、<code>spark-providers</code>、<code>spark-tools</code>、<code>spark-mcp</code>、<code>spark-web</code>、<code>spark-tui</code>——src/spark 现 40+ 文件平铺，按依赖方向分六包，core 禁止反向 import 上层。</li>
+<li><strong>策略注册表</strong>（统一成同一模式）：Provider、Sandbox 后端（bwrap/landlock/docker/none）、Compactor、Memory 后端、审批策略、Hook 执行器。</li>
+<li><strong>插件 API</strong>：普通 Python 包 + entry-points 声明，不造 DSL；扩展点带 PROTOCOL_VERSION。</li>
+<li><strong>可观测</strong>：OTel GenAI 语义约定接进 otel.py（trace=turn，span=工具调用，metric=token/成本/延迟），默认关、doctor 一键开。</li>
+<li><strong>配置治理</strong>：schema 版本号 + 迁移器；单位统一 token；doctor 覆盖 embedding/sandbox/MCP 体检。</li>
+<li><strong>发布工程</strong>：release-please 自动 CHANGELOG + tag；tag 触发五平台推送与 PyPI 发布；perf budgets 进 CI（已有 test_perf_bounds）。</li>
+<li><strong>ADR</strong>：docs/decisions/ 编号化，先补两篇——"loop 自研 vs LangGraph"、"沙箱后端矩阵"。</li>
+</ol>
+<hr />
+<h2 id="2026-10-17-2035">第三部分：待你拍板的问题（2026-10-17 20:35 已答复）<a class="headerlink" href="#2026-10-17-2035" title="Permanent link">&para;</a></h2>
+<ol>
+<li>~~hermes / deepseed harness 指什么~~ → 已调研确认：<strong>Hermes = NousResearch/hermes-agent</strong>；<strong>deepseed harness = DeepSeek Harness (dsh)</strong>。见第四部分。</li>
+<li>~~LangGraph 迁入还是删除~~ → <strong>迁入</strong>（"只要自研能被生态替换的尽量都迁入"）。</li>
+<li>~~IDE 路线~~ → <strong>内置 IDE 模式：一键切换 IDE + 一键切换 Agent</strong>（Cursor/Trae 式），见 4.4。</li>
+<li>~~分发优先级~~ → <strong>双轨并行不冲突</strong>：pip/一行命令先行（最方便），桌面 EXE 是"软件安装"另一条轨，见 4.5。</li>
+<li>~~三 GitHub 账号分工~~ → <strong>已拍板：主仓 badhope，其余四仓全部纯镜像</strong>；CI/CD 自动化与镜像同步方案见 Master Plan §8（<code>2026-10-17-master-plan.md</code>）。</li>
+</ol>
+<hr />
+<h2 id="2026-10-17_1">第四部分：第二轮调研与决策（2026-10-17 晚）<a class="headerlink" href="#2026-10-17_1" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>调研方式：官方 README/docs/官方页 + 架构深读文章（pi 博客、opencode internals、
+OpenHands v1 路线、10 Design Elements gist），非二手报告。</p>
+</blockquote>
+<h3 id="41">4.1 两个名字的谜底<a class="headerlink" href="#41" title="Permanent link">&para;</a></h3>
+<p><strong>DeepSeek Harness (<code>dsh</code>)</strong>（deepseek-ai/deepseek-harness，2026-08 开源，MIT）
+- <strong>Everything is a Plugin</strong>：模型适配器、工具注册表、agent loop、会话、沙箱全部可插拔；底层是 <strong>Cordis 元框架</strong>（论文《A Programming Paradigm for Spatiotemporal Composability》arXiv:2608.25512）
+- <code>npx @deepseek-ai/dsh web</code> 一行安装；Web UI + 桌面双形态
+- <strong>Creator mode</strong>：聊天里直接"帮我写个番茄钟插件"→ 自动生成/安装插件（技能+工具+界面三层）
+- 插件发现走 GitHub topic（dsh-plugin）+ 官方插件目录 + Discord 社区
+- 对 Spark 的意义：<strong>"harness（座舱）"与"agent（大脑）"分离</strong>是行业新范式；Spark 应自我定位为 open harness，插件/技能/界面三层全部可插拔</p>
+<p><strong>Hermes Agent</strong>（NousResearch/hermes-agent，MIT）
+- <strong>自进化闭环</strong>（最大特色）：任务后自动创建技能；技能在使用中自我改进；周期性"记忆提醒"（nudge）驱动知识持久化；FTS5 全文搜历史会话 + LLM 摘要做跨会话回忆；Honcho 辩证式用户建模（"越用越懂你"）
+- <strong>无处不在</strong>：单一网关进程接 Telegram/Discord/Slack/WhatsApp/Signal + CLI；语音转写；跨端会话连续；可跑 $5 VPS/无服务器，天然 headless
+- <strong>供应商层工业级</strong>：<code>hermes model</code> 一键切换（Nous Portal/OpenRouter/Copilot OAuth/Anthropic OAuth/vLLM/Ollama），<strong>Provider Routing + Fallback 链 + 凭据池（credential pools）</strong>
+- 已接 <strong>ACP Host</strong>、MCP、agentskills.io 开放技能标准；自带 cron 自动化（自然语言定时任务投递到任意 IM）
+- 对 Spark 的意义：记忆系统（自进化技能+nudge+跨会话搜索）与供应商路由（fallback/凭据池）是最值得拿的两块</p>
+<h3 id="42">4.2 同类项目全景：架构级"值得拿"清单（全部拿来，不设上限）<a class="headerlink" href="#42" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>核心架构</th>
+<th>直接可拿的（→ Spark 对应部件）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>OpenHands v1 SDK</strong></td>
+<td>事件流→同步 Conversation 的极简 SDK 化重构（arXiv:2511.03690）</td>
+<td>API 分层范式：<code>Conversation</code> 一等公民 + 同步优先/asyncio 可选；SDK 独立成包（→ 我们的 spark-core API 设计）</td>
+</tr>
+<tr>
+<td><strong>SWE-agent</strong></td>
+<td>ACI 理论：工具接口设计比模型更重要（arXiv:2405.15793）</td>
+<td>编辑工具带 lint 反馈（写完即诊断）；工具 ergonomics 评审流程</td>
+</tr>
+<tr>
+<td><strong>aider</strong></td>
+<td>repo map = git 图 PageRank + tree-sitter 符号</td>
+<td>repo_map.py 加 <strong>git PageRank 排序</strong>（我们目前按目录遍历偏置）</td>
+</tr>
+<tr>
+<td><strong>opencode</strong></td>
+<td>client-server（Hono HTTP + Go TUI）、Stainless 生成类型安全 SDK、LSP 诊断回流、primary/subagent 两层（build/explore/compaction/title）</td>
+<td><strong>LSP 诊断闭环</strong>（edit→didChange→diagnostics→context）；<strong>OpenAPI→SDK 自动生成</strong>（Spark Web API 治理）；compaction/title 用小 agent 的两层制</td>
+</tr>
+<tr>
+<td><strong>Claude Code</strong></td>
+<td>hooks/skills/subagents/plugins 体系、三级记忆</td>
+<td>hooks 事件面扩展（post_message 等）；skills 装载语义对齐</td>
+</tr>
+<tr>
+<td><strong>Codex CLI</strong></td>
+<td>Rust 核心 + <strong>Landlock(Linux)/Seatbelt(macOS) OS 级沙箱</strong></td>
+<td>沙箱后端矩阵加 landlock 目标（bwrap 只是过渡）；<code>/status</code> 式透明面板</td>
+</tr>
+<tr>
+<td><strong>Goose</strong></td>
+<td>"Stop building agents, start harnessing"——小内核+MCP 扩展</td>
+<td>一切能力默认 MCP-first 的原则背书</td>
+</tr>
+<tr>
+<td><strong>Cline/Roo/Kilo</strong></td>
+<td>Plan/Act 双模式；模式=系统提示+工具白名单组合</td>
+<td>声明式模式档案（mode profile），UI 一键切 Plan/Act/Review</td>
+</tr>
+<tr>
+<td><strong>Crush</strong></td>
+<td>Catwalk：开源 provider/模型目录</td>
+<td>模型目录数据源（替代我们 routing.py 硬编码矩阵）</td>
+</tr>
+<tr>
+<td><strong>Gemini CLI / Qwen Code / iFlow</strong></td>
+<td>开源 CLI 矩阵、国内生态</td>
+<td>Qwen Code 对国产模型的兼容细节测试用例</td>
+</tr>
+<tr>
+<td><strong>Trae / Cursor</strong></td>
+<td>IDE 壳 + 可切换 agent；IDE mode/Agent mode 无缝切换</td>
+<td>见 4.4 IDE 模式设计</td>
+</tr>
+<tr>
+<td><strong>pi</strong></td>
+<td>极简内核、上下文全透明、会话格式文档化可回放</td>
+<td><strong>上下文审计</strong>（每次请求可回放/可视化）；"克制清单"反向约束</td>
+</tr>
+<tr>
+<td><strong>ZCode / Qoder</strong></td>
+<td>消息级 Undo/Reapply、Usage 面板、Bot 渠道</td>
+<td>双粒度回滚（消息级+任务级）；Usage 面板接真实计量</td>
+</tr>
+</tbody>
+</table>
+<h3 id="43">4.3 生态替换地图（"好的就换"——自研部件 → 生态件）<a class="headerlink" href="#43" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Spark 现有自研</th>
+<th>替换/增强方案</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>loop 手写 while</td>
+<td><strong>LangGraph</strong>（interrupt=审批、SqliteSaver=turn 级恢复、子图=子代理）</td>
+<td>✅ 已拍板迁入，v0.10</td>
+</tr>
+<tr>
+<td>routing.py 硬编码矩阵</td>
+<td><strong>models.dev / Crush Catwalk 数据源</strong> + litellm router</td>
+<td>替换为数据驱动目录</td>
+</tr>
+<tr>
+<td>单 provider 假设</td>
+<td>litellm 已在用 → 补 <strong>fallback 链 + 凭据池</strong>（学 hermes）</td>
+<td>增强</td>
+</tr>
+<tr>
+<td>repo_map 三桶</td>
+<td>aider 式 <strong>git PageRank</strong></td>
+<td>增强</td>
+</tr>
+<tr>
+<td>启发式 token</td>
+<td>litellm stream usage 回填；不可回填才标 estimated</td>
+<td>修复 P1</td>
+</tr>
+<tr>
+<td>bwrap 沙箱</td>
+<td>先修 <code>--share-net</code>（P0），中期加 <strong>landlock 后端</strong></td>
+<td>修复+扩展</td>
+</tr>
+<tr>
+<td>Compactor 直调 litellm</td>
+<td>走 Provider 抽象；备选 LlamaIndex 保留</td>
+<td>修复 P1</td>
+</tr>
+<tr>
+<td>FTS 手删索引</td>
+<td>迁移到 <strong>SQLite triggers</strong> 维护 FTS</td>
+<td>修复 P0 的治本方案</td>
+</tr>
+<tr>
+<td>skills 手扫描</td>
+<td>对齐 <strong>agentskills.io / Claude Skills 开放标准</strong>（含 ~/.claude/skills 全局层）</td>
+<td>对齐</td>
+</tr>
+<tr>
+<td>记忆抽取</td>
+<td>学 hermes：任务后自动产 SKILL.md + 使用中自改进 + nudge 机制</td>
+<td>路线图</td>
+</tr>
+<tr>
+<td>手写 MCP bridge</td>
+<td>MCP 官方 SDK 全能力（resources/prompts/sampling/elicitation/OAuth/streamable HTTP）</td>
+<td>补全</td>
+</tr>
+<tr>
+<td>手写 HTTP 层</td>
+<td>评估 FastAPI/OpenAPI → <strong>自动生成类型安全客户端</strong>（学 opencode+Stainless）</td>
+<td>路线图</td>
+</tr>
+<tr>
+<td>无 IDE 协议</td>
+<td><strong>ACP server</strong>（Zed 已成熟、社区在扩散）</td>
+<td>新增</td>
+</tr>
+<tr>
+<td>CHANGELOG 手写</td>
+<td><strong>release-please</strong> 自动化</td>
+<td>新增</td>
+</tr>
+</tbody>
+</table>
+<h3 id="44-ide-ide-agent">4.4 IDE 模式设计（一键切换 IDE / 一键切换 Agent）<a class="headerlink" href="#44-ide-ide-agent" title="Permanent link">&para;</a></h3>
+<p><div class="highlight"><pre><span></span><code>┌─ Spark 内核（harness 层：审批/检查点/记忆/MCP/skills 统一） ─┐
+│  Agent 档案（一键切换，hermes model 式）：                     │
+│   spark-native │ claude-code │ codex-exec │ glm │ ...        │
+│  接口层（一键切换 IDE/前端）：                                 │
+│   ACP server ─→ Zed / 任何 ACP 客户端                         │
+│   HTTP+OpenAPI ─→ Spark Web / 第三方（Cursor 式外挂宿主）      │
+│   TUI ─→ 终端            Desktop ─→ EXE 壳                   │
+└──────────────────────────────────────────────────────┘
+</code></pre></div>
+- <strong>Agent 切换</strong>：会话级 <code>agent profile</code>——<code>spark agent use claude-code</code>（以 ACP/CLI 子进程方式驱动外部 agent，UI/审批/检查点/记忆仍是 Spark 的）→ "壳不换、大脑随便换"
+- <strong>IDE 切换</strong>：Spark 常驻 server（HTTP+ACP），<code>spark ide attach zed|vscode|web</code> 一键接管当前会话；会话状态在服务端，前端随意换
+- 这是 dsh"harness 化"+ Trae/Cursor"agent 可换"思路的本地化组合，也是与单体内核竞品的结构差异</p>
+<h3 id="45">4.5 分发双轨（确认不冲突）<a class="headerlink" href="#45" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>最快路径</strong>：<code>uvx spark-agent</code> / <code>pipx install spark-agent</code> + 五平台一键安装脚本（国内镜像从 Gitee/GitCode 直装）→ 先行</li>
+<li><strong>软件轨</strong>：桌面 EXE（已有 PyInstaller spec）= "安装即用的软件"，与 pip 并行；后续补自动更新通道与签名</li>
+<li>两轨共用同一版本号与 release-please 自动 CHANGELOG</li>
+</ol>
+<h3 id="46">4.6 差异化头脑风暴（大胆版——与市面开源的真实区别）<a class="headerlink" href="#46" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>上下文合同（Context Contract）</strong>：学 pi 但做成产品级——每个请求的完整装配（system/注入/裁剪/压缩决策）落盘可回放，Web 端可视化"这轮模型到底看到了什么"。<strong>没有任何竞品把上下文透明度做成功能</strong>，这是开发者信任的硬卖点。</li>
+<li><strong>出网黑匣子</strong>：把"本地优先"从口号做成<strong>可验证</strong>——可选本地审计代理，记录/放行/拦截 agent 的每次出网（web 工具、MCP HTTP、shell curl），一键导出合规报告。企业内网刚需，竞品全无。</li>
+<li><strong>双粒度时间机器</strong>：git_memory 的任务级 worktree+squash（已有）× ZCode 式消息级 Undo → "检查点/消息/任务"三层回滚矩阵，UI 统一成时间轴。</li>
+<li><strong>自进化技能库（全本地）</strong>：hermes 的自进化思路 + 我们的 skills：任务结束自动沉淀 SKILL.md、使用中自改进、nudge 驱动记忆固化——"越用越懂你"但数据不出机器。</li>
+<li><strong>中国网络原生 harness</strong>：MCP 注册表国内可达性探测（已做）扩展为全链路——模型路由带可达性维度、安装脚本走 Gitee/GitCode 镜像、插件目录含国内可达性标注。这是 OpenAI/Anthropic 系结构上做不了的。</li>
+<li><strong>Harness 可换内核</strong>（4.4）：Spark 统一座舱，Claude Code/Codex/GLM 都能当大脑——把竞品变成我们的可选项，而不是敌人。</li>
+<li><strong>Creator mode 本地版</strong>（学 dsh）：对话里生成/改进 skill、hook、MCP 配置，GitHub topic + 内置目录双轨分发插件。</li>
+<li><strong>评测驱动发布</strong>：已有 evals harness + perf budgets——每个 release 附"能力分数卡"（场景通过率、耗时、token 成本），版本间可对比。透明度即营销。</li>
+<li><strong>IM 即 IDE</strong>（学 hermes）：飞书/微信/Telegram 网关进程，手机上审批/派活/收 diff——国内团队协作场景。</li>
+<li><strong>五端五平台工程秀</strong>：MIT + 五平台镜像 + CI 全绿 + 分数卡，本身就是开源工程标杆叙事。</li>
+</ol>
+<h3 id="47">4.7 记录在案的其他好东西（未指定来源的"你觉得好就拿"授权项）<a class="headerlink" href="#47" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>prompt caching 编排</strong>（opencode ProviderTransform.applyCaching）：国产模型缓存计价差异大，值得做进 provider 层</li>
+<li><strong>结构化分片工具结果</strong>（pi）：工具结果结构化分 part，前端/回放/压缩各自取用</li>
+<li><strong>差异化渲染 TUI</strong>（pi retained-mode）：解决闪烁，TUI 体验对标</li>
+<li><strong>会话格式文档化</strong>（pi）：sessions.jsonl 公开 schema，社区可做回放器/分析器</li>
+<li><strong>credential pools + fallback 链</strong>（hermes）：多 key 轮换 + 失败转移</li>
+<li><strong>cron + IM 投递</strong>（hermes）：定时任务自然语言配置</li>
+<li><strong>Plan/Act/Review 模式档案</strong>（Cline/Kilo）</li>
+<li><strong>GitHub 回应式协作</strong>（opencode 生态）：被 @ 时在 CI 里干活——Spark 云 CI 模式可后置</li>
+</ul>
+<hr />
+<h2 id="2026-10-17_2">第五部分：独有性严格核验（2026-10-17 深夜，证伪式调研）<a class="headerlink" href="#2026-10-17_2" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>方法：对第四部分每条"差异化"主张主动找反例（官方文档/生态目录/竞品仓库）。
+结论先行：<strong>没有任何一条是发明级独有。</strong> 该批评完全成立。</p>
+</blockquote>
+<h3 id="51">5.1 逐条核验表<a class="headerlink" href="#51" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>主张</th>
+<th>反例（已核实）</th>
+<th>判定</th>
+<th>残余价值（正确表述）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>换大脑不换壳</td>
+<td>dsh 模型适配器+四源迁移向导（Claude Code/Codex/OpenCode/Hermes→dsh，迁会话/记忆/技能）；<strong>iPolloWork</strong>："unified multi-engine workspace for Codex/DSH/OpenCode"，企业级本地优先；Vibe Kanban/Claude Squad 编排多家 agent</td>
+<td>❌ 不独有</td>
+<td>我们做的是"统一信任层的多内核"，不是多内核本身</td>
+</tr>
+<tr>
+<td>任务级时间机器</td>
+<td>Claude Code <strong>/rewind</strong> 官方 checkpointing（每 prompt 检查点，代码+对话同回滚）；aider auto-commit+/undo；Vibe Kanban worktree 隔离</td>
+<td>❌ 大部存在</td>
+<td>残余：task 语义（分支+squash 回主干）与统一时间轴 UI</td>
+</tr>
+<tr>
+<td>上下文可回放</td>
+<td>Langfuse/LangSmith <strong>自托管</strong>全量 trace（prompt payload 级）；opencode session export/share；opencode-replay</td>
+<td>❌ 旁挂生态成熟</td>
+<td>残余：零部署内建 + 证据文件化；方案改为 OTel→Langfuse 兼容</td>
+</tr>
+<tr>
+<td>成本台账</td>
+<td><strong>litellm proxy</strong> spend tracking/tag budgets（官方有 Claude Code 粒度归账教程）</td>
+<td>❌ 能力已存在</td>
+<td>残余：内嵌化——"装上就有" vs "要运维一套 proxy"</td>
+</tr>
+<tr>
+<td>出网审计</td>
+<td>Claude Code 企业网络配置（代理/环境变量治理）+ TLS inspection 拼凑；dsh 生态有 Security &amp; Governance 插件分类</td>
+<td>⚠️ 拼凑存在，开箱证据级未见成熟实现</td>
+<td><strong>残余最强的一条</strong>，但表述为"集成完整性"而非发明</td>
+</tr>
+<tr>
+<td>国产多模型原生</td>
+<td>iFlow CLI（阿里，免费多模型 Qwen3-Coder/Kimi K2，hooks/SDK）；CodeBuddy CLI（腾讯）；Qwen Code</td>
+<td>❌ 拥挤赛道</td>
+<td>残余：无厂商绑定（也不绑阿里/腾讯）+ MIT + 五端</td>
+</tr>
+<tr>
+<td>自进化技能库</td>
+<td>hermes 完整实现（任务后建技能/自改进/nudge）</td>
+<td>❌ hermes 领跑</td>
+<td>我们是集成者，学其设计</td>
+</tr>
+<tr>
+<td>Creator mode</td>
+<td>dsh 原生（聊天生成插件+热加载）</td>
+<td>❌</td>
+<td>集成，本地 Python 生态版</td>
+</tr>
+<tr>
+<td>IM 网关</td>
+<td>hermes 五通道（TG/Discord/Slack/WhatsApp/Signal）</td>
+<td>❌</td>
+<td>残余：飞书/微信优先的国内通道</td>
+</tr>
+<tr>
+<td>评分卡发布</td>
+<td>SWE-bench/OpenHands 公开评测惯例</td>
+<td>❌ 惯例</td>
+<td>工程实践，不称特色</td>
+</tr>
+</tbody>
+</table>
+<h3 id="52">5.2 核验后的残余优势（就四条，全部是"组合与执行"不是"发明"）<a class="headerlink" href="#52" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>R1 信任链一体化</strong>：审批签名 + 出网审计 + 上下文回放 + 回滚，<strong>同一数据模型、同一时间轴、导出即证据包</strong>。竞品的对应物全是旁挂/拼凑（Langfuse 要部署、企业拼 TLS 检查、Claude Code 无审计文件）。</li>
+<li><strong>R2 内嵌 vs 旁挂</strong>：成本归账、观测、沙箱、fallback——竞品要装运维一套 proxy/面板，Spark 装上就有。部署形态差异，不是功能差异。</li>
+<li><strong>R3 开放格式反锁定</strong>：sessions/上下文 JSONL 公开 schema + OTel 标准导出 + MIT。数据随时搬走，这是对"订阅绑架"的真实差异化。</li>
+<li><strong>R4 工程执行力</strong>：五端同源、五平台镜像、CI、分数卡、证伪式核验文化本身。</li>
+</ul>
+<h3 id="53-hr">5.3 企业/HR 问"你到底有什么用"的现实话术（禁用"本地化"等烂大街词）<a class="headerlink" href="#53-hr" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>对掏钱的人</strong>：同一个任务，模型路线差 10–20 倍成本；Spark 把预算、降级链、按任务归账做成引擎内置——AI 开销从"黑盒订阅"变成"带台账的工程支出"。</li>
+<li><strong>对交差的人</strong>：每个 agent 任务自动产出三份可归档文件——审计日志、成本流水、上下文回放。安全审查和财务流程直接接，不用为 AI 单开流程。</li>
+<li><strong>对干活的人</strong>：并行任务编排（worktree）+ 团队规范自动执行（AGENTS.md+hooks）+ 夜间批处理——工程师从"盯着 agent 干活"变成"验收它产出的 PR"。</li>
+<li><strong>对面试官/HR（个人层面）</strong>：完整交付过一个跨五端、五平台分发、有 CI/评测/文档体系的开源系统；所有卖点做过证伪式核验并公开否定了自己一半的初始判断——这展示的是工程判断力，而工程判断力是招人时最贵的东西。</li>
+</ul>
+<hr />
+<h2 id="2026-10-17_3">第六部分：全量采纳决议 + 横向扩展原则（2026-10-17 深夜第三轮）<a class="headerlink" href="#2026-10-17_3" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>全量纳入</strong>：上一轮头脑风暴的全部候选（含此前"不推荐"的 IM 网关、插件市场治理）全部进入计划；排序原则=先信任链后通道（AEF 立住，通道类才有差异化载体）。里程碑扩为 P0–P5，见 master plan §10。</li>
+<li><strong>大招 A 采纳</strong>：AEF（Agent Evidence Format）开放标准 + Spark 作为参考实现 + <code>aef-export</code> 兼容转换器（dsh/opencode/CC 存储互转）。这是"自研变力干将"的主路径：<strong>做标准的主人，不做功能的内卷者</strong>。</li>
+<li><strong>大招 B 采纳</strong>：座舱五件套（审批/审计/回放/回放/计账）拆为可独立 pip 安装的嵌入库，允许竞品集成——走"成为基础设施"路线。</li>
+<li><strong>横向扩展总原则</strong>（新）：每个已有功能都视为扩展面，扩展≠照抄——每项必须写清"生态先例是谁 + 我们改什么"，否则不立项。18 项横向扩展地图定稿于 master plan §5.5（H1–H18），先例已核实（CC 30 hook 事件/四层设置、opencode small_model/commands/keybinds、codex profiles、Roo checkpoints、Gemini extensions、agentskills RFC、claude-code-action、Crush themes）。</li>
+<li>关键空白确认（先例调研中零成熟实现，属真空白）：MCP 沙箱运行时、PR 证据包、provenance blame、夜间安全包、团队记忆 MR 化、上下文火焰图。</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "content.code.copy"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  </body>
+</html>
