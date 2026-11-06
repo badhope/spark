@@ -99,6 +99,13 @@ a = Analysis(
         'spark.desktop',
         'spark.tools',
         'spark.tools.web',
+        # tree-sitter 语法包在 repo_map.py / wiki.py 里是函数内导入，
+        # PyInstaller 静态分析看不到；缺了它们打包版的 `spark wiki`
+        # 会静默降级成 0 个符号（不报错，只是文档空白）。
+        'tree_sitter',
+        'tree_sitter_python',
+        'tree_sitter_javascript',
+        'tree_sitter_typescript',
         'spark.acp_server',
         'acp',
         # litellm 资源目录（空 __init__.py + JSON 数据，仅经 importlib.resources 触达）
