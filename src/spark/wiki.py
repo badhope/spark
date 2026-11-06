@@ -197,8 +197,8 @@ def _hash_file(path: Path) -> str:
         return ""
 
 
-def scan(root: Path, cfg: WikiConfig) -> list[ModuleDoc]:
-    """遍历工作区，产出每个源文件的模块条目（不含摘要）。
+def _select_paths(root: Path, cfg: WikiConfig) -> list[Path]:
+    """按"代码优先"规则选出要索引的文件（不解析内容）。
 
     源码文件优先占配额：``_iter_files`` 按目录字母序返回，如果直接截断，
     ``assets/`` 这类目录里的二进制会把预算吃光（首版实测 40 个名额全被
@@ -219,19 +219,35 @@ def scan(root: Path, cfg: WikiConfig) -> list[ModuleDoc]:
     selected = sorted(code)[: cfg.max_files]
     if len(selected) < cfg.max_files:
         selected += sorted(docs)[: cfg.max_files - len(selected)]
+    return selected
 
-    modules: list[ModuleDoc] = []
-    for path in selected:
-        rel = path.relative_to(root).as_posix()
-        modules.append(
+
+def _candidate_docs(root: Path, cfg: WikiConfig) -> list[ModuleDoc]:
+    """只做文件枚举与 stat，不解析符号。
+
+    符号解析是这条链路里最贵的一步，必须由调用方按内容哈希决定是否值得做；
+    这里返回的 ``symbols`` 为空，命中缓存时会被缓存里的完整文档替换。
+    """
+    docs: list[ModuleDoc] = []
+    for path in _select_paths(root, cfg):
+        docs.append(
             ModuleDoc(
-                path=rel,
+                path=path.relative_to(root).as_posix(),
                 lines=_count_lines(path),
                 bytes=_size(path),
-                symbols=extract_symbols(path) if path.suffix in _EXT_LANG else [],
             )
         )
-    modules.sort(key=lambda m: m.path)
+    docs.sort(key=lambda m: m.path)
+    return docs
+
+
+def scan(root: Path, cfg: WikiConfig) -> list[ModuleDoc]:
+    """遍历工作区并解析符号（全量；测试与一次性检查用）。"""
+    modules = _candidate_docs(root, cfg)
+    for doc in modules:
+        path = root / doc.path
+        if path.suffix in _EXT_LANG:
+            doc.symbols = extract_symbols(path)
     return modules
 
 
@@ -321,16 +337,34 @@ def _write_cache(out: Path, data: dict[str, Any]) -> None:
     (out / CACHE_NAME).write_text(payload, encoding="utf-8")
 
 
+def _cached_doc(entry: dict[str, Any]) -> ModuleDoc | None:
+    """从缓存条目还原一个完整的 ModuleDoc（含符号）。
+
+    缓存必须存符号表而不只是摘要：否则"增量"只省了写盘，
+    tree-sitter 每轮仍要重新解析全部文件——实测 240 文件全量 1.57s、
+    "增量" 1.41s，几乎没有收益。
+    """
+    try:
+        doc = ModuleDoc.from_dict(entry["doc"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return doc if doc.path else None
+
+
 def build_wiki(
     root: Path,
     cfg: WikiConfig | None = None,
     summarizer: Any = None,
+    refresh: bool = False,
 ) -> dict[str, Any]:
     """生成 wiki 到 ``<root>/<cfg.out_dir>``，返回统计摘要。
 
     ``summarizer(path, symbols) -> str`` 可选；只有它不为 None 且
     ``cfg.summarize`` 为真时才调用。异常一律吞掉并回退到无摘要，
     因为摘要只是锦上添花，不能阻断产物生成。
+
+    ``refresh=True`` 忽略缓存全量重建。命中缓存的文件既不重新解析、
+    也不重新写盘，只有 INDEX.md 与新增/变更的模块被写出。
     """
     cfg = cfg or WikiConfig()
     root = root.resolve()
@@ -338,30 +372,56 @@ def build_wiki(
     out.mkdir(parents=True, exist_ok=True)
     (out / MODULE_DIR).mkdir(parents=True, exist_ok=True)
 
-    cache = _read_cache(out)
-    modules = scan(root, cfg)
-    built = skipped = 0
-    summaries: dict[str, str] = {}
+    cache = {} if refresh else _read_cache(out)
+    # 缓存键带 max_files：预算变化会改变入选文件集合，不能沿用旧结果。
+    cache_key = f"budget:{cfg.max_files}"
+    if cache.get(cache_key) != cfg.max_files:
+        cache = {}
+        cache[cache_key] = cfg.max_files
 
-    for doc in modules:
+    modules: list[ModuleDoc] = []
+    built = skipped = 0
+    new_cache: dict[str, Any] = {cache_key: cfg.max_files}
+
+    for doc in _candidate_docs(root, cfg):
         abs_path = root / doc.path
         digest = _hash_file(abs_path)
-        cached = cache.get(doc.path, {})
-        if cached.get("hash") == digest and isinstance(cached.get("summary"), str):
-            doc.summary = cached["summary"]
-        elif cfg.summarize and summarizer is not None and doc.symbols:
+        entry = cache.get(doc.path)
+        entry_dict = entry if isinstance(entry, dict) else {}
+        reused = (
+            _cached_doc(entry_dict) if entry_dict.get("hash") == digest else None
+        )
+        if reused is not None:
+            reused.summary = str(entry_dict.get("summary") or "")
+            modules.append(reused)
+            new_cache[doc.path] = {"hash": digest, "summary": reused.summary, "doc": reused.to_dict()}
+            skipped += 1
+            continue
+
+        # 缓存未命中才解析符号——这一步是整条链路里最贵的，
+        # 放在哈希比较之后，命中缓存的运行就不再付出它。
+        if not doc.symbols and abs_path.suffix in _EXT_LANG:
+            doc.symbols = extract_symbols(abs_path)
+        # 摘要在符号解析之后：summarizer 拿到的符号表是真实的，
+        # 先算摘要会把空列表传进去，模型只能泛泛而谈。
+        if cfg.summarize and summarizer is not None and doc.symbols:
             try:
                 doc.summary = str(summarizer(doc.path, doc.symbols) or "").strip()
             except Exception:
                 doc.summary = ""
-        summaries[doc.path] = doc.summary
-        if cached.get("hash") == digest:
-            skipped += 1
-        else:
-            built += 1
-        cache[doc.path] = {"hash": digest, "summary": doc.summary}
+        modules.append(doc)
+        new_cache[doc.path] = {"hash": digest, "summary": doc.summary, "doc": doc.to_dict()}
+        built += 1
 
+    modules.sort(key=lambda m: m.path)
+
+    # INDEX.md 每次都写（它含生成时间与统计，必须反映本次结果）；
+    # 模块文档只在内容变化时写，避免无意义的文件 mtime 抖动。
+    existing = {p.name for p in (out / MODULE_DIR).glob("*.md")}
     for doc in modules:
+        entry = cache.get(doc.path) or {}
+        if entry.get("hash") == new_cache[doc.path]["hash"] and _slug(doc.path) in existing:
+            continue
         (out / MODULE_DIR / _slug(doc.path)).write_text(_render_module(doc), encoding="utf-8")
 
     index = _render_index(root, modules, cfg)
@@ -373,7 +433,7 @@ def build_wiki(
         if stale.name not in live:
             stale.unlink(missing_ok=True)
 
-    _write_cache(out, cache)
+    _write_cache(out, new_cache)
     return {
         "modules": len(modules),
         "symbols": sum(len(m.symbols) for m in modules),
@@ -382,6 +442,7 @@ def build_wiki(
         "out_dir": str(out),
         "index": str(out / INDEX_NAME),
     }
+
 
 def _render_index(root: Path, modules: list[ModuleDoc], cfg: WikiConfig) -> str:
     total_lines = sum(m.lines for m in modules)

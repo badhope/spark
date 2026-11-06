@@ -406,9 +406,7 @@ def wiki_cmd(
         summarizer = _make_wiki_summarizer(cfg)
 
     wiki_cfg = WikiConfig(max_files=max(1, max_files), summarize=summarize, out_dir=out_dir)
-    if refresh:
-        (workdir / out_dir / ".cache.json").unlink(missing_ok=True)
-    stats = build_wiki(workdir, wiki_cfg, summarizer=summarizer)
+    stats = build_wiki(workdir, wiki_cfg, summarizer=summarizer, refresh=refresh)
     typer.echo(
         f"◆ Repo Wiki · {stats['modules']} 文件 / {stats['symbols']} 符号 "
         f"（新增或更新 {stats['built']}，命中缓存 {stats['cached']}）"

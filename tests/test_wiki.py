@@ -81,6 +81,51 @@ def test_wiki_incremental_run_reports_cache_hits(tmp_path: Path) -> None:
     assert stats["built"] == 0
 
 
+def test_incremental_run_skips_symbol_parsing(tmp_path: Path, monkeypatch) -> None:
+    """Caching that only skips writes is not incremental.
+
+    First version stored only the summary, so every run re-parsed every file
+    with tree-sitter: 1.37s cold vs 1.41s "cached". The cache now persists the
+    symbol table, so a warm run must not call the parser at all.
+    """
+    import spark.wiki as wiki
+
+    root = _project(tmp_path)
+    build_wiki(root, WikiConfig())
+
+    calls = {"n": 0}
+    real = wiki.extract_symbols
+
+    def counting(path):
+        calls["n"] += 1
+        return real(path)
+
+    monkeypatch.setattr(wiki, "extract_symbols", counting)
+    stats = build_wiki(root, WikiConfig())
+    assert stats["cached"] == stats["modules"]
+    assert calls["n"] == 0, f"warm run still parsed {calls['n']} files"
+
+
+def test_changed_file_is_reparsed_and_others_stay_cached(tmp_path: Path, monkeypatch) -> None:
+    import spark.wiki as wiki
+
+    root = _project(tmp_path)
+    build_wiki(root, WikiConfig())
+    (root / "pkg" / "core.py").write_text(PY_SRC + "\n\ndef added():\n    pass\n", encoding="utf-8")
+
+    calls: list[str] = []
+    real = wiki.extract_symbols
+
+    def counting(path):
+        calls.append(Path(path).name)
+        return real(path)
+
+    monkeypatch.setattr(wiki, "extract_symbols", counting)
+    stats = build_wiki(root, WikiConfig())
+    assert stats["built"] == 1
+    assert calls == ["core.py"]
+
+
 def test_wiki_removes_module_docs_for_deleted_files(tmp_path: Path) -> None:
     root = _project(tmp_path)
     build_wiki(root, WikiConfig())
