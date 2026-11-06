@@ -374,6 +374,83 @@ async def _exec_async(
         store.close()
 
 
+@app.command("wiki", help="从源码结构生成可追溯的本地项目文档（tree-sitter，离线可重复）")
+def wiki_cmd(
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    refresh: bool = typer.Option(False, "--refresh", help="忽略缓存，全量重建"),
+    summarize: bool = typer.Option(False, "--summarize", help="额外用模型生成每个模块的一句话摘要（需要真实 provider）"),
+    max_files: int = typer.Option(240, "--max-files", help="最多索引的文件数"),
+    out_dir: str = typer.Option(".spark/wiki", "--out-dir", help="输出目录（相对 workdir）"),
+    model: str | None = typer.Option(None, "--model"),
+    provider: str | None = typer.Option(None, "--provider"),
+    config: Path | None = typer.Option(None, "--config"),
+) -> None:
+    """生成 ``<workdir>/.spark/wiki/``：INDEX.md + 每个模块一份符号表。
+
+    结构事实全部来自 tree-sitter 静态解析，不需要网络、不需要模型，
+    产物可 diff；``--summarize`` 才会调用模型补一句摘要。
+    """
+    from spark.wiki import WikiConfig, build_wiki
+
+    workdir = workdir.resolve()
+    if not workdir.is_dir():
+        typer.echo(f"not a directory: {workdir}", err=True)
+        raise typer.Exit(2)
+
+    summarizer = None
+    if summarize:
+        cfg = _common_cfg(workdir, config, None, model, provider)
+        if cfg.provider.name == "mock":
+            typer.echo("--summarize needs a real model; pass --provider/--model", err=True)
+            raise typer.Exit(2)
+        summarizer = _make_wiki_summarizer(cfg)
+
+    wiki_cfg = WikiConfig(max_files=max(1, max_files), summarize=summarize, out_dir=out_dir)
+    if refresh:
+        (workdir / out_dir / ".cache.json").unlink(missing_ok=True)
+    stats = build_wiki(workdir, wiki_cfg, summarizer=summarizer)
+    typer.echo(
+        f"◆ Repo Wiki · {stats['modules']} 文件 / {stats['symbols']} 符号 "
+        f"（新增或更新 {stats['built']}，命中缓存 {stats['cached']}）"
+    )
+    typer.echo(f"  {stats['index']}")
+
+
+def _make_wiki_summarizer(cfg):
+    """构造 ``(path, symbols) -> str``；失败由 build_wiki 吞掉并降级。"""
+    import asyncio
+
+    from spark.providers.factory import create_provider
+
+    provider = create_provider(cfg)
+
+    def summarize(path: str, symbols) -> str:
+        names = ", ".join(s.name for s in symbols[:25])
+        prompt = (
+            "用一句中文（不超过 40 字）概括这个文件在项目中的职责，不要写代码，不要客套。\n"
+            f"文件：{path}\n主要符号：{names}\n"
+        )
+
+        async def run() -> str:
+            chunks: list[str] = []
+            async for chunk in provider.stream(
+                messages=[{"role": "user", "content": prompt}],
+                tools=None,
+            ):
+                piece = getattr(chunk, "text", None) or ""
+                if piece:
+                    chunks.append(piece)
+            return "".join(chunks).strip()
+
+        try:
+            text = asyncio.run(run())
+        except Exception:
+            return ""
+        return text.splitlines()[0][:200] if text else ""
+
+    return summarize
+
+
 @app.command("review", help="AI 审查代码变更（默认未提交 diff；--commit/--base 可选范围），只读不改动")
 def review_cmd(
     workdir: Path = typer.Option(Path("."), "--workdir"),
