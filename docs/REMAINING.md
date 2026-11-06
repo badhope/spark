@@ -57,6 +57,16 @@
 | 内置可驱动浏览器 | 📋 | 现在的 web_fetch 是只读阅读，不是可点击/填表的浏览器 |
 | Git PR 工作流 | 📋 | `pr <num>` + GitHub Action；需要 token 权限模型 |
 
+## 已知依赖告警（上游约束，非本仓库可修）
+
+| 告警 | 数量 | 为什么留着 | 解除条件 |
+| --- | --- | --- | --- |
+| `filelock` < 4.2.1（1 high / 9 medium / 3 low） | 13 | `litellm` 硬锁 `filelock>=3.16.1,<4.0`，1.108.2（最新）仍未放宽；强升会破坏 provider 栈 | litellm 放宽约束后随 dependabot 自动升级 |
+| `chromadb` 服务端注入 / RBAC（已关闭并注明理由） | 0 open | 1.5.9 是最新版且无修复版本；spark 只用嵌入式 `PersistentClient`/`EphemeralClient`，从不启动 Chroma HTTP 服务，服务端攻击面不存在 | 上游发布修复版本 |
+
+> 另：`data-agent/` 与 `api/` 下的 326 条告警对应的清单文件在 v0.9.6 前已从仓库删除，
+> GitHub 不会自动回收，已按 "not_used" 批量关闭并在注释里写明原因。
+
 ## 明确不做
 
 | 能力 | 理由 |
