@@ -938,6 +938,33 @@ export async function knowledgeAction(body: Record<string, unknown>): Promise<{
   )
 }
 
+/** Repo Wiki（`spark wiki` 的 Web 面）：生成 / 读取 / 清理本地项目文档。 */
+export async function wikiAction(body: Record<string, unknown>): Promise<{
+  exists?: boolean
+  index_path?: string
+  modules?: number
+  out_dir?: string
+  max_files?: number
+  name?: string
+  content?: string
+  chars?: number
+  truncated?: boolean
+  ok?: boolean
+  removed?: boolean
+  built?: number
+  cached?: number
+  symbols?: number
+  error?: string
+}> {
+  return readJson(
+    await fetchWithTimeout("/api/wiki", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  )
+}
+
 /** `!cmd` 内联 shell：直接在工作目录执行一条命令（不进对话历史）。 */
 export async function runInlineShell(command: string): Promise<{
   ok: boolean

@@ -7,6 +7,7 @@ import PromptsSection from "./PromptsSection"
 import PluginsSection from "./PluginsSection"
 import ShortcutsSection from "./ShortcutsSection"
 import KnowledgeSection from "./KnowledgeSection"
+import WikiSection from "./WikiSection"
 import AutomationsSection from "./AutomationsSection"
 import DebugSection from "./DebugSection"
 import { McpRegistryModal } from "./McpRegistryModal"
@@ -58,6 +59,7 @@ type Tab =
   | "plugins"
   | "shortcuts"
   | "knowledge"
+  | "wiki"
   | "project"
   | "automations"
   | "debug"
@@ -87,6 +89,7 @@ const TABS: { key: Tab; labelKey: TranslationKey; icon: React.ReactNode }[] = [
   { key: "plugins", labelKey: "tab.plugins", icon: <IconFolder size={14} /> },
   { key: "shortcuts", labelKey: "tab.shortcuts", icon: <IconCommand size={14} /> },
   { key: "knowledge", labelKey: "tab.knowledge", icon: <IconBrain size={14} /> },
+  { key: "wiki", labelKey: "tab.wiki", icon: <IconFile size={14} /> },
   { key: "project", labelKey: "tab.project", icon: <IconSettings size={14} /> },
   { key: "automations", labelKey: "tab.automations", icon: <IconClock size={14} /> },
   { key: "debug", labelKey: "tab.debug", icon: <IconBug size={14} /> },
@@ -1423,6 +1426,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
           {tab === "shortcuts" && <ShortcutsSection />}
 
           {tab === "knowledge" && <KnowledgeSection />}
+          {tab === "wiki" && <WikiSection />}
 
           {tab === "mcp" && (
             <fieldset disabled={busy === "save"} className="flex flex-col gap-4">
@@ -1911,10 +1915,10 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
           )}
         </div>
 
-        {/* 底部保存：skills/prompts/plugins/shortcuts/knowledge/automations
+        {/* 底部保存：skills/prompts/plugins/shortcuts/knowledge/wiki/automations
             都有自己的即时操作，不该出现统一的"保存设置"按钮；
             memory 页含记忆配置区块，需要统一保存 */}
-        {tab !== "skills" && tab !== "prompts" && tab !== "plugins" && tab !== "shortcuts" && tab !== "knowledge" && tab !== "automations" && tab !== "debug" && (
+        {tab !== "skills" && tab !== "prompts" && tab !== "plugins" && tab !== "shortcuts" && tab !== "knowledge" && tab !== "wiki" && tab !== "automations" && tab !== "debug" && (
           <div className="border-t border-line bg-panel2 px-4 py-3">
             <Button variant="primary" full onClick={handleSave} disabled={busy === "save"}>
               {busy === "save" ? (

@@ -77,6 +77,9 @@ from spark.web._handlers_settings import (  # noqa: F401
     _handle_settings,
     _handle_test,
 )
+from spark.web._handlers_wiki import (  # noqa: F401
+    _handle_wiki,
+)
 
 __all__ = [
     "_handle_agents_md",
