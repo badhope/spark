@@ -31,7 +31,7 @@
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^5.2.0",
     "js-yaml": "^4.3.2",
-    "orval": "^7.0.0",
+    "orval": "^8.22.0",
     "tailwindcss": "^4.1.0",
     "typescript": "~5.9.0",
     "typescript-eslint": "^8.72.0",
