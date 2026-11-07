@@ -2,6 +2,24 @@
 
 本项目遵循语义化版本。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [0.13.1] - 2026-11-07（依赖安全修复）
+
+### 修复
+
+- **nltk 3.10.3 → 3.10.4**：修复高危告警；经 `llama-index-core` 进入，走知识库分词路径。
+- **setuptools 84.0.0 → 84.2.1**：修复中危告警；构建后端依赖。
+- **source-map-js 1.2.1 → 1.2.2**（override）：修复高危告警；仅存在于 `@tailwindcss/node`，不进运行时。
+- **minimatch → 11.0.5**（override）：修复 ReDoS 告警；仅经 eslint 与 typedoc，不进运行时。
+- **`uv.lock` 版本漂移**：lock 里仍记录 `spark-agent 0.12.0`，冻结安装会解析到旧版本元数据。
+- **GitHub Pages 未启用**：`gh-pages` 分支一直在部署，但 Pages 站点从未开启，文档地址 404。
+
+### 已知未修
+
+- `filelock` 13 条告警：`litellm`（含最新 1.108.2）硬锁 `filelock<4.0`，安全修复要求 4.2.1，属上游约束。
+  已记录在 `docs/REMAINING.md`，待上游放宽后自动解除。
+- `chromadb` 4 条服务端告警：1.5.9 为最新且无修复版本；spark 仅用嵌入式客户端，
+  不启动 Chroma HTTP 服务，攻击面不存在（已按 tolerable_risk 关闭并注明理由）。
+
 ## [0.13.0] - 2026-11-07（第十四轮：Repo Wiki + 界面一致性收口）
 
 ### 新增
