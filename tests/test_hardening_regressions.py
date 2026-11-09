@@ -398,7 +398,7 @@ def test_quote_stripping_layer_is_load_bearing(tmp_path: Path) -> None:
     assert _strip_quotes('"/etc/hosts"') == "/etc/hosts"
     assert _strip_quotes("'/etc/hosts'") == "/etc/hosts"
     # cmd.exe removes mid-token quotes before opening the file.
-    assert _strip_quotes('"C:\Win"dows\win.ini') == "C:\Windows\win.ini"
+    assert _strip_quotes(r'"C:\Win"dows\win.ini') == r"C:\Windows\win.ini"
 
 
 def test_ifs_cleanup_layer_is_load_bearing() -> None:

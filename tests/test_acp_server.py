@@ -328,6 +328,10 @@ async def test_e2e_subprocess(tmp_path: Path) -> None:
     (tmp_path / "marker.txt").write_text("seed", encoding="utf-8")
     client = FakeClient()
 
+    # spawn_stdio_transport 只透传白名单环境变量（PATH/HOME 等），SPARK_HOME
+    # 会被过滤掉——子进程将回退到真实 ~/.spark：HOME 在网络盘上直接崩溃
+    # （sqlite disk I/O error），即便本地能过也污染了用户的真实会话库。
+    # 测试隔离必须显式把 SPARK_HOME 塞进 spawn env。
     async with spawn_agent_process(
         lambda _conn: client,
         sys.executable,
@@ -340,6 +344,7 @@ async def test_e2e_subprocess(tmp_path: Path) -> None:
         "mock",
         "--approval",
         "full-auto",
+        env={"SPARK_HOME": str(tmp_path / ".spark-home")},
         cwd=str(tmp_path),
     ) as (conn, process):
         import asyncio as _aio
