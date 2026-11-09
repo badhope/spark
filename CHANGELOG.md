@@ -2,6 +2,26 @@
 
 本项目遵循语义化版本。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [Unreleased]
+
+### 修复
+
+- **bwrap 能力探测从“存在”升级为“可用”**：非特权容器里 which 命中但命名空间
+  挂载被内核拒绝时，workspace 模式每条 shell 都以 exit=1 全灭；现按既有
+  “探测 → 降级”契约回落纯策略检查。
+- **checkpoint msgpack 白名单**：AsyncSqliteSaver 显式登记
+  `spark.models.ToolCall`——上游声明未来版本将阻断未登记类型，且阻断
+  方式是静默降级成 dict，只在崩溃恢复低频路径显形。
+- **sanitize 主目录替换改为边界感知**：裸 `str.replace` 会把 `/home/ali`
+  前缀误伤到 `/home/alibaba`（输出 `~baba`），篡改业务文本并掩盖真实路径。
+
+### 测试
+
+- **e2e_subprocess 显式注入 `SPARK_HOME`**：`spawn_stdio_transport` 按白名单
+  过滤环境变量，`SPARK_HOME` 被静默丢弃后子进程回退真实 `~/.spark`——网络盘
+  HOME 直接崩溃，本地也污染用户会话库。
+- strip-quotes 用例改 raw string，消除 SyntaxWarning。
+
 ## [0.13.1] - 2026-11-07（依赖安全修复）
 
 ### 修复
