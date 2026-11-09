@@ -73,9 +73,13 @@ def sanitize(text: str | None, secrets: tuple[str, ...] = ()) -> str:
     # 修复：使用 lazy 函数存取主目录前缀（不再依赖导入时固化的 _HOME）
     home, home_fwd = _get_home_prefixes()
     if home and home not in ("/", "\\", ""):
-        s = s.replace(home, "~")
+        # 边界感知替换：裸 replace 会把 /home/ali 前缀误伤到 /home/alibaba
+        # （输出 ~baba），篡改正常业务文本。只有当前缀后面紧接名字字符
+        # （字母/数字/下划线）时才不替换；路径分隔符、句点、引号都是合法边界。
+        _bound = r"(?!\w)"
+        s = _re.sub(_re.escape(home) + _bound, "~", s)
         if home_fwd != home:
-            s = s.replace(home_fwd, "~")
+            s = _re.sub(_re.escape(home_fwd) + _bound, "~", s)
     return _strip_traceback(s)
 
 
