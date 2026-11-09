@@ -198,12 +198,10 @@ def diagnose(
     env = probe_runtimes(resolved if resolved.exists() else Path.cwd())
     rows.extend(_runtime_rows(env))
 
-    # --- database dir ---
-    db_dir = home
-    try:
-        db_dir.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        pass
+    # diagnose 是只读报告：此前这里顺手 mkdir SPARK_HOME（违反契约），
+    # 使 home.missing 的自动修复项永远无法触发——看一眼报告就把目录建了，
+    # repair 便无事可做。目录创建归 SessionStore/TurnCheckpointer 构造器
+    # 与 repair 的 home.missing 动作负责。
 
     # --- summary ---
     bad = sum(1 for r in rows if r["level"] == "bad")
