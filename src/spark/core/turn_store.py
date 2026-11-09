@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from spark.config import default_home
@@ -30,6 +31,20 @@ __all__ = [
     "MemoryTurnCheckpointer",
     "persistent_checkpointer",
 ]
+
+def _checkpoint_serde() -> JsonPlusSerializer:
+    """checkpoint 序列化器：显式登记 spark 私有类型的 msgpack 白名单。
+
+    turn 状态（AgentTurnState）里的 ``tool_calls`` 是 ``spark.models.ToolCall``
+    实例。当前版本反序列化未登记类型只打 WARNING；上游已声明未来版本将默认
+    阻断——而且阻断方式是**静默降级成普通 dict**（不抛异常），下游按属性访问
+    ToolCall 会炸出难以定位的 AttributeError，且只在崩溃恢复/审批挂起续跑这条
+    低频路径上显形。提前登记白名单，升级即安全，也消除日志噪音。
+    """
+    return JsonPlusSerializer(
+        allowed_msgpack_modules=[("spark.models", "ToolCall")]
+    )
+
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS pending_turns (
@@ -71,7 +86,7 @@ class TurnCheckpointer:
         await self._conn.execute("PRAGMA synchronous=NORMAL")
         # Keep the WAL from pinning ~4 MB forever in a long-lived web process.
         await self._conn.execute("PRAGMA wal_autocheckpoint=64")
-        self._saver = AsyncSqliteSaver(self._conn)
+        self._saver = AsyncSqliteSaver(self._conn, serde=_checkpoint_serde())
         await self._saver.setup()
         async with self._conn.executescript(_SCHEMA):
             await self._conn.commit()
