@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+### 第二轮深挖（主循环/取消/崩溃恢复）
+
+- **fix(core)：停止真正生效**——同一轮里已判定通过但尚未执行的工具调用，
+  取消后不再执行，改补一条 `cancelled before execution` 结果，保持
+  tool_call/result 配对不变量。
+- **fix(web)：取消/断连唤醒挂起中的 ask_user**——此前按停止后，问题卡片
+  挂起的协程最长要空等 600s 超时才能退出。
+- **fix(graph)：本轮可见文本写入 checkpoint state**——跨进程崩溃恢复时新
+  进程的 `_last_round` 为空，助手文本会静默丢失；旧 checkpoint 缺键时
+  回退旧行为。
+- **fix(core)：verdicts 与 tool_calls 配对 fail-loud**（zip strict=True），
+  状态漂移时显式报错，不再产生孤儿 tool_call。
+- **test**：新增取消排队调用回归（tests/test_cancel_round.py）。
+
 ### 修复
 
 - **bwrap 能力探测从“存在”升级为“可用”**：非特权容器里 which 命中但命名空间
