@@ -501,11 +501,14 @@ class SparkApp(App):
             chat.write(
                 f"[{color}]◀ {event.tool_call.name} [{status}][/color] {rich_escape(payload)}"
             )
-        elif event.type == "plan" and event.data and event.data.get("steps"):
-            steps = event.data["steps"]
-            chat.write("[bold]plan:[/bold] " + " | ".join(
-                str(s.get("title", "")) for s in steps
-            ))
+        elif event.type == "plan" and event.data is not None:
+            steps = event.data.get("steps") or []
+            if steps:
+                chat.write("[bold]plan:[/bold] " + " | ".join(
+                    str(s.get("title", "")) for s in steps
+                ))
+            else:
+                chat.write("[dim]plan: (已清空)[/dim]")
         elif event.type == "context" and event.data and event.data.get("usage"):
             usage = event.data["usage"]
             chat.write(

@@ -1131,14 +1131,23 @@ class AgentLoop:
         self._append_history(assistant)
         msg_id = self.store.append_message(self.session_id, assistant)
         for call, verdict in zip(tool_calls, verdicts, strict=True):
+            update_ok: bool | None = None
             async for event in self._run_tool(call, msg_id, verdict=verdict):
+                if event.type == "tool_end" and event.result is not None:
+                    update_ok = event.result.ok
                 yield event
-            if call.name == "update_plan" and self.registry.plan:
+            if call.name == "update_plan" and update_ok is not False:
+                # plan 事件与「本次更新成功」绑定：
+                # - 失败（参数不合法/被拒绝）时不再重发旧计划——此前旧计划
+                #   非空会触发重发并再次进入审批门（重复打扰用户）；
+                # - 成功时即使计划为空也要发——否则 UI 永远保留过期计划，
+                #   模型无法用空 steps 清屏。
                 self._notify_safe("plan_update", {"steps": self.registry.plan})
                 yield TurnEvent(type="plan", data={"steps": self.registry.plan})
-                # approve-plan：计划一经产出即进入计划审批门
-                async for event in self._maybe_approve_plan(call):
-                    yield event
+                # approve-plan：计划一经产出即进入计划审批门（空计划无物可批）
+                if self.registry.plan:
+                    async for event in self._maybe_approve_plan(call):
+                        yield event
 
     async def _finalize_turn(self, text: str = ""):
         """收尾（原 while 循环体无工具分支，事件语义逐字节等价）。"""
