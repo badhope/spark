@@ -58,6 +58,7 @@ class AgentTurnState(TypedDict, total=False):
     rounds: int                    # 已完成的工具执行轮数
     tool_calls: list[ToolCall]     # 本轮 LLM 产出、待执行的调用
     verdicts: list[dict[str, Any]]  # approve 节点产出：逐 call 的执行判定
+    assistant_text: str            # 本轮 LLM 可见文本：随 checkpoint 落盘，崩溃恢复不丢
     memory_block: str | None       # turn 开始时检索一次的记忆上下文
     error: str | None              # 非空 = 致命停止（turn_error 已发出）
 
@@ -81,6 +82,7 @@ def _make_node_llm(loop: "AgentLoop"):
         return {
             "rounds": int(state.get("rounds", 0)),
             "tool_calls": result.get("tool_calls", []),
+            "assistant_text": result.get("text", ""),
             "error": result.get("error"),
         }
 
@@ -108,9 +110,12 @@ def _make_node_execute(loop: "AgentLoop"):
         tool_calls = state.get("tool_calls") or []
         verdicts = state.get("verdicts") or []
 
-        async for event in loop._execute_round(
-            tool_calls, verdicts, loop._last_round.get("text", "")
-        ):
+        # 优先取 state 里的本轮文本：跨进程崩溃恢复时 loop._last_round
+        # 是新进程的初始值（text=""），模型这轮的可见文本会静默丢失；
+        # state 随 checkpoint 落盘，恢复后仍是原值。旧 checkpoint 无该
+        # 键时回退旧行为，不产生新失败面。
+        round_text = state.get("assistant_text", loop._last_round.get("text", ""))
+        async for event in loop._execute_round(tool_calls, verdicts, round_text):
             writer(event)
 
         return {
@@ -128,7 +133,8 @@ def _make_node_finalize(loop: "AgentLoop"):
         """收尾：assistant 入历史 → 检查点 → context/预算 → turn_end。"""
         writer = get_stream_writer()
 
-        async for event in loop._finalize_turn(loop._last_round.get("text", "")):
+        round_text = state.get("assistant_text", loop._last_round.get("text", ""))
+        async for event in loop._finalize_turn(round_text):
             writer(event)
 
         return {"error": None}

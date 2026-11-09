@@ -48,7 +48,14 @@ def test_route_tools_error_beats_calls() -> None:
 def test_agent_turn_state_fields() -> None:
     """AgentTurnState 是 TypedDict：字段面即控制流契约。"""
     annotations = AgentTurnState.__annotations__
-    assert set(annotations) == {"rounds", "tool_calls", "verdicts", "memory_block", "error"}
+    assert set(annotations) == {
+        "rounds",
+        "tool_calls",
+        "verdicts",
+        "memory_block",
+        "assistant_text",
+        "error",
+    }
 
 
 def test_graph_factory_creates_graph(tmp_path) -> None:
