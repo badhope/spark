@@ -31,11 +31,48 @@ _READ_CHUNK_BYTES = 8192
 _BWRAP_CACHE: dict[str, str | bool | None] = {"path": None, "probed": False}
 
 
+def _bwrap_probe_runnable(path: str) -> bool:
+    """跑一次最小命名空间自检，验证 bwrap 不仅*存在*而且*可用*。
+
+    ``which("bwrap")`` 命中不等于沙箱能建起来：非特权容器（seccomp/无
+    CAP_SYS_ADMIN）里 ``--proc`` 挂载会报 ``Operation not permitted``，
+    此时若照常下发隔离命令，workspace 模式下**每条** shell 都会以
+    exit=1 失败——不是"没隔离"，而是"全挂"。与本模块的既有约定一致
+    （"能力探测 -> 不可用就降级 + 如实回报"），探测失败即返回 False，
+    调用方降级为纯策略检查（check_shell 仍是第一道防线）。
+
+    探测用最小可信组合（userns + proc + dev）：它失败时完整命令必然
+    失败；它通过而完整命令因个别绑定路径缺失失败的极端情况，只会多
+    降级、不会假隔离。
+    """
+    try:
+        completed = subprocess.run(
+            [
+                path,
+                "--unshare-all",
+                "--ro-bind", "/", "/",
+                "--proc", "/proc",
+                "--dev", "/dev",
+                "/bin/sh", "-c", "exit 0",
+            ],
+            capture_output=True,
+            timeout=15,
+        )
+        return completed.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def _bwrap_path() -> str | None:
     if _BWRAP_CACHE["probed"]:
         cached = _BWRAP_CACHE["path"]
         return cached if isinstance(cached, str) else None
     path = shutil.which("bwrap")
+    if path is not None and not _bwrap_probe_runnable(path):
+        logger.info(
+            "bwrap 已安装但当前环境无法建立沙箱命名空间（常见于非特权容器），降级为策略检查"
+        )
+        path = None
     _BWRAP_CACHE["path"] = path
     _BWRAP_CACHE["probed"] = True
     return path
