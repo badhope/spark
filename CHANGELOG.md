@@ -4,6 +4,23 @@
 
 ## [Unreleased]
 
+### 第三轮深挖（规划模块/审查链路/自愈）
+
+- **fix(core)：自动审查不再对鸭子类型 provider 静默失效**——`review_action`
+  此前无条件传 `effort="low"`，不接收该参数的第三方 provider 会 TypeError
+  落进降级分支：审查永远「放行 + degraded」，只有一条 debug 日志。现与主循环
+  同一约定，先探测签名再透传。
+- **fix(review)：统计与审查范围同源**——`diff_stats` 按 target（commit/base/
+  staged）生成 git 参数，此前固定 `git diff HEAD`，commit/base 模式展示的是
+  工作区统计（CLI 只能干脆不显示）；现在三种模式都有真实统计。`parse_review`
+  兼容字符串行号（`"line": "42"`），不再静默丢弃。
+- **fix(plan)：plan 事件与更新成功绑定**——失败的 update_plan 不再重发旧计划
+  （此前会重复触发 approve-plan 审批门）；成功的空计划也会发事件，UI 终于
+  可以清屏；TUI 渲染「(已清空)」。
+- **fix(selfheal)：diagnose 恢复只读契约**——不再顺手 mkdir SPARK_HOME（看一眼
+  健康报告就把目录建了，home.missing 自动修复项因此永远无法触发）。
+- **test**：新增 5 个回归（review×3、plan×2）。
+
 ### 第二轮深挖（主循环/取消/崩溃恢复）
 
 - **fix(core)：停止真正生效**——同一轮里已判定通过但尚未执行的工具调用，
