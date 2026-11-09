@@ -1130,7 +1130,7 @@ class AgentLoop:
         )
         self._append_history(assistant)
         msg_id = self.store.append_message(self.session_id, assistant)
-        for call, verdict in zip(tool_calls, verdicts):
+        for call, verdict in zip(tool_calls, verdicts, strict=True):
             async for event in self._run_tool(call, msg_id, verdict=verdict):
                 yield event
             if call.name == "update_plan" and self.registry.plan:
@@ -1571,6 +1571,18 @@ class AgentLoop:
         prompt 经 approver 回调落定，随后与 graph 路径共用同一执行分派。
         """
         yield TurnEvent(type="tool_start", tool_call=call)
+        if self.cancelled:
+            # 停止必须真的停下来：判定可能早已是 allow，但用户已按下取消——
+            # 本轮尚未执行的排队调用不再执行，只补一条明确的取消结果。
+            # tool_call/result 配对不变量由 _persist_tool 维持，否则下一轮
+            # 请求会因孤儿 tool 消息被 OpenAI 兼容端点直接 400。
+            result = ToolResult(
+                ok=False,
+                payload={"error": "cancelled before execution", "tool": call.name},
+            )
+            await self._persist_tool(call, message_id, result, "cancelled")
+            yield TurnEvent(type="tool_end", tool_call=call, result=result)
+            return
         started = time.monotonic()
         args_summary = json.dumps(call.arguments, ensure_ascii=False, default=str)[:200]
         if verdict is None:
