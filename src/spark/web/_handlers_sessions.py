@@ -23,6 +23,9 @@ def _handle_cancel(handler: HandlerBase, body: dict) -> None:
         state.loop.cancel()
     if state.approver is not None:
         state.approver.cancel()
+    bridge = getattr(state, "question_bridge", None)
+    if bridge is not None:
+        bridge.cancel()
     handler._json(200, {"ok": True})
 
 

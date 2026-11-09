@@ -487,6 +487,11 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
             turn_loop.cancel()
         if approver is not None:
             approver.cancel()
+        # ask_user 挂起时断开/取消：不唤醒 asker，turn 协程最长要空等
+        # 600s 超时才能退出（loop.cancelled 只在 llm 回合检查）。
+        bridge = getattr(state, "question_bridge", None)
+        if bridge is not None:
+            bridge.cancel()
 
     stream = _SSESession(
         handler.wfile,
