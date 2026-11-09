@@ -111,9 +111,21 @@ async def review_action(
     chunks: list[str] = []
     try:
         import asyncio
+        import inspect
+
+        # provider 是鸭子类型：第三方实现可能不接收 effort。无条件传参会让
+        # TypeError 落进下方降级分支——自动审查对这类 provider「永远静默
+        # 失效」且日志只有一条 debug。与 AgentLoop._stream_extra 同一约定：
+        # 先探测签名，仅在支持时透传。
+        stream_extra: dict[str, str] = {}
+        try:
+            if "effort" in inspect.signature(provider.stream).parameters:
+                stream_extra = {"effort": "low"}
+        except (TypeError, ValueError):
+            stream_extra = {}
 
         async def _run() -> None:
-            async for delta in provider.stream(messages, tools=None, effort="low"):
+            async for delta in provider.stream(messages, tools=None, **stream_extra):
                 if getattr(delta, "type", "") == "text" and getattr(delta, "text", None):
                     chunks.append(delta.text)
 

@@ -490,7 +490,7 @@ def review_cmd(
         except ReviewError as exc:
             typer.echo(str(exc), err=True)
             raise typer.Exit(1) from exc
-        stats = diff_stats(workdir, target) if target.mode == "staged" else {}
+        stats = diff_stats(workdir, target)
 
         # 审查轮强制只读：无论用户配置如何，review 都不允许写/执行。
         cfg.agent.approval = "plan-only"

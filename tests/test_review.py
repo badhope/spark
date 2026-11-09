@@ -194,3 +194,51 @@ def test_parse_review_ignores_braces_in_preamble() -> None:
     raw = 'note {not json} then {"summary":"ok","findings":[]}'
     result = parse_review(raw)
     assert result.summary == "ok"
+
+
+def test_reviewer_without_effort_param_still_reviews() -> None:
+    """鸭子类型 provider 不接收 effort 时，审查必须照常工作而非静默降级。"""
+    import asyncio
+
+    from spark.core.review import review_action
+    from spark.models import ChatDelta
+
+    class NoEffortProvider:
+        async def stream(self, messages, tools):
+            yield ChatDelta(type="text", text='{"verdict": "warn", "reason": "risky"}')
+
+    result = asyncio.new_event_loop().run_until_complete(
+        review_action(NoEffortProvider(), "run_shell", {"command": "rm -rf x"}, "/w")
+    )
+    assert result["verdict"] == "warn"
+    assert result["reviewed"] is True
+    assert not result.get("degraded")
+
+
+def test_diff_stats_matches_review_target(monkeypatch) -> None:
+    """commit/base 模式的统计必须与被审查的 diff 同源。"""
+    from spark import review as review_mod
+
+    calls: list[list[str]] = []
+
+    def fake_run(workdir, args):
+        calls.append(list(args))
+        if "--shortstat" in args:
+            return " 1 file changed, 2 insertions(+)"
+        return "a.py\n"
+
+    monkeypatch.setattr(review_mod, "_run_git", fake_run)
+    review_mod.diff_stats(Path("."), ReviewTarget(mode="commit", commit="abc123"))
+    assert any(a[0] == "show" and "abc123" in a for a in calls), calls
+    calls.clear()
+    review_mod.diff_stats(Path("."), ReviewTarget(mode="base", base="main"))
+    assert any(a[0] == "diff" and "main...HEAD" in a for a in calls), calls
+
+
+def test_parse_review_accepts_string_line() -> None:
+    raw = (
+        '{"summary":"s","findings":[{"severity":"low","file":"a.py",'
+        '"line":"42","comment":"c"}]}'
+    )
+    result = parse_review(raw)
+    assert result.findings[0].line == 42

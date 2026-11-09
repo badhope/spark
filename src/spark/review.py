@@ -88,13 +88,26 @@ def collect_diff(workdir: Path, target: ReviewTarget, run=None) -> str:
 def diff_stats(workdir: Path, target: ReviewTarget) -> dict:
     """文件数与增删行数（用于展示，失败不阻塞审查）。
 
+    参数按 ``target.mode`` 生成，与 :func:`collect_diff` 实际审查的 diff
+    同源——此前固定 ``git diff HEAD``，commit/base 模式下展示的是工作区
+    统计，与审查范围不一致（CLI 只能对这两种模式干脆不显示统计）。
+
     ``git diff --shortstat`` 的真实输出是
     `` 12 files changed, 345 insertions(+), 67 deletions(-)``，早先按
     ``(+)`` 后缀切分会先撞上单词 ``insertions`` 而抛 ValueError —— 用正则。
     """
+    if target.mode == "commit":
+        stat_args = ["show", "--shortstat", "--format=", target.commit]
+        name_args = ["show", "--name-only", "--format=", target.commit]
+    elif target.mode == "base":
+        stat_args = ["diff", "--shortstat", f"{target.base}...HEAD"]
+        name_args = ["diff", "--name-only", f"{target.base}...HEAD"]
+    else:
+        stat_args = ["diff", "--shortstat", "HEAD"]
+        name_args = ["diff", "--name-only", "HEAD"]
     try:
-        stat = _run_git(workdir, ["diff", "--shortstat", "HEAD"])
-        files = _run_git(workdir, ["diff", "--name-only", "HEAD"]).splitlines()
+        stat = _run_git(workdir, stat_args)
+        files = _run_git(workdir, name_args).splitlines()
     except ReviewError:
         return {}
     import re
@@ -170,11 +183,19 @@ def parse_review(text: str) -> ReviewResult:
         if severity not in {"high", "medium", "low", "info"}:
             severity = "info"
         line = item.get("line")
+        if isinstance(line, bool):
+            line = None
+        elif isinstance(line, str):
+            # 真实模型常把行号输出成字符串（"line": "42"），此前被静默丢弃。
+            digits = line.strip()
+            line = int(digits) if digits.lstrip("-").isdigit() else None
+        elif not isinstance(line, int):
+            line = None
         result.findings.append(
             ReviewFinding(
                 severity=severity,
                 file=str(item.get("file") or ""),
-                line=int(line) if isinstance(line, int) else None,
+                line=line,
                 comment=str(item.get("comment") or "").strip(),
             )
         )
