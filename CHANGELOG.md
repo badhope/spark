@@ -4,6 +4,75 @@
 
 ## [Unreleased]
 
+### Wave 3：会议纪要与行动项第一增量（2026-11-11）
+
+- **新增 `/office` 工作台**：粘贴会议转写，生成参会人员、议题、决议、行动项；
+  每条决议/行动附来源行号，缺失负责人/截止时间显示“待确认”。
+- **成果物**：Markdown + docx（`python-docx`，`office` extra）；本地 artifact
+  store 保存，API 支持下载；支持人工“批准纪要”。
+- **API**：`/api/v1/office/meetings` 列表/生成/详情/批准/下载。
+- **报告/表格**：`src/spark/control/report.py` + `/api/v1/office/reports`；
+  指标支持 `higher`/`lower` 方向，输出 Markdown、Excel（含柱状图）、Word、PPTX。
+- **PPTX**：会议纪要与报告均可导出演示文稿；`/office` 增加下载 PPTX。
+- **文档导入**：`documents.py` 支持 docx/xlsx/pptx/pdf/eml/msg/text/html 以及
+  图片/扫描 PDF OCR（RapidOCR 本地 ONNX）；会议生成支持 `document_filename`，
+  文件限定在 `SPARK_CONTROL_DOCUMENT_ROOT` 下。
+- **浏览器上传**：`POST /api/v1/office/documents/upload`（multipart，最大 25MB），
+  `/office` 增加文件选择，上传后自动解析并回填文件名；文件名净化、路径逃逸防护。
+- **IMAP 邮箱导入**：`POST /api/v1/office/documents/imap` 按配置拉取最新邮件，
+  保存为 `inbox/*.eml` 并复用文档解析；`/office` 增加“从 IMAP 拉取最新邮件”。
+- **PDF 导出**：会议纪要与报告新增 `pdf_bytes()`（ReportLab + 内置 CJK 字体），
+  下载格式增加 `format=pdf`，页面增加“下载 PDF”。
+- **主应用右侧栏**：默认折叠为 32px 展开把手；标题栏按钮、关闭按钮、把手均可切换；
+  文件树 / 预览 / 网页阅读能力保留。
+- **离线自测**：内置 MockProvider 驱动 `list_dir` 工具调用成功；右侧面板打开并预览
+  `README.md` 正常；内置终端执行 `echo spark-terminal-ok` 输出正确。用于无模型 Key
+  时验证 UI、工具与 PTY 链路。
+- **风格统一**：`/office` 改为与主 Web 应用一致的亮色体系（#f2f2f4 / 白卡片 /
+  #e8620c 橙色 / 同一字体栈），不再使用独立深色主题。
+- **测试**：`tests/test_control_office.py` 4 passed、`tests/test_control_report.py`
+  4 passed、`tests/test_control_documents.py` 17 passed；浏览器实测生成、下载、
+  批准、上传、IMAP 按钮、报告页签与表格列宽问题已修正。
+- 当前为确定性解析，不调用模型；转写不写入任务 payload。
+
+### Wave 2：企业控制面第一增量（2026-11-11）
+
+- **新增 `src/spark/control/`**：FastAPI `/api/v1`，提供 health/me/models/
+  tenants/projects/tasks/artifacts/audit；本地 SQLite + dev auth，生产
+  PostgreSQL + Keycloak OIDC。
+- **数据模型与迁移**：Tenant/Organization/User/Membership/Project/Task/
+  Artifact/AuditEvent；Alembic 初始版本 `7dbcd0bb0272`，SQLite upgrade/check 通过。
+- **认证授权**：dev header 身份（仅回环）+ OIDC Bearer JWT（joserfc/JWKS，
+  校验 exp/iss/aud）；Casbin RBAC，domain=tenant，admin 全权、member 只读。
+- **模型网关接缝**：`ModelGateway` 基于 LiteLLM Router，支持 provider fallback
+  与重试；暂未接管现有 AgentLoop。
+- **CLI/部署**：`spark enterprise` 入口；`deploy/compose.yml`（Postgres 16 +
+  Keycloak 26）、`deploy/keycloak/spark-realm.json`、`docs/ENTERPRISE.md`。
+  本机无 Docker，容器路径未实跑。
+- **依赖**：新增 `enterprise`/`postgres` extras（FastAPI、SQLAlchemy、Alembic、
+  Authlib、Casbin、PyJWT、asyncpg、psycopg）。
+
+### Wave 1：成熟生态替换（2026-11-11）
+
+- **token 计数**：`core/tokens.py` 改用 tiktoken（模型已知时 `encoding_for_model`，
+  否则 `o200k_base`）；tiktoken 不可用时保留原启发式。
+- **工具 schema**：`tools/registry.py` 从 Pydantic 参数模型生成 JSON Schema，
+  去掉手写 schema 与运行时校验的重复；22 个扁平工具已迁移。
+- **定时任务**：`automations.py` 改用 croniter 校验/计算下次运行，删除手写
+  cron 展开与逐分钟试探。
+- **Notebook**：`tools/notebook.py` 改用 nbformat 读写；兼容缺失
+  `nbformat_minor`/cell id/`execution_count` 的历史笔记本。
+- **网页工具**：`tools/web.py` 优先 ddgs 搜索、trafilatura 正文抽取；
+  缺失时回退 Bing/HTMLParser，SSRF 防护不变。
+- **路径匹配**：`policy.py` 优先 wcmatch；`tools/search.py` 用 wcmatch 匹配 glob、
+  用 pathspec 读取 `.gitignore`/`.ignore`。ripgrep 作为 opt-in 加速器留待下一小步。
+- **Windows 内置终端**：`pty/__init__.py` 在 Windows 使用 pywinpty（ConPTY），
+  Linux/macOS 继续 ptyprocess；`platform_compat.kill_process_tree()` 优先 psutil，
+  `tools/bg.py` 复用同一进程树终止实现。
+- **依赖**：核心新增 croniter、nbformat；新增 `platform`/`search`/`notebook`/`pty`
+  extras（wcmatch、psutil、ddgs、trafilatura、nbclient、pywinpty）。
+- **测试**：1437 passed, 3 skipped, 0 failed（497s）；Windows PTY 测试不再跳过。
+
 ### 第三轮深挖（规划模块/审查链路/自愈）
 
 - **fix(core)：自动审查不再对鸭子类型 provider 静默失效**——`review_action`

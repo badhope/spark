@@ -11,7 +11,7 @@
 [![Security](https://github.com/badhope/spark/actions/workflows/security.yml/badge.svg)](https://github.com/badhope/spark/actions/workflows/security.yml)
 
 审批、三平台沙箱、检查点回滚、供应商韧性都是**设计进去的**，不是事后补的。
-同一套 agent loop 跑七种形态；自带任意 OpenAI 兼容端点，无账号、无遥测、无厂商锁定。
+同一套 agent loop 跑八种形态；自带任意 OpenAI 兼容端点，无账号、无遥测、无厂商锁定。
 
 ```bash
 # Linux / macOS —— 一行安装，SHA256 校验
@@ -36,7 +36,7 @@ spark web     # 打开界面（自动挑空闲端口）
 
 | | |
 |---|---|
-| **七种形态，一个大脑** | Web UI · 桌面窗口 · Textual TUI · 可脚本化 CLI · ACP（Zed 等）· MCP Server · A2A Server。同一套循环、同一套工具、同一套权限。 |
+| **八种形态，一个大脑** | Web UI · 桌面窗口 · Textual TUI · 可脚本化 CLI · ACP（Zed 等）· MCP Server · A2A Server · 企业 `/api/v1` 控制面。同一套循环、同一套工具、同一套权限。 |
 | **审批可审计** | 六档审批 × 四档沙箱；通配规则引擎，`deny` 跨 user/project/local 作用域优先；凭据路径保护；token 级 shell 检查。 |
 | **回滚不靠运气** | 每个回合快照工作区（tar.gz + manifest 校验）。文件与对话可一起回滚，非 git 目录同样有效。 |
 | **任务即分支** | `task_begin` → `task_step_commit` → `task_finish`。绿测才允许提交，失败自动废弃分支——是一等工具，不是演示。 |
@@ -72,6 +72,7 @@ spark web     # 打开界面（自动挑空闲端口）
 spark                         # 终端 TUI
 spark web                     # 浏览器界面，绑定 127.0.0.1（自动选端口）
 spark desktop                 # 原生窗口，仅回环
+spark enterprise              # 企业控制面 /api/v1（默认 SQLite + dev auth，仅回环）
 spark exec "任务" --json       # NDJSON 事件流，适合脚本与 CI
 spark review                  # 审查未提交的 diff
 spark wiki --refresh          # 重新生成代码文档
@@ -81,11 +82,12 @@ spark uninstall --list        # 先看清单再决定是否卸载
 
 `spark exec` 每行一个 JSON 事件，最后一行是 `{"type":"final","text":"…"}`，可直接接 `jq`。
 
-## 七种形态
+## 八种形态
 
 | 形态 | 命令 | 场景 |
 |---|---|---|
 | Web UI | `spark web` | 日常对话、文件查看、终端、执行图 |
+| 企业控制面 | `spark enterprise` | `/api/v1`：租户、项目、任务、成果物、审计 |
 | 桌面 | `spark desktop` | 原生 pywebview 窗口，仅回环 |
 | TUI | `spark` | 纯终端 / SSH |
 | CLI | `spark exec "任务" --json` | 自动化、CI、管道 |
@@ -120,6 +122,7 @@ CI 另外跑密钥扫描（gitleaks + trufflehog）、OpenAPI 快照新鲜度、
 | [docs/INSTALL.md](docs/INSTALL.md) | 安装、打包、桌面构建、自动更新、卸载 |
 | [docs/CONFIG.md](docs/CONFIG.md) | 全部配置项与环境变量 |
 | [docs/API.md](docs/API.md) | HTTP API 与 SSE 事件协议 |
+| [docs/ENTERPRISE.md](docs/ENTERPRISE.md) | 企业控制面 `/api/v1`：SQLite/PostgreSQL、Keycloak OIDC、Casbin、Alembic |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 分层与模块边界 |
 | [docs/FEATURES.md](docs/FEATURES.md) | 逐项功能与代码落点 |
 | [docs/A2A.md](docs/A2A.md) | A2A Agent Card、流式与任务生命周期 |

@@ -38,7 +38,7 @@ settings and the next turn uses the real model — no restart.
 
 | | |
 |---|---|
-| **Seven surfaces, one brain** | Web UI · desktop window · Textual TUI · scriptable CLI · ACP (Zed & co.) · MCP server · A2A server. Same loop, same tools, same permissions everywhere. |
+| **Eight surfaces, one brain** | Web UI · desktop window · Textual TUI · scriptable CLI · ACP (Zed & co.) · MCP server · A2A server · enterprise `/api/v1` control plane. Same loop, same tools, same permissions everywhere. |
 | **Approval you can audit** | Six approval modes × four sandbox levels. A wildcard rule engine where `deny` wins across user/project/local scopes. Protected credential paths. Token-level shell checks. |
 | **Rollback without fear** | Every turn snapshots the workspace (tar.gz + manifest verification). Roll back files *and* conversation — works in non-git directories. |
 | **Task-as-branch** | `task_begin` → `task_step_commit` → `task_finish`. Green tests gate each commit; a red run abandons the branch. A first-class tool, not a demo. |
@@ -82,6 +82,7 @@ checkpoints, turn replay, file viewer, web reader, share export, theme, language
 spark                         # TUI
 spark web                     # browser UI on 127.0.0.1 (auto-picks a port)
 spark desktop                 # native window, loopback only
+spark enterprise              # enterprise /api/v1 control plane (SQLite + dev auth by default)
 spark exec "task" --json      # NDJSON event stream for scripts and CI
 spark review                  # audit the uncommitted diff
 spark wiki --refresh          # regenerate the local code wiki
@@ -92,11 +93,12 @@ spark uninstall --list        # show exactly what would be removed
 `spark exec` streams one JSON object per line and ends with
 `{"type":"final","text":"…"}`, so it pipes into `jq` without post-processing.
 
-## Seven surfaces
+## Eight surfaces
 
 | Form | Command | Use case |
 |---|---|---|
 | Web UI | `spark web` | Everyday chat, file viewer, terminal, execution graph |
+| Enterprise API | `spark enterprise` | `/api/v1` control plane: tenants, projects, tasks, artifacts, audit |
 | Desktop | `spark desktop` | Native pywebview window, loopback-only |
 | TUI | `spark` | Pure terminal / SSH |
 | CLI | `spark exec "task" --json` | Automation, CI, piping |
@@ -142,6 +144,7 @@ packaging checks, and a mock-mode agent eval suite on Linux and Windows.
 | [docs/INSTALL.md](docs/INSTALL.md) | Install, package, desktop build, auto-update, uninstall |
 | [docs/CONFIG.md](docs/CONFIG.md) | Every config key and environment variable |
 | [docs/API.md](docs/API.md) | HTTP API and SSE event protocol |
+| [docs/ENTERPRISE.md](docs/ENTERPRISE.md) | Enterprise `/api/v1` control plane: SQLite/PostgreSQL, Keycloak OIDC, Casbin, Alembic |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layering and module boundaries |
 | [docs/FEATURES.md](docs/FEATURES.md) | Feature-by-feature implementation map |
 | [docs/A2A.md](docs/A2A.md) | A2A agent card, streaming, task lifecycle |

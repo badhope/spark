@@ -63,7 +63,7 @@ AgentLoop 是核心引擎，负责管理整个对话回合：
 | 模块 | 作用 |
 |------|------|
 | AGENTS.md | 注入项目级说明，定义工作流与约定 |
-| Token 估算 | `token_count_estimate(text)` → words × 1.3 |
+| Token 估算 | tiktoken（模型已知时用 `encoding_for_model`，否则 `o200k_base`）；不可用时回退启发式 |
 | 自动压缩 | 85% 阈值触发，保留最近 8 条消息 + 分段摘要 |
 | 记忆检索 | 关键词匹配 → LLM 抽取 → 语义检索（降级关键词） |
 
@@ -232,7 +232,7 @@ spark/
 │   │   ├── graph.py         # LangGraph 状态机——ReAct 控制流唯一真相源（llm→tools→finalize）
 │   │   ├── context.py       # 上下文引擎
 │   │   ├── compact.py       # 对话压缩（LlamaIndex + 结构化摘要）
-│   │   ├── tokens.py        # Token 估算
+│   │   ├── tokens.py        # Token 计数（tiktoken；启发式兜底）
 │   │   └── checkpoints.py   # 检查点管理
 │   ├── providers/
 │   │   ├── base.py          # Provider 抽象基类
@@ -257,6 +257,7 @@ spark/
 │   ├── sandbox.py           # 沙箱策略
 │   ├── policy.py            # 工具权限策略
 │   ├── store.py             # SQLite 持久化
+│   ├── control/             # 企业控制面（FastAPI /api/v1、SQLAlchemy、Casbin）
 │   ├── tui/                 # 终端 UI（textual）
 │   └── web/                 # Web 服务器（stdlib http.server）
 ├── tests/

@@ -75,11 +75,11 @@ spark --version           # 版本号（与 pyproject / PyPI 同源）
 
 | 关注点 | Windows | Linux / macOS |
 | --- | --- | --- |
-| 进程树终止 | `taskkill /F /T` | `start_new_session` + `killpg` |
+| 进程树终止 | psutil 递归 terminate/kill；缺失时 `taskkill /F /T` | psutil；缺失时 `start_new_session` + `killpg` |
 | 子进程黑框 | `CREATE_NO_WINDOW` | 无此概念（标志为 0） |
 | 默认 shell | `%COMSPEC%`（cmd.exe） | `$SHELL`，回退 `/bin/sh` |
 | Python 可执行名 | `python` | `python3`（自动回退） |
-| 内置终端 | 不支持，接口返回 501 + 明确说明 | `ptyprocess` |
+| 内置终端 | `pywinpty`（ConPTY），真实 PTY | `ptyprocess` |
 | 保留文件名 | 拒绝 `CON/PRN/AUX/NUL/COM1-9/LPT1-9` | 同样拒绝（保证可移植） |
 | 破坏性命令 | 额外匹配 PowerShell 别名（`ri`/`del`/`rd` → `remove-item`） | POSIX 名称 |
 
