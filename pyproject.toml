@@ -33,7 +33,9 @@ dependencies = [
     # 上游（langgraph-checkpoint-sqlite 2.0.x）依赖 aiosqlite Connection 的
     # Thread.is_alive()；aiosqlite 0.22 移除了该 API——显式锁住兼容窗。
     "aiosqlite>=0.20,<0.23",
+    "croniter>=7.0,<8.0",
     "mcp>=1.0,<2.0; python_version>=\"3.10\"",
+    "nbformat>=5.10,<6.0",
     "pydantic>=2.7,<3.0",
     "pydantic-settings>=2.0,<3.0",
     "textual>=0.80,<1.0",
@@ -61,16 +63,66 @@ dev = [
 openapi = [
     "fastapi>=0.110",
 ]
+# 企业平台会直接使用的 Web/运行时基础库。它们多数已通过 langgraph/llama-index
+# 传递安装；显式列入可避免上游依赖调整时版本悄悄漂移。
+platform = [
+    "fastapi>=0.162",
+    "uvicorn>=0.54",
+    "sse-starlette>=3.5",
+    "tiktoken>=0.14",
+    "tenacity>=9.2",
+    "SQLAlchemy>=2.1",
+    "pathspec>=1.1",
+    "wcmatch>=12.0",
+    "psutil>=7.2",
+]
+# 企业控制面（FastAPI /api/v1 + SQLAlchemy/Alembic + Authlib/Keycloak + Casbin）
+enterprise = [
+    "fastapi>=0.162",
+    "uvicorn>=0.54",
+    "SQLAlchemy>=2.1",
+    "alembic>=1.14",
+    "authlib>=1.9",
+    "casbin>=1.43",
+    "pyjwt>=2.10",
+    "python-multipart>=0.0.9",
+]
+# PostgreSQL 驱动（企业部署；本地 SQLite 不需要）
+postgres = [
+    "asyncpg>=0.30",
+    "psycopg[binary]>=3.2",
+]
+# 办公成果物与文档导入（docx/pdf/xlsx/pptx）
+office = [
+    "python-docx>=1.1",
+    "openpyxl>=3.1",
+    "python-pptx>=1.0",
+    "pypdf>=5.0",
+    "pypdfium2>=4.0",
+    "rapidocr-onnxruntime>=1.4",
+    "extract-msg>=0.58",
+    "reportlab>=4.0",
+]
+# Notebook 执行（读取/编辑已由 nbformat 承担；执行 cell 需要 nbclient）
+notebook = [
+    "nbclient>=0.11,<1.0",
+]
+# 网页搜索/正文抽取（未安装时回退到内置 Bing/HTMLParser）
+search = [
+    "ddgs>=9.16",
+    "trafilatura>=2.3",
+]
 # P0-9: 观测（Langfuse 自托管 = OTLP 端点，spark 直接接入 OTLP 即可）
 telemetry = [
     "opentelemetry-api>=1.28",
     "opentelemetry-sdk>=1.28",
     "opentelemetry-exporter-otlp-proto-grpc>=1.28",
 ]
-# P1-5: 内置终端（真实 PTY）。Windows 不支持（需 winpty/ConPTY），
-# 故用环境标记排除；未安装时 spark.pty 可导入但 PtyManager() 给出清晰报错。
+# P1-5: 内置终端（真实 PTY）。Windows 走 pywinpty（ConPTY），Linux/macOS 走
+# ptyprocess；未安装时 spark.pty 可导入但 PtyManager() 给出清晰报错。
 pty = [
     "ptyprocess>=0.7; sys_platform != 'win32'",
+    "pywinpty>=3.1; sys_platform == 'win32'",
 ]
 desktop = [
     "pywebview>=5.0",
@@ -83,7 +135,7 @@ spark = "spark.cli:app"
 where = ["src"]
 
 [tool.setuptools.package-data]
-spark = ["prompts/*.md", "web/*.html", "web/dist/*", "web/dist/assets/*", "evals/data/*.json"]
+spark = ["prompts/*.md", "web/*.html", "web/dist/*", "web/dist/assets/*", "evals/data/*.json", "control/policies/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
