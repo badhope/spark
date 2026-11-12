@@ -101,7 +101,7 @@ export const useUiStore = create<UiState>((set) => ({
   palette: getStoredPalette(),
   settingsOpen: false,
   sidebarOpen: window.innerWidth >= 1024,
-  rightPanelOpen: true,
+  rightPanelOpen: false,
   paletteOpen: false,
   checkpointsOpen: false,
   filesOpen: false,

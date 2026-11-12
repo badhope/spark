@@ -13,7 +13,7 @@ import hljs from "highlight.js/lib/common"
  * /api/browse 在前端均有对应观测入口（前后端 1:1）。 */
 export const RightPanel = () => {
   const open = useUiStore((s) => s.rightPanelOpen)
-  const close = useUiStore((s) => s.setRightPanelOpen)
+  const setOpen = useUiStore((s) => s.setRightPanelOpen)
   const lang = useUiStore((s) => s.lang)
   const workdir = useSessionStore((s) => s.status?.workdir ?? "")
 
@@ -47,7 +47,20 @@ export const RightPanel = () => {
     if (open) void loadDir("")
   }, [open, loadDir])
 
-  if (!open) return null
+  if (!open) {
+    return (
+      <aside className="flex w-8 shrink-0 flex-col items-center border-l border-line bg-panel py-2">
+        <button
+          type="button"
+          title={t("rightPanel.expand", lang)}
+          onClick={() => setOpen(true)}
+          className="flex h-8 w-7 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-hover hover:text-ink"
+        >
+          <IconChevronRight size={14} className="rotate-180" />
+        </button>
+      </aside>
+    )
+  }
 
   async function openFile(name: string) {
     const path = stack.length ? [...stack, name].join("/") : name
@@ -120,7 +133,7 @@ export const RightPanel = () => {
         <button
           type="button"
           title={t("rightPanel.close", lang)}
-          onClick={() => close(false)}
+          onClick={() => setOpen(false)}
           className="flex h-7 w-7 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-hover hover:text-ink"
         >
           <IconX size={14} />
