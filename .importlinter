@@ -97,6 +97,7 @@ forbidden_modules =
     spark.cli
     spark.desktop
     spark.acp_server
+    spark.control
 
 [importlinter:contract:no-cross-surface]
 name = L4 表面之间禁止互相 import（组合只经 public 入口在 cli/desktop 完成）
@@ -109,4 +110,19 @@ forbidden_modules =
     spark.cli
     spark.desktop
     spark.onboard
+    spark.acp_server
+    spark.control
+
+[importlinter:contract:control-surface]
+name = L4 control 不依赖其它表面
+type = forbidden
+source_modules =
+    spark.control
+forbidden_modules =
+    spark.web
+    spark.tui
+    spark.cli
+    spark.desktop
+    spark.onboard
+    spark.evals
     spark.acp_server

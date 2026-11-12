@@ -1,0 +1,46 @@
+# Spark enterprise control-plane dependencies.
+# Usage:
+#   cp .env.example .env   # set strong passwords
+#   docker compose -f compose.yml up -d
+# Then point SPARK_CONTROL_DATABASE_URL at PostgreSQL and SPARK_CONTROL_* at Keycloak.
+name: spark-enterprise
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-spark}
+      POSTGRES_USER: ${POSTGRES_USER:-spark}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in deploy/.env}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-spark}
+      KC_DB_USERNAME: ${POSTGRES_USER:-spark}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      KC_HOSTNAME: 127.0.0.1
+      KC_HOSTNAME_PORT: 18080
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    depends_on:
+      postgres:
+        condition: service_healthy

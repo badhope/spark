@@ -76,3 +76,7 @@ npm-debug.log*
 
 # Upstream Codex CLI clone kept only as an architecture reference
 /codex/
+
+# Enterprise compose runtime data / secrets
+/deploy/data/
+/deploy/.env

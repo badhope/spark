@@ -1720,3 +1720,21 @@ def config_set_cmd(
 def config_path_cmd() -> None:
     """Print the configuration file location."""
     typer.echo(str(default_home() / "config.toml"))
+
+
+@app.command("enterprise", help="启动企业控制面 API（/api/v1；默认仅回环 127.0.0.1:18800）")
+def enterprise_cmd(
+    host: str = typer.Option("127.0.0.1", "--host", help="绑定地址"),
+    port: int = typer.Option(18800, "--port", help="监听端口"),
+    reload: bool = typer.Option(False, "--reload", help="代码变更自动重载（开发用）"),
+) -> None:
+    """Run the FastAPI enterprise control plane (SQLite/dev auth by default)."""
+    try:
+        from spark.control.cli import serve
+    except Exception as exc:  # pragma: no cover - enterprise extra missing
+        typer.echo(
+            "企业控制面依赖未安装：pip install 'spark-agent[enterprise]'",
+            err=True,
+        )
+        raise typer.Exit(1) from exc
+    serve(host=host, port=port, reload=reload)

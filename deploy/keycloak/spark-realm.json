@@ -1,0 +1,45 @@
+{
+  "realm": "spark",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "roles": {
+    "realm": [
+      { "name": "admin" },
+      { "name": "member" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "spark-api",
+      "name": "Spark Control API",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "redirectUris": ["http://127.0.0.1:18800/*"],
+      "webOrigins": ["http://127.0.0.1:18800"],
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "tenant",
+            "claim.value": "default",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}
