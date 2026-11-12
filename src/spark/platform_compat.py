@@ -95,8 +95,49 @@ def popen_kwargs(*, new_group: bool) -> dict:
     return {"start_new_session": True} if new_group else {}
 
 
+def _kill_with_psutil(pid: int) -> bool:
+    """Terminate a process tree through psutil when it is installed."""
+    try:
+        import psutil
+    except ImportError:  # pragma: no cover - optional dependency
+        return False
+    try:
+        parent = psutil.Process(pid)
+        procs = parent.children(recursive=True)
+        procs.append(parent)
+    except Exception:  # pragma: no cover - process already gone
+        return False
+    for proc in procs:
+        try:
+            proc.terminate()
+        except Exception:  # noqa: BLE001 - best effort
+            continue
+    try:
+        _, alive = psutil.wait_procs(procs, timeout=3)
+    except Exception:  # pragma: no cover - psutil platform quirk
+        alive = []
+    for proc in alive:
+        try:
+            proc.kill()
+        except Exception:  # noqa: BLE001 - best effort
+            continue
+    return True
+
+
 def kill_process_tree(pid: int, process: subprocess.Popen | None = None) -> None:
-    """Terminate *pid* and its descendants; never raises."""
+    """Terminate *pid* and its descendants; never raises.
+
+    psutil is the preferred implementation (cross-platform tree walk, graceful
+    terminate then kill). The taskkill/killpg paths remain as a fallback for a
+    minimal install where psutil is absent.
+    """
+    if _kill_with_psutil(pid):
+        if process is not None:
+            try:
+                process.wait(timeout=2)
+            except Exception:  # noqa: BLE001 - already reaped
+                pass
+        return
     if IS_WINDOWS:
         try:
             subprocess.run(
@@ -148,9 +189,14 @@ def terminal_size() -> tuple[int, int]:
 
 
 def pty_supported() -> bool:
-    """Windows has no ptyprocess; the built-in terminal is POSIX-only."""
+    """True when a real PTY backend is importable on this platform."""
     if IS_WINDOWS:
-        return False
+        try:
+            import winpty  # noqa: F401
+
+            return True
+        except ImportError:
+            return False
     try:
         import ptyprocess  # noqa: F401
 

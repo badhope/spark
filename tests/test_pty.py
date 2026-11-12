@@ -1,7 +1,7 @@
 """内置终端（PTY）测试：多 tab 管理、读写回显、目录绑定、退出标记。
 
-注意：这些测试会真实 fork bash 子进程，仅在 Linux/macOS 下运行
-（Windows 需要 winpty，P1 明确不支持，测试自动跳过）。
+Windows 使用 pywinpty（ConPTY），Linux/macOS 使用 ptyprocess；对应后端缺失
+时整套测试自动跳过。
 """
 from __future__ import annotations
 
@@ -12,13 +12,12 @@ from pathlib import Path
 
 import pytest
 
-ptyprocess = pytest.importorskip("ptyprocess")
+if sys.platform == "win32":
+    pytest.importorskip("winpty")
+else:
+    pytest.importorskip("ptyprocess")
 
-# 内置终端（PTY）尚未实现（见升级路线 P0-8：xterm.js + 后端 PTY）。
-# spark.pty 模块缺失时整套测试自动跳过，随 P0-8 落地后自动启用。
 PtyManager = pytest.importorskip("spark.pty").PtyManager
-
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="PTY 暂不支持 Windows")
 
 
 def _collect(sess, loop, seconds=2.5):
@@ -26,6 +25,8 @@ def _collect(sess, loop, seconds=2.5):
     q: asyncio.Queue[str] = asyncio.Queue()
     sess.start_reader(loop, q)
     out: list[str] = []
+    newline = "\r\n" if sys.platform == "win32" else "\n"
+    pwd_cmd = "cd" if sys.platform == "win32" else "pwd"
 
     async def drain(sec):
         while True:
@@ -36,11 +37,11 @@ def _collect(sess, loop, seconds=2.5):
 
     async def main():
         await asyncio.sleep(1.0)
-        sess.write("echo SPARK_PTY_ECHO\n")
+        sess.write(f"echo SPARK_PTY_ECHO{newline}")
         await asyncio.sleep(1.0)
-        sess.write("pwd\n")
+        sess.write(f"{pwd_cmd}{newline}")
         await asyncio.sleep(0.8)
-        sess.write("exit\n")
+        sess.write(f"exit{newline}")
         await asyncio.sleep(0.8)
         await drain(0.4)
         return "".join(out)

@@ -15,10 +15,13 @@ from spark.tools.registry import ToolContext, ToolRegistry
 
 def test_estimate_tokens_cjk_vs_ascii() -> None:
     assert estimate_tokens("") == 0
-    assert estimate_tokens("abcd") == 1
-    assert estimate_tokens("四个中文字符") == 6
+    # Exact counts depend on the tokenizer (tiktoken o200k_base vs the
+    # heuristic fallback); assert the properties that matter for budgeting.
+    assert 1 <= estimate_tokens("abcd") <= 2
+    assert 3 <= estimate_tokens("四个中文字符") <= 8
     mixed = "use pnpm 四个中文字符"
     assert estimate_tokens(mixed) > 0
+    assert estimate_tokens(mixed, model="gpt-4o") > 0
 
 
 def test_summary_role_roundtrip(tmp_path: Path) -> None:

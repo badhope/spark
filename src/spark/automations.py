@@ -25,21 +25,19 @@ import re
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
+
+from croniter import CroniterError, croniter
 
 logger = logging.getLogger(__name__)
 
-#: 支持的最小 cron 子集：`分 时 日 月 周`，每段支持 `*`、`*/n`、`a,b,c`、`a-b`。
-#: 刻意不引入 croniter 之类的依赖——这个项目已有的原则是不为新能力加依赖，
-#: 而且完整 cron 语法（@reboot、L/W/# 等）在本地 agent 场景用不上。
-_CRON_FIELDS = (
-    ("minute", 0, 59),
-    ("hour", 0, 23),
-    ("day", 1, 31),
-    ("month", 1, 12),
-    ("weekday", 0, 6),
-)
+#: The UI and stored automations use the standard 5-field form. croniter
+#: validates the expression and computes the next occurrence; keeping the
+#: 5-field guard preserves the existing API while gaining DST/range/alias
+#: correctness from the library.
+_CRON_KEYS = ("minute", "hour", "day", "month", "weekday")
+_CRON_RANGES = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 6))
 
 MIN_INTERVAL_SEC = 60
 
@@ -48,74 +46,40 @@ class CronError(ValueError):
     """cron 表达式无法解析。"""
 
 
-def _expand_field(raw: str, low: int, high: int) -> set[int]:
-    values: set[int] = set()
-    for part in raw.split(","):
-        part = part.strip()
-        if not part:
-            raise CronError(f"empty field component in {raw!r}")
-        step = 1
-        if "/" in part:
-            part, _, step_raw = part.partition("/")
-            try:
-                step = int(step_raw)
-            except ValueError as exc:
-                raise CronError(f"invalid step in {raw!r}") from exc
-            if step <= 0:
-                raise CronError(f"step must be positive in {raw!r}")
-        if part in {"*", ""}:
-            start, end = low, high
-        elif "-" in part:
-            a, _, b = part.partition("-")
-            try:
-                start, end = int(a), int(b)
-            except ValueError as exc:
-                raise CronError(f"invalid range in {raw!r}") from exc
-        else:
-            try:
-                start = end = int(part)
-            except ValueError as exc:
-                raise CronError(f"invalid value {part!r} in {raw!r}") from exc
-        if start < low or end > high or start > end:
-            raise CronError(f"{raw!r} out of range {low}-{high}")
-        values.update(range(start, end + 1, step))
-    return values
-
-
-def parse_cron(expr: str) -> dict[str, set[int]]:
-    """解析 5 段 cron；非法时抛 :class:`CronError`（含可读原因）。"""
-    fields = expr.split()
+def _require_five_fields(expr: str) -> None:
+    fields = (expr or "").split()
     if len(fields) != 5:
         raise CronError(
             f"cron must have 5 fields (minute hour day month weekday), got {len(fields)}"
         )
+
+
+def parse_cron(expr: str) -> dict[str, set[int]]:
+    """解析 5 段 cron；非法时抛 :class:`CronError`（含可读原因）。"""
+    _require_five_fields(expr)
+    try:
+        expanded, _ = croniter.expand(expr)
+    except (CroniterError, ValueError, TypeError) as exc:
+        raise CronError(f"invalid cron expression {expr!r}: {exc}") from exc
     parsed: dict[str, set[int]] = {}
-    for (name, low, high), raw in zip(_CRON_FIELDS, fields):
-        parsed[name] = _expand_field(raw, low, high)
+    for name, (low, high), raw in zip(_CRON_KEYS, _CRON_RANGES, expanded):
+        if raw == ["*"] or raw == "*":
+            parsed[name] = set(range(low, high + 1))
+        else:
+            parsed[name] = {int(value) for value in raw if isinstance(value, int)}
     return parsed
 
 
 def next_run_after(expr: str, after: datetime) -> datetime:
-    """返回 *after* 之后第一个匹配的时间（精确到分钟）。
-
-    逐分钟向前试探，最多 366 天；找不到就抛错，而不是死循环。
-    """
-    spec = parse_cron(expr)
-    moment = after.replace(second=0, microsecond=0) + timedelta(minutes=1)
-    limit = moment + timedelta(days=366)
-    while moment < limit:
-        # cron 的 weekday: 0=周日；Python 的 weekday(): 0=周一
-        weekday = (moment.weekday() + 1) % 7
-        if (
-            moment.minute in spec["minute"]
-            and moment.hour in spec["hour"]
-            and moment.day in spec["day"]
-            and moment.month in spec["month"]
-            and weekday in spec["weekday"]
-        ):
-            return moment
-        moment += timedelta(minutes=1)
-    raise CronError(f"no run time found within a year for {expr!r}")
+    """返回 *after* 之后第一个匹配的时间（精确到分钟）。"""
+    _require_five_fields(expr)
+    try:
+        nxt = croniter(expr, after).get_next(datetime)
+    except (CroniterError, ValueError, TypeError) as exc:
+        raise CronError(f"invalid cron expression {expr!r}: {exc}") from exc
+    if not isinstance(nxt, datetime):  # pragma: no cover - defensive
+        raise CronError(f"croniter returned a non-datetime for {expr!r}")
+    return nxt.replace(second=0, microsecond=0)
 
 
 def normalize_interval(minutes: int) -> str:

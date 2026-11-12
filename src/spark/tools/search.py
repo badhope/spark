@@ -5,9 +5,24 @@ import os
 import re
 import time
 from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel
+
+from spark.models import ToolResult
+from spark.sandbox import WorkdirSandbox
+
+_wc_glob: Any = None
+try:  # optional: keep the in-tree matcher for minimal installs
+    from wcmatch import glob as _wc_glob
+except Exception:  # pragma: no cover - optional dependency
+    pass
+_WC_FLAGS: int | None = (
+    _wc_glob.GLOBSTAR | _wc_glob.DOTMATCH if _wc_glob is not None else None
+)
 
 
-def _glob_to_regex(pattern: str) -> re.Pattern[str]:  # noqa: E302
+def _glob_to_regex(pattern: str) -> re.Pattern[str]:
     i = 0
     out: list[str] = ["^"]
     n = len(pattern)
@@ -31,10 +46,37 @@ def _glob_to_regex(pattern: str) -> re.Pattern[str]:  # noqa: E302
     return re.compile("".join(out))
 
 
-from pydantic import BaseModel
+def _glob_matches(rel: str, pattern: str) -> bool:
+    """Match a workdir-relative path; wcmatch when available, regex fallback."""
+    if _wc_glob is not None and _WC_FLAGS is not None:
+        try:
+            return bool(_wc_glob.globmatch(rel, pattern, flags=_WC_FLAGS))
+        except Exception:  # pragma: no cover - malformed pattern -> fallback
+            pass
+    return _glob_to_regex(pattern).match(rel) is not None
 
-from spark.models import ToolResult
-from spark.sandbox import WorkdirSandbox
+
+def _ignore_spec(root: Path):
+    """Load .gitignore/.ignore when the optional pathspec package is present."""
+    try:
+        import pathspec
+    except Exception:  # pragma: no cover - optional dependency
+        return None
+    lines: list[str] = []
+    for name in (".gitignore", ".ignore"):
+        path = root / name
+        if path.is_file():
+            try:
+                lines.extend(path.read_text(encoding="utf-8", errors="replace").splitlines())
+            except OSError:
+                continue
+    if not lines:
+        return None
+    try:
+        return pathspec.PathSpec.from_lines("gitwildmatch", lines)
+    except Exception:  # pragma: no cover - malformed ignore file
+        return None
+
 
 SKIP_DIRS = {
     ".git",
@@ -125,12 +167,24 @@ class GlobArgs(BaseModel):
 
 
 def _walk(root: Path):
+    root = Path(root)
+    spec = _ignore_spec(root)
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [
             # Exact membership only: startswith(".git") also pruned .github,
             # so grep reported "no matches" for workflow files that do exist.
             d for d in dirnames if d not in SKIP_DIRS
         ]
+        if spec is not None:
+            try:
+                rel_dir = Path(dirpath).relative_to(root).as_posix()
+            except ValueError:
+                rel_dir = "."
+            prefix = "" if rel_dir == "." else rel_dir + "/"
+            dirnames[:] = [
+                d for d in dirnames if not spec.match_file(f"{prefix}{d}/")
+            ]
+            filenames = [f for f in filenames if not spec.match_file(f"{prefix}{f}")]
         yield Path(dirpath), filenames
 
 
@@ -213,10 +267,9 @@ def glob_tool(sandbox: WorkdirSandbox, args: GlobArgs) -> ToolResult:
     pattern = args.pattern.strip().lstrip("/")
     max_results = max(1, min(500, args.max_results))
     budget = SearchBudget(args.max_files or MAX_GLOB_FILES, args.deadline_sec)
-    # 统一走 _glob_to_regex：'*' 单段、'**' 跨段，非 '**' 模式与 '**' 模式
-    # 语义一致（旧实现 fnmatch 兜底的 '*' 会跨段，两路行为不一致）；
-    # rel 与裸文件名双重匹配兜底"目录前缀"类 pattern（如 'src/*.py'）。
-    rx = _glob_to_regex(pattern)
+    # wcmatch GLOBSTAR keeps '*' single-segment and '**' recursive; the regex
+    # fallback preserves the same semantics. Match both the full relative path
+    # and the bare filename so patterns like 'src/*.py' and '*.py' both work.
     out: list[str] = []
     truncated = False
     base_resolved = base.resolve()
@@ -239,7 +292,7 @@ def glob_tool(sandbox: WorkdirSandbox, args: GlobArgs) -> ToolResult:
             except (OSError, ValueError):
                 continue
             rel = file.relative_to(base).as_posix()
-            if rx.match(rel) or rx.match(name):
+            if _glob_matches(rel, pattern) or _glob_matches(name, pattern):
                 out.append(file.relative_to(sandbox.root).as_posix())
                 if len(out) >= max_results:
                     truncated = True

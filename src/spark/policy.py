@@ -4,10 +4,20 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Literal
+from typing import Any, Literal
 
 from spark.config import ApprovalMode, PermissionAction, PermissionRule
 from spark.models import ToolCall
+
+_wc_glob: Any = None
+try:  # optional: minimal installs keep the in-tree matcher below
+    from wcmatch import glob as _wc_glob
+except Exception:  # pragma: no cover - optional dependency
+    pass
+
+_WC_FLAGS: int | None = None
+if _wc_glob is not None:
+    _WC_FLAGS = _wc_glob.GLOBSTAR | _wc_glob.DOTMATCH
 
 DecisionKind = Literal["allow", "prompt", "deny"]
 
@@ -85,7 +95,22 @@ _GLOB_MAX_DEPTH = 64  # Guard against adversarial **/**/**... patterns
 
 
 def _glob_match(pattern: str, value: str) -> bool:
-    """Glob matcher: '*' stays within a single path segment, '**' crosses '/'."""
+    """Glob matcher: '*' stays within a single path segment, '**' crosses '/'.
+
+    Prefer wcmatch's ``GLOBSTAR`` implementation (same semantics, battle-tested
+    against pathological patterns); keep the in-tree matcher for minimal
+    installs where wcmatch is absent.
+    """
+    if _wc_glob is not None and _WC_FLAGS is not None:
+        try:
+            return bool(_wc_glob.globmatch(value, pattern, flags=_WC_FLAGS))
+        except Exception:  # pragma: no cover - malformed pattern -> fallback
+            pass
+    return _legacy_glob_match(pattern, value)
+
+
+def _legacy_glob_match(pattern: str, value: str) -> bool:
+    """In-tree fallback; identical semantics to the wcmatch path."""
     p_len, v_len = len(pattern), len(value)
 
     def _m(pi: int, vi: int, depth: int = 0) -> bool:

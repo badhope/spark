@@ -6,6 +6,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic import BaseModel
+
 from spark import git_memory
 from spark.config import SparkConfig
 from spark.edit.tool import ApplyEditArgs, apply_edit, apply_edit_diff
@@ -48,6 +50,61 @@ def _schema(
             },
         },
     }
+
+
+def _flatten_optional(spec: dict[str, Any]) -> dict[str, Any]:
+    """Turn Pydantic's ``anyOf: [{type: string}, {type: null}]`` into ``string``.
+
+    OpenAI-compatible providers vary in how much JSON Schema they accept; the
+    original hand-written schemas used a single type for optional fields, and
+    some gateways reject ``anyOf``. Keep only the non-null branch when it is
+    unambiguous (``str | None``, ``int | None``, ...).
+    """
+    branches = spec.get("anyOf")
+    if isinstance(branches, list):
+        non_null = [b for b in branches if isinstance(b, dict) and b.get("type") != "null"]
+        if len(non_null) == 1:
+            merged = dict(non_null[0])
+            for key, value in spec.items():
+                if key != "anyOf" and key not in merged:
+                    merged[key] = value
+            return merged
+    return spec
+
+
+def _schema_from_model(
+    name: str,
+    description: str,
+    model: type[BaseModel],
+    *,
+    descriptions: dict[str, str] | None = None,
+    exclude: set[str] | None = None,
+) -> dict[str, Any]:
+    """Build a tool schema from the same Pydantic model the tool validates with.
+
+    The hand-written schema and the runtime ``model_validate`` used to live in
+    two places; a field could be required in one and optional in the other.
+    Deriving the JSON Schema from the model removes that drift. Property
+    descriptions stay overridable until the models carry their own
+    ``Field(description=...)``.
+    """
+    raw = model.model_json_schema()
+    properties: dict[str, Any] = {}
+    for key, value in (raw.get("properties") or {}).items():
+        if not isinstance(value, dict):
+            continue
+        if exclude and key in exclude:
+            continue
+        cleaned = _flatten_optional(dict(value))
+        cleaned.pop("title", None)
+        if cleaned.get("default", object()) is None:
+            # Optional fields in the original schemas had no explicit
+            # ``default: null``; some gateways reject null defaults.
+            cleaned.pop("default", None)
+        if descriptions and key in descriptions:
+            cleaned["description"] = descriptions[key]
+        properties[key] = cleaned
+    return _schema(name, description, properties, list(raw.get("required") or []))
 
 
 class ToolRegistry:
@@ -125,20 +182,24 @@ class ToolRegistry:
 
     def schemas(self) -> list[dict[str, Any]]:
         builtin = [
-            _schema("read_file",
+            _schema_from_model(
+                "read_file",
                 "Read a UTF-8 file inside workdir. Returns at most 2000 lines from offset "
                 "(default first 200) plus total_lines and truncated, so you know whether to "
                 "continue with a larger offset.",
-                {"path": {"type": "string"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}},
-                ["path"]),
-            _schema("list_dir", "List a directory inside workdir.",
-                {"path": {"type": "string"}, "max_entries": {"type": "integer"}}, []),
-            _schema("write_file", "Write a complete UTF-8 file inside workdir.",
-                {"path": {"type": "string"}, "content": {"type": "string"}},
-                ["path", "content"]),
-            _schema("apply_patch", "Replace exactly one occurrence of old_text in a file.",
-                {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}},
-                ["path", "old_text", "new_text"]),
+                fs.ReadFileArgs,
+            ),
+            _schema_from_model(
+                "list_dir", "List a directory inside workdir.", fs.ListDirArgs
+            ),
+            _schema_from_model(
+                "write_file", "Write a complete UTF-8 file inside workdir.", fs.WriteFileArgs
+            ),
+            _schema_from_model(
+                "apply_patch",
+                "Replace exactly one occurrence of old_text in a file.",
+                fs.ApplyPatchArgs,
+            ),
             _schema("apply_edit",
                 "Rewrite a file using aider-style SEARCH/REPLACE blocks, OR whole-file content. "
                 "For targeted edits send one or more blocks like:\n"
@@ -151,27 +212,32 @@ class ToolRegistry:
                  "content": {"type": "string",
                              "description": "either SEARCH/REPLACE block(s) or the complete new file content"}},
                 ["path", "content"]),
-            _schema("run_shell", "Run a shell command inside workdir.",
-                {"command": {"type": "string"}, "cwd": {"type": "string"}},
-                ["command"]),
-            _schema("grep",
+            _schema_from_model(
+                "run_shell", "Run a shell command inside workdir.", shell.RunShellArgs
+            ),
+            _schema_from_model(
+                "grep",
                 "Search file contents inside the workdir with a regular expression. "
                 "Returns path:line:text matches. Automatically skips .git, node_modules, venvs and build dirs.",
-                {"pattern": {"type": "string", "description": "regular expression"},
-                 "path": {"type": "string", "description": "subdirectory to search, default '.'"},
-                 "glob": {"type": "string", "description": "optional filename filter like '*.py'"},
-                 "max_results": {"type": "integer", "description": "default 50"}},
-                ["pattern"]),
-            _schema("diagnostics",
+                search.GrepArgs,
+                descriptions={
+                    "pattern": "regular expression",
+                    "path": "subdirectory to search, default '.'",
+                    "glob": "optional filename filter like '*.py'",
+                    "max_results": "default 50",
+                },
+                exclude={"max_files", "deadline_sec"},
+            ),
+            _schema_from_model(
+                "diagnostics",
                 "运行 lint/类型诊断（ruff + 可用时的 tsc），把编辑后的问题清单反馈给你。"
                 "编辑代码后应运行以验证没有引入新问题。",
-                {
-                    "paths": {"type": "array", "items": {"type": "string"},
-                              "description": "限定检查的相对路径，留空 = 整个工作目录"},
-                    "python": {"type": "boolean", "default": True},
-                    "typescript": {"type": "boolean", "default": True},
+                diagnostics.DiagnosticsArgs,
+                descriptions={
+                    "paths": "限定检查的相对路径，留空 = 整个工作目录",
+                    "python": "default true",
+                    "typescript": "default true",
                 },
-                [],  # 无必填
             ),
             _schema("find_symbol",
                 "Locate where a symbol is defined or referenced across the project. "
@@ -203,22 +269,30 @@ class ToolRegistry:
                 },
                 ["action"],
             ),
-            _schema("glob",
+            _schema_from_model(
+                "glob",
                 "Find files inside the workdir by filename pattern, e.g. 'src/**/*.ts' or '*.md'.",
-                {"pattern": {"type": "string"},
-                 "path": {"type": "string", "description": "subdirectory to search, default '.'"},
-                 "max_results": {"type": "integer", "description": "default 200"}},
-                ["pattern"]),
-            _schema("web_search",
+                search.GlobArgs,
+                descriptions={
+                    "path": "subdirectory to search, default '.'",
+                    "max_results": "default 200",
+                },
+                exclude={"max_files", "deadline_sec"},
+            ),
+            _schema_from_model(
+                "web_search",
                 "Search the public web (Bing) for current information: docs, error messages, library versions, news. "
                 "Returns title/url/snippet results. Follow up with web_fetch to read a promising page.",
-                {"query": {"type": "string"}, "max_results": {"type": "integer", "description": "default 8"}},
-                ["query"]),
-            _schema("web_fetch",
+                web.WebSearchArgs,
+                descriptions={"max_results": "default 8"},
+            ),
+            _schema_from_model(
+                "web_fetch",
                 "Fetch a web page by URL and return its readable text content (HTML converted to text). "
                 "Use after web_search, or to read documentation/gists/raw files.",
-                {"url": {"type": "string"}, "max_chars": {"type": "integer", "description": "default 12000"}},
-                ["url"]),
+                web.WebFetchArgs,
+                descriptions={"max_chars": "default 12000"},
+            ),
             _schema("task",
                 "Spawn one or more sub-agents, each with its own context window, to handle self-contained "
                 "research or exploration work. Pass 'prompt' for a single sub-agent, or 'tasks' (array of "
@@ -236,15 +310,19 @@ class ToolRegistry:
                                                     "agent": {"type": "string"}},
                                      "required": ["prompt"]}}},
                 []),
-            _schema("read_notebook",
+            _schema_from_model(
+                "read_notebook",
                 "Read a Jupyter notebook (.ipynb): list cells with index, type, source and output previews.",
-                {"path": {"type": "string"}, "max_cells": {"type": "integer"}},
-                ["path"]),
-            _schema("notebook_edit",
+                notebook.ReadNotebookArgs,
+            ),
+            _schema_from_model(
+                "notebook_edit",
                 "Replace the source of one cell in a Jupyter notebook (.ipynb) by cell index. Clears that cell's outputs.",
-                {"path": {"type": "string"}, "cell_index": {"type": "integer"}, "new_source": {"type": "string"},
-                 "cell_type": {"type": "string", "description": "optional: change cell to 'code' or 'markdown'"}},
-                ["path", "cell_index", "new_source"]),
+                notebook.NotebookEditArgs,
+                descriptions={
+                    "cell_type": "optional: change cell to 'code' or 'markdown'"
+                },
+            ),
             _schema("ask_user",
                 "Ask the user a question and wait for the answer. Use this when a "
                 "decision genuinely needs their input (ambiguous requirement, a "
@@ -282,56 +360,97 @@ class ToolRegistry:
                 {"job_id": {"type": "string"}}, ["job_id"]),
             _schema("bg_list", "List all background jobs from this server run with their states.",
                 {}, []),
-            _schema("git_status",
+            _schema_from_model(
+                "git_status",
                 "Show git working tree status (branch + changed files) for a repo inside workdir.",
-                {"path": {"type": "string", "description": "repo directory, default '.'"}},
-                []),
-            _schema("git_diff",
+                gitops.GitStatusArgs,
+                descriptions={"path": "repo directory, default '.'"},
+            ),
+            _schema_from_model(
+                "git_diff",
                 "Show git diff for a repo inside workdir. Use staged=true for staged changes, or ref like 'HEAD~1' to diff against it.",
-                {"path": {"type": "string"},
-                 "staged": {"type": "boolean", "description": "show staged changes only"},
-                 "ref": {"type": "string", "description": "optional commit-ish to diff against"}},
-                []),
-            _schema("git_log",
+                gitops.GitDiffArgs,
+                descriptions={
+                    "path": "repo directory, default '.'",
+                    "staged": "show staged changes only",
+                    "ref": "optional commit-ish to diff against",
+                },
+            ),
+            _schema_from_model(
+                "git_log",
                 "Show recent commit history: short hash, author, relative date, subject.",
-                {"path": {"type": "string"},
-                 "max_count": {"type": "integer", "description": "default 20, max 100"}},
-                []),
-            _schema("git_branch", "Show the current branch name of a repo inside workdir.",
-                {"path": {"type": "string"}}, []),
-            _schema("git_add",
+                gitops.GitLogArgs,
+                descriptions={
+                    "path": "repo directory, default '.'",
+                    "max_count": "default 20, max 100",
+                },
+            ),
+            _schema_from_model(
+                "git_branch",
+                "Show the current branch name of a repo inside workdir.",
+                gitops.GitBranchArgs,
+                descriptions={"path": "repo directory, default '.'"},
+            ),
+            _schema_from_model(
+                "git_add",
                 "Stage files for commit in a repo inside workdir. Paths are sandbox-checked.",
-                {"paths": {"type": "array", "items": {"type": "string"}, "description": "files or directories to stage"},
-                 "path": {"type": "string", "description": "repo directory, default '.'"}},
-                ["paths"]),
-            _schema("git_commit",
+                gitops.GitAddArgs,
+                descriptions={
+                    "paths": "files or directories to stage",
+                    "path": "repo directory, default '.'",
+                },
+            ),
+            _schema_from_model(
+                "git_commit",
                 "Commit staged changes with a message. Set add_all=true to stage every change first. "
                 "Push/pull/reset stay out of scope - tell the user to run them manually.",
-                {"message": {"type": "string"}, "path": {"type": "string"},
-                 "add_all": {"type": "boolean", "description": "stage all changes before committing"}},
-                ["message"]),
-            _schema("run_tests",
+                gitops.GitCommitArgs,
+                descriptions={
+                    "path": "repo directory, default '.'",
+                    "add_all": "stage all changes before committing",
+                },
+            ),
+            _schema_from_model(
+                "run_tests",
                 "Run the repository's test suite and return pass/fail plus captured output. "
                 "Detects pytest / npm test / make test automatically; the command always comes "
                 "from repository signals and cannot be overridden. "
                 "Use this to close the loop after a code change instead of guessing whether the change works.",
-                {"path": {"type": "string", "description": "subdirectory, default '.'"},
-                 "timeout_sec": {"type": "integer", "description": "default 600"}},
-                []),
-            _schema("worktree_list", "List git worktrees attached to this repository.",
-                {"path": {"type": "string"}}, []),
-            _schema("worktree_create",
+                gitops.RunTestsArgs,
+                descriptions={
+                    "path": "subdirectory, default '.'",
+                    "timeout_sec": "default 600",
+                },
+                # The documented contract is "detected from repository
+                # signals, cannot be overridden"; keep that true in the schema.
+                exclude={"command"},
+            ),
+            _schema_from_model(
+                "worktree_list",
+                "List git worktrees attached to this repository.",
+                gitops.WorktreeListArgs,
+                descriptions={"path": "repo directory, default '.'"},
+            ),
+            _schema_from_model(
+                "worktree_create",
                 "Create an isolated git worktree on a new branch, so concurrent work does not "
                 "disturb the current working tree. Returns the worktree path to operate in.",
-                {"branch": {"type": "string", "description": "new branch name, e.g. feature/login"},
-                 "path": {"type": "string", "description": "repo subdirectory, default '.'"},
-                 "base": {"type": "string", "description": "optional base ref"}},
-                ["branch"]),
-            _schema("worktree_remove",
+                gitops.WorktreeCreateArgs,
+                descriptions={
+                    "branch": "new branch name, e.g. feature/login",
+                    "path": "repo subdirectory, default '.'",
+                    "base": "optional base ref",
+                },
+            ),
+            _schema_from_model(
+                "worktree_remove",
                 "Remove a git worktree previously created by worktree_create.",
-                {"worktree": {"type": "string", "description": "worktree path returned by worktree_create"},
-                 "force": {"type": "boolean", "description": "remove even when dirty"}},
-                ["worktree"]),
+                gitops.WorktreeRemoveArgs,
+                descriptions={
+                    "worktree": "worktree path returned by worktree_create",
+                    "force": "remove even when dirty",
+                },
+            ),
             _schema("task_begin",
                 "Open a per-task branch + isolated worktree (git-backed task memory). "
                 "Use for multi-step work that should land as one reviewable branch.",

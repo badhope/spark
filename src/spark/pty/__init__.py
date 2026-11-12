@@ -11,8 +11,9 @@
 * :class:`PtyManager.write` — 对已关闭/不存在的 tab 是 no-op（返回 False），
   绝不向调用方抛错。
 
-Windows 不支持（需要 winpty / ConPTY），整个模块在导入时仍可用，
-只有真正 ``PtyManager()`` 时才给出清晰的 ImportError。
+Windows 通过 pywinpty（ConPTY）提供真实 PTY；Linux/macOS 使用 ptyprocess。
+整个模块在导入时仍可用，只有缺少对应后端时才在 ``PtySession`` 构造时给出
+清晰的 ImportError。
 """
 
 from __future__ import annotations
@@ -30,10 +31,18 @@ logger = logging.getLogger(__name__)
 #: shell 退出时追加到输出流的标记，前端/测试据此判断标签页已结束。
 EXIT_MARKER = "\x00__SPARK_PTY_EXIT__\x00"
 
-try:  # pragma: no cover - 仅 Windows 缺依赖时走分支
-    from ptyprocess import PtyProcess as _PtyProcess
-except ImportError:  # pragma: no cover
-    _PtyProcess = None  # type: ignore[assignment]
+_IS_WINDOWS = os.name == "nt"
+
+if _IS_WINDOWS:  # pragma: no cover - Windows branch
+    try:
+        from winpty import PtyProcess as _PtyProcess
+    except ImportError:
+        _PtyProcess = None  # type: ignore[assignment]
+else:  # pragma: no cover - POSIX branch
+    try:
+        from ptyprocess import PtyProcess as _PtyProcess
+    except ImportError:
+        _PtyProcess = None  # type: ignore[assignment]
 
 
 def _default_shell() -> str:
@@ -59,9 +68,8 @@ class PtySession:
     ) -> None:
         if _PtyProcess is None:
             raise ImportError(
-                "内置终端需要 ptyprocess（仅 Linux/macOS 支持）："
+                "内置终端需要 pywinpty（Windows）或 ptyprocess（Linux/macOS）："
                 "pip install 'spark-agent[pty]'。"
-                "Windows 没有 POSIX 伪终端，请在系统终端里直接运行命令。"
             )
         self.sid = sid
         self.tab_id = tab_id
@@ -76,7 +84,10 @@ class PtySession:
         self._sub_lock = threading.Lock()
         self._subscribers: list[queue.Queue[str]] = []
 
-        argv = [_default_shell(), "-i"]
+        if _IS_WINDOWS:
+            argv = [os.environ.get("COMSPEC", "cmd.exe")]
+        else:
+            argv = [_default_shell(), "-i"]
         self._proc = _PtyProcess.spawn(
             argv,
             cwd=str(self.cwd),
@@ -176,7 +187,9 @@ class PtySession:
                     if self._stop.is_set():
                         break
                     continue
-                text = decoder.decode(data)
+                # pywinpty returns str; ptyprocess returns bytes. Decode only
+                # the POSIX backend so incremental UTF-8 handling stays correct.
+                text = decoder.decode(data) if isinstance(data, (bytes, bytearray)) else str(data)
                 self._broadcast(text)
         finally:
             try:
@@ -195,7 +208,11 @@ class PtySession:
         if not self.alive:
             return False
         try:
-            payload = data.encode("utf-8", "replace") if isinstance(data, str) else bytes(data)
+            payload: str | bytes
+            if _IS_WINDOWS:
+                payload = data if isinstance(data, str) else bytes(data).decode("utf-8", "replace")
+            else:
+                payload = data.encode("utf-8", "replace") if isinstance(data, str) else bytes(data)
             self._proc.write(payload)
             return True
         except Exception:  # noqa: BLE001

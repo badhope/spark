@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import atexit
 import logging
-import os
-import signal
 import subprocess
 import threading
 import time
@@ -11,6 +9,7 @@ import uuid
 from typing import Any
 
 from spark.models import ToolResult
+from spark.platform_compat import kill_process_tree
 from spark.sandbox import WorkdirSandbox
 from spark.tools._common import clip_text
 
@@ -231,39 +230,16 @@ def bg_output_tool(args: dict) -> ToolResult:
 
 
 def _kill_job(job: dict) -> None:
-    """Kill the whole process group so children of `shell -c 'cmd'` die too."""
+    """Kill the whole process tree so children of `shell -c 'cmd'` die too."""
     proc = job["process"]
-    if os.name == "nt":
-        try:
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                capture_output=True,
-                timeout=10,
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            pass
-    else:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)  # type: ignore[attr-defined,arg-type]
-        except (ProcessLookupError, PermissionError):
-            try:
-                proc.terminate()
-            except ProcessLookupError:
-                pass
+    kill_process_tree(proc.pid, proc)
     try:
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         try:
-            if os.name == "nt":
-                proc.kill()
-            else:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)  # type: ignore[attr-defined,arg-type]
-        except (ProcessLookupError, PermissionError, OSError):
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
+            proc.kill()
+        except (ProcessLookupError, OSError):
+            pass
 
 
 def bg_kill_tool(args: dict) -> ToolResult:

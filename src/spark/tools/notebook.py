@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import uuid
 
+import nbformat
 from pydantic import BaseModel
 
 from spark.models import ToolResult
@@ -20,19 +22,37 @@ class NotebookEditArgs(BaseModel):
     cell_type: str | None = None  # optional: change to "code" or "markdown"
 
 
-def _load(path) -> dict:
+def _load(path) -> nbformat.NotebookNode:
+    """Read and normalise a notebook through nbformat.
+
+    Older/hand-written notebooks in the wild often omit ``nbformat_minor``,
+    cell ``id`` and ``execution_count``. Fill those defaults before
+    ``from_dict`` so a partial-but-readable notebook is repaired rather than
+    rejected; nbformat still owns the schema and the writer.
+    """
     data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict) or "cells" not in data:
+    if not isinstance(data, dict) or not isinstance(data.get("cells"), list):
         raise ValueError("not a valid notebook (missing cells)")
-    return data
+    data.setdefault("nbformat", 4)
+    data.setdefault("nbformat_minor", 5)
+    data.setdefault("metadata", {})
+    for cell in data["cells"]:
+        if not isinstance(cell, dict):
+            raise ValueError("not a valid notebook (cell is not an object)")
+        cell.setdefault("metadata", {})
+        cell.setdefault("id", uuid.uuid4().hex[:8])
+        if cell.get("cell_type") == "code":
+            cell.setdefault("outputs", [])
+            cell.setdefault("execution_count", None)
+    return nbformat.from_dict(data)
 
 
-def _source_text(cell: dict) -> str:
+def _source_text(cell) -> str:
     src = cell.get("source", "")
     return src if isinstance(src, str) else "".join(src)
 
 
-def _output_preview(cell: dict) -> str:
+def _output_preview(cell) -> str:
     if cell.get("cell_type") != "code":
         return ""
     parts: list[str] = []
@@ -56,7 +76,7 @@ def read_notebook(sandbox: WorkdirSandbox, args: ReadNotebookArgs) -> ToolResult
         nb = _load(path)
     except Exception as exc:
         return ToolResult(ok=False, payload={"error": str(exc)})
-    cells = nb["cells"]
+    cells = nb.cells
     limit = max(1, min(200, args.max_cells))
     out = []
     for i, cell in enumerate(cells[:limit]):
@@ -83,7 +103,7 @@ def notebook_edit(sandbox: WorkdirSandbox, args: NotebookEditArgs) -> ToolResult
         nb = _load(path)
     except Exception as exc:
         return ToolResult(ok=False, payload={"error": str(exc)})
-    cells = nb["cells"]
+    cells = nb.cells
     if args.cell_index < 0 or args.cell_index >= len(cells):
         return ToolResult(ok=False, payload={"error": f"cell_index out of range (0..{len(cells) - 1})"})
     cell = cells[args.cell_index]
@@ -102,7 +122,8 @@ def notebook_edit(sandbox: WorkdirSandbox, args: NotebookEditArgs) -> ToolResult
         cell.pop("outputs", None)
     tmp = path.with_suffix(path.suffix + ".tmp")
     try:
-        tmp.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")
+        with tmp.open("w", encoding="utf-8") as handle:
+            nbformat.write(nb, handle)
         tmp.replace(path)
     except Exception as exc:
         if tmp.exists():

@@ -11,9 +11,10 @@ from pathlib import Path
 
 import pytest
 
-ptyprocess = pytest.importorskip("ptyprocess")
-
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="PTY 暂不支持 Windows")
+if sys.platform == "win32":
+    pytest.importorskip("winpty")
+else:
+    pytest.importorskip("ptyprocess")
 
 from spark.config import SparkConfig  # noqa: E402
 from spark.store import SessionStore  # noqa: E402

@@ -57,6 +57,17 @@ def test_grep_escape_outside_workdir(sandbox: WorkdirSandbox) -> None:
     assert not result.ok
 
 
+def test_grep_respects_gitignore(sandbox: WorkdirSandbox) -> None:
+    root = sandbox.root
+    (root / ".gitignore").write_text("ignored/\n*.log\n", encoding="utf-8")
+    (root / "ignored").mkdir()
+    (root / "ignored" / "hidden.py").write_text("needle\n", encoding="utf-8")
+    (root / "debug.log").write_text("needle\n", encoding="utf-8")
+    result = search.grep_tool(sandbox, search.GrepArgs(pattern="needle"))
+    assert result.ok
+    assert not any("ignored/" in item or "debug.log" in item for item in result.payload["results"])
+
+
 def test_fetch_page_parses_html() -> None:
     html = "<html><head><title>T</title></head><body><script>bad()</script><p>hello world</p><p>second</p></body></html>"
     import httpx
@@ -89,6 +100,36 @@ def test_fetch_page_parses_html() -> None:
 def test_fetch_rejects_non_http() -> None:
     with pytest.raises(ValueError):
         web.fetch_page("file:///etc/passwd", 1000)
+
+
+def test_search_web_prefers_ddgs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        web,
+        "ddgs_search",
+        lambda query, max_results: [
+            {"title": "ddgs", "url": "https://ddgs.example", "snippet": "s"}
+        ],
+    )
+
+    def _boom(query, max_results):
+        raise AssertionError("Bing must not be called when ddgs returns results")
+
+    monkeypatch.setattr(web, "bing_search", _boom)
+    results = web.search_web("q", 1)
+    assert results[0]["title"] == "ddgs"
+
+
+def test_search_web_falls_back_to_bing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(web, "ddgs_search", lambda query, max_results: None)
+    monkeypatch.setattr(
+        web,
+        "bing_search",
+        lambda query, max_results: [
+            {"title": "bing", "url": "https://bing.example", "snippet": "s"}
+        ],
+    )
+    results = web.search_web("q", 1)
+    assert results[0]["title"] == "bing"
 
 
 def test_registry_schemas_include_new_tools() -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html as html_mod
 import json
+import logging
 import re
 import socket
 from html.parser import HTMLParser
@@ -12,6 +13,8 @@ from pydantic import BaseModel
 
 from spark.models import ToolResult
 from spark.tools.untrusted import wrap
+
+logger = logging.getLogger(__name__)
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
@@ -54,6 +57,50 @@ def bing_search(query: str, max_results: int) -> list[dict[str, str]]:
         if len(results) >= max_results:
             break
     return results
+
+
+def ddgs_search(query: str, max_results: int) -> list[dict[str, str]] | None:
+    """Search through ddgs when installed; None means "fall back to Bing".
+
+    ddgs is the maintained DuckDuckGo client (the older ``duckduckgo_search``
+    package was renamed). It is an optional dependency: minimal installs keep
+    the existing Bing scraper.
+    """
+    try:
+        from ddgs import DDGS
+    except Exception:  # pragma: no cover - optional dependency
+        return None
+    try:
+        with DDGS() as client:
+            rows = client.text(query, max_results=max_results)
+    except Exception as exc:  # noqa: BLE001 - search backends fail in many ways
+        logger.debug("ddgs search failed, falling back to Bing: %s", exc, exc_info=True)
+        return None
+    results: list[dict[str, str]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        link = str(row.get("href") or row.get("url") or "")
+        if not link.startswith("http"):
+            continue
+        results.append(
+            {
+                "title": str(row.get("title") or ""),
+                "url": link,
+                "snippet": str(row.get("body") or row.get("snippet") or "")[:300],
+            }
+        )
+        if len(results) >= max_results:
+            break
+    return results or None
+
+
+def search_web(query: str, max_results: int) -> list[dict[str, str]]:
+    """Prefer ddgs; fall back to the legacy Bing scraper."""
+    results = ddgs_search(query, max_results)
+    if results:
+        return results
+    return bing_search(query, max_results)
 
 
 class _TextExtractor(HTMLParser):
@@ -184,6 +231,25 @@ def _assert_fetchable(url: str) -> None:
 _MAX_REDIRECTS = 5
 
 
+def extract_readable_text(raw: str) -> str | None:
+    """Extract main article text with trafilatura when installed."""
+    try:
+        import trafilatura
+    except Exception:  # pragma: no cover - optional dependency
+        return None
+    try:
+        text = trafilatura.extract(
+            raw,
+            include_comments=False,
+            include_tables=True,
+            favor_precision=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - extraction must never break fetch
+        logger.debug("trafilatura extraction failed: %s", exc, exc_info=True)
+        return None
+    return text.strip() if text else None
+
+
 def fetch_page(url: str, max_chars: int) -> dict[str, str]:
     """Fetch a page with SSRF checks applied to *every* hop.
 
@@ -210,11 +276,15 @@ def fetch_page(url: str, max_chars: int) -> dict[str, str]:
     ctype = resp.headers.get("content-type", "")
     raw = resp.text[:MAX_FETCH_BYTES]
     if "html" in ctype or "xml" in ctype or not ctype:
-        parser = _TextExtractor()
-        parser.feed(raw)
-        text = parser.text()
         title_m = re.search(r"<title[^>]*>(.*?)</title>", raw, re.DOTALL | re.IGNORECASE)
         title = _strip_tags(title_m.group(1)) if title_m else ""
+        text = extract_readable_text(raw)
+        if not text:
+            # trafilatura is optional and can decline short/odd pages; keep the
+            # dependency-free parser as the fallback.
+            parser = _TextExtractor()
+            parser.feed(raw)
+            text = parser.text()
     else:
         title = ""
         text = raw
@@ -227,7 +297,7 @@ def web_search_tool(args: WebSearchArgs) -> ToolResult:
         return ToolResult(ok=False, payload={"error": "query required"})
     max_results = max(1, min(10, args.max_results))
     try:
-        results = bing_search(query, max_results)
+        results = search_web(query, max_results)
     except Exception as exc:
         return ToolResult(ok=False, payload={"error": f"web search failed: {exc}"})
     if not results:
