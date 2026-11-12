@@ -7,6 +7,7 @@ import secrets
 import threading
 import time
 import uuid
+import weakref
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,13 @@ from spark.tools.registry import ToolContext, ToolRegistry
 from spark.web.utils import MCP_REDACTED_HEADER, probe_env, redact_mcp_headers
 
 logger = logging.getLogger(__name__)
+
+# Weak registry of live web states. Production teardown and the test suite both
+# need a single place to stop schedulers / close Chroma clients; without it a
+# state created by a test kept its scheduler thread and native client alive into
+# the next test (the full-suite Chroma access violation reproduced this way).
+_ACTIVE_STATES: list[weakref.ReferenceType["SparkWebState"]] = []
+_ACTIVE_STATES_LOCK = threading.Lock()
 
 
 class WebQuestionBridge:
@@ -223,7 +231,47 @@ class SparkWebState:
         self.automations = AutomationScheduler(self.store, on_due=self.run_due_automations)
         self.boot_mcp()
         self.rebuild_loop(reuse_latest=True)
+        # Register before starting the thread: if start() ever raises, the
+        # teardown registry can still stop/close this instance.
+        with _ACTIVE_STATES_LOCK:
+            _ACTIVE_STATES.append(weakref.ref(self))
         self.automations.start()
+
+    def close(self) -> None:
+        """Stop background workers and release owned native resources.
+
+        Idempotent: tests and ``serve_web`` may both call it. The SessionStore is
+        owned by the caller and is intentionally left open; the caller decides
+        when to close it.
+        """
+        try:
+            self.automations.stop()
+        except Exception:  # pragma: no cover - teardown must not raise
+            logger.debug("automation scheduler stop failed", exc_info=True)
+
+        bridge = self.mcp_bridge
+        self.mcp_bridge = None
+        if bridge is not None:
+            try:
+                run_coroutine_sync(bridge.close())
+            except Exception:  # pragma: no cover - teardown must not raise
+                logger.debug("MCP bridge close failed", exc_info=True)
+
+        try:
+            self.memory_store.close()
+        except Exception:  # pragma: no cover - teardown must not raise
+            logger.debug("memory store close failed", exc_info=True)
+
+    @classmethod
+    def close_all(cls) -> None:
+        """Close every live state created in this process (used by tests)."""
+        with _ACTIVE_STATES_LOCK:
+            refs = list(_ACTIVE_STATES)
+            _ACTIVE_STATES.clear()
+        for ref in refs:
+            state = ref()
+            if state is not None:
+                state.close()
 
     @staticmethod
     def _detect_env() -> dict:

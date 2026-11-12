@@ -327,11 +327,17 @@ _ALLOWED_DEVICE_SINKS = frozenset(
 def _is_device_sink(path: Path | str) -> bool:
     """True for the harmless standard device files (null/zero/std*/tty).
 
-    Compared on the *logical* form: on Windows ``Path("/dev/null")`` resolves to
-    ``C:/dev/null``, so matching the resolved path would never work.
+    Compared on the *logical* form: on Windows ``Path("/dev/null")`` resolves
+    against the current drive (``C:/dev/null``, ``D:/dev/null``, ...), so a
+    drive-specific prefix check was wrong. Strip any drive or extended-length
+    prefix before comparing the POSIX device path.
     """
     text = str(path).replace("\\", "/").lower()
-    if text.startswith("c:/dev/"):
+    if text.startswith("//?/"):
+        text = text[4:]
+    elif text.startswith("//./"):
+        text = text[4:]
+    if len(text) >= 3 and text[1] == ":" and text[2] == "/":
         text = text[2:]
     text = text.rstrip("/")
     return text in _ALLOWED_DEVICE_SINKS

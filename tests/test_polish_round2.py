@@ -284,6 +284,24 @@ def test_repair_is_idempotent(tmp_path: Path, monkeypatch) -> None:
     assert applied_second == [], "second repair must not redo work"
 
 
+def test_detect_env_falls_back_to_current_interpreter(monkeypatch) -> None:
+    """A PATH-only probe must not report "no python" when Spark is running.
+
+    CI/venv launchers often invoke the interpreter by absolute path, so the
+    running interpreter is the authoritative proof that Python exists.
+    """
+    from spark.tools import shell as shell_tools
+
+    monkeypatch.setattr(shell_tools.shutil, "which", lambda _name: None)
+    shell_tools._ENV_PROBE_CACHE.clear()
+    try:
+        env = shell_tools.detect_env(Path.cwd())
+    finally:
+        shell_tools._ENV_PROBE_CACHE.clear()
+    assert "python" in env
+    assert "git" not in env
+
+
 # ---------------------------------------------------------------------------
 # Mock provider stays explicit
 # ---------------------------------------------------------------------------

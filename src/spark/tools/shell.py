@@ -363,7 +363,17 @@ def detect_env(workdir) -> dict:
         name, cmd = item
         exe = shutil.which(cmd[0])
         if exe is None:
-            return None
+            # Spark is running under *some* interpreter, even when it was
+            # launched by absolute path (venv, embedded distribution, CI). A
+            # PATH-only probe reported "no python" and made selfheal claim the
+            # runtime was broken. Fall back to the current interpreter for the
+            # two probes that can answer through it.
+            if name == "python":
+                cmd = [sys.executable, "--version"]
+            elif name == "pip":
+                cmd = [sys.executable, "-m", "pip", "--version"]
+            else:
+                return None
         try:
             completed = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=5, cwd=workdir

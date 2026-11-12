@@ -12,7 +12,7 @@ import pytest
 from spark.config import SparkConfig
 from spark.models import ChatMessage
 from spark.platform_compat import is_reserved_filename
-from spark.sandbox import WorkdirSandbox, safe_bare_filename
+from spark.sandbox import WorkdirSandbox, _is_device_sink, safe_bare_filename
 from spark.store import SessionStore
 from spark.tools import fs
 from spark.tools.diagnostics import DiagnosticsArgs, diagnostics_tool
@@ -330,6 +330,31 @@ def test_destructive_variants_stay_blocked(tmp_path: Path, command: str) -> None
 )
 def test_normal_commands_are_not_false_positives(tmp_path: Path, command: str) -> None:
     assert _sb(tmp_path).check_shell(command) is None, command
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/dev/null",
+        "C:/dev/null",
+        "D:/dev/null",
+        "E:/dev/null",
+        "//?/D:/dev/null",
+        "//?/C:/dev/zero",
+    ],
+)
+def test_device_sinks_are_recognized_on_any_drive(path: str) -> None:
+    """Windows resolves POSIX /dev/* against the *current* drive.
+
+    A drive-specific ``c:/`` check made ``2>/dev/null`` a protected-path hit
+    whenever pytest ran from D: or E:; the logical device path is what matters.
+    """
+    assert _is_device_sink(Path(path)) is True
+
+
+def test_device_sink_does_not_exempt_dev_itself() -> None:
+    # Only the named sinks are exempt; the parent /dev protection stays.
+    assert _is_device_sink(Path("D:/dev")) is False
 
 
 # ---------------------------------------------------------------------------

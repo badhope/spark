@@ -164,10 +164,11 @@ def serve_web(
             _state._notify_hook("app_stop", {"reason": "server_shutdown"})
         except Exception:  # pragma: no cover - shutdown must not fail
             logger.debug("app_stop hook failed", exc_info=True)
-        # 调度线程必须在 store.close() 之前停下：否则它会在关闭后的 sqlite
-        # 连接上继续查询，日志里刷满 ProgrammingError。
+        # 调度线程和 Chroma 客户端必须在 store.close() 之前停下/释放：否则
+        # 调度线程会在关闭后的 sqlite 连接上继续查询，原生客户端也可能把
+        # 资源带进下一次测试/下一次启动。
         try:
-            _state.automations.stop()
+            _state.close()
         except Exception:  # pragma: no cover - shutdown must not fail
-            logger.debug("automation scheduler stop failed", exc_info=True)
+            logger.debug("web state close failed", exc_info=True)
         store.close()

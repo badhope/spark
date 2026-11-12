@@ -93,7 +93,10 @@ def test_job_object_child_processes_die_with_job(tmp_path: Path) -> None:
     pidfile = tmp_path / "child.pid"
     inner.write_text(
         "import subprocess, sys, time\n"
-        "time.sleep(0.8)\n"
+        # Give the test process time to assign the Job Object before the
+        # grandchild is created. A tight 0.8s window failed under full-suite
+        # load even though the production path was fine.
+        "time.sleep(3.0)\n"
         "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
         f"open(r'{pidfile}', 'w').write(str(p.pid))\n"
         "time.sleep(60)\n",

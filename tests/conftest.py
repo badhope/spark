@@ -59,3 +59,21 @@ def _isolate_config(tmp_path):
         os.environ.pop("SPARK_HOME", None)
     else:
         os.environ["SPARK_HOME"] = old
+
+
+@pytest.fixture(autouse=True)
+def _close_web_states():
+    """Stop scheduler threads and release Chroma clients after every test.
+
+    Many tests build a real ``SparkWebState`` but only some of their fixtures
+    call ``automations.stop()``. The leaked scheduler threads and embedded
+    Chroma clients accumulated until the full suite hit a native access
+    violation; centralising teardown makes the leak impossible to reintroduce.
+    """
+    yield
+    try:
+        from spark.web.state import SparkWebState
+
+        SparkWebState.close_all()
+    except Exception:  # pragma: no cover - teardown must not mask test failures
+        pass
