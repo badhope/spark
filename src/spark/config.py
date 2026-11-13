@@ -112,6 +112,9 @@ class ProviderConfig(BaseModel):
     fallback_models: list[str] = Field(default_factory=list)
     # P1：小模型分工——压缩/摘要/记忆抽取等辅助调用使用（留空 = 主模型）
     small_model: str = ""
+    #: 推理模型思考开关。``default`` 用端点默认值；``disabled`` 显式关闭，
+    #: 适合批量长任务（某类端点的思考会吃光 token 预算，正文为空）。
+    thinking: Literal["default", "disabled", "enabled"] = "default"
 
 
 class AgentConfig(BaseModel):

@@ -57,6 +57,7 @@ dev = [
     "mypy>=1.11",
     "bandit>=1.7",
     "pre-commit>=3.6",
+    "playwright>=1.49",
 ]
 # OpenAPI 合同层（GET /api/openapi.json）。FastAPI 只用于声明 schema，不接管
 # 运行时；未安装时该端点返回 503 并给出安装指引。

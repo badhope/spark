@@ -77,24 +77,49 @@ const MODEL_PRESETS: { labelKey: TranslationKey; provider: string; base_url: str
   { labelKey: "preset.mock", provider: "mock", base_url: "http://localhost", model: "mock-model" },
 ]
 
-const TABS: { key: Tab; labelKey: TranslationKey; icon: React.ReactNode }[] = [
-  { key: "model", labelKey: "tab.model", icon: <IconLayers size={14} /> },
-  { key: "agent", labelKey: "tab.agent", icon: <IconTerminal size={14} /> },
-  { key: "security", labelKey: "tab.security", icon: <IconKey size={14} /> },
-  { key: "display", labelKey: "tab.display", icon: <IconSun size={14} /> },
-  { key: "memory", labelKey: "tab.memory", icon: <IconBrain size={14} /> },
-  { key: "mcp", labelKey: "tab.mcp", icon: <IconGlobe size={14} /> },
-  { key: "skills", labelKey: "tab.skills", icon: <IconSpark size={14} /> },
-  { key: "prompts", labelKey: "tab.prompts", icon: <IconFile size={14} /> },
-  { key: "plugins", labelKey: "tab.plugins", icon: <IconFolder size={14} /> },
-  { key: "shortcuts", labelKey: "tab.shortcuts", icon: <IconCommand size={14} /> },
-  { key: "knowledge", labelKey: "tab.knowledge", icon: <IconBrain size={14} /> },
-  { key: "wiki", labelKey: "tab.wiki", icon: <IconFile size={14} /> },
-  { key: "project", labelKey: "tab.project", icon: <IconSettings size={14} /> },
-  { key: "automations", labelKey: "tab.automations", icon: <IconClock size={14} /> },
-  { key: "debug", labelKey: "tab.debug", icon: <IconBug size={14} /> },
-  { key: "advanced", labelKey: "tab.advanced", icon: <IconStethoscope size={14} /> },
+const TAB_GROUPS: {
+  labelKey: TranslationKey
+  tabs: { key: Tab; labelKey: TranslationKey; icon: React.ReactNode }[]
+}[] = [
+  {
+    labelKey: "settings.groupCore",
+    tabs: [
+      { key: "model", labelKey: "tab.model", icon: <IconLayers size={14} /> },
+      { key: "agent", labelKey: "tab.agent", icon: <IconTerminal size={14} /> },
+      { key: "security", labelKey: "tab.security", icon: <IconKey size={14} /> },
+      { key: "display", labelKey: "tab.display", icon: <IconSun size={14} /> },
+    ],
+  },
+  {
+    labelKey: "settings.groupWorkspace",
+    tabs: [
+      { key: "project", labelKey: "tab.project", icon: <IconSettings size={14} /> },
+      { key: "memory", labelKey: "tab.memory", icon: <IconBrain size={14} /> },
+      { key: "knowledge", labelKey: "tab.knowledge", icon: <IconBrain size={14} /> },
+      { key: "wiki", labelKey: "tab.wiki", icon: <IconFile size={14} /> },
+      { key: "automations", labelKey: "tab.automations", icon: <IconClock size={14} /> },
+    ],
+  },
+  {
+    labelKey: "settings.groupExtensions",
+    tabs: [
+      { key: "mcp", labelKey: "tab.mcp", icon: <IconGlobe size={14} /> },
+      { key: "skills", labelKey: "tab.skills", icon: <IconSpark size={14} /> },
+      { key: "prompts", labelKey: "tab.prompts", icon: <IconFile size={14} /> },
+      { key: "plugins", labelKey: "tab.plugins", icon: <IconFolder size={14} /> },
+    ],
+  },
+  {
+    labelKey: "settings.groupSystem",
+    tabs: [
+      { key: "shortcuts", labelKey: "tab.shortcuts", icon: <IconCommand size={14} /> },
+      { key: "debug", labelKey: "tab.debug", icon: <IconBug size={14} /> },
+      { key: "advanced", labelKey: "tab.advanced", icon: <IconStethoscope size={14} /> },
+    ],
+  },
 ]
+
+const TABS = TAB_GROUPS.flatMap((group) => group.tabs)
 
 interface Props {
   onClose: () => void
@@ -754,25 +779,32 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
               <span className="text-[14px] font-semibold text-ink">{t("settings.title", lang)}</span>
             </div>
             <div className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-1">
-              {TABS.map((tb) => (
-                <button
-                  key={tb.key}
-                  type="button"
-                  onClick={() => setTab(tb.key)}
-                  aria-current={tab === tb.key ? "page" : undefined}
-                  className={cls(
-                    "relative flex items-center gap-2.5 rounded-[9px] px-3 py-2 text-left text-[12.5px] font-medium transition-colors duration-150",
-                    tab === tb.key ? "bg-selected text-ink" : "text-ink2 hover:bg-hover hover:text-ink",
-                  )}
-                >
-                  {/* 激活态用左侧细条标记，与侧栏会话项同一套语言；
-                      右侧孤立小圆点看起来像未读提示，容易误读。 */}
-                  {tab === tb.key && (
-                    <span aria-hidden className="absolute top-1/2 left-0 h-4 w-[2px] -translate-y-1/2 rounded-r bg-accent" />
-                  )}
-                  <span className={cls("shrink-0", tab === tb.key ? "text-accent" : "text-ink3")}>{tb.icon}</span>
-                  {t(tb.labelKey, lang)}
-                </button>
+              {TAB_GROUPS.map((group) => (
+                <div key={group.labelKey} className="flex flex-col gap-1">
+                  <p className="px-3 pt-2 pb-0.5 text-[10px] font-bold tracking-wide text-ink3 uppercase">
+                    {t(group.labelKey, lang)}
+                  </p>
+                  {group.tabs.map((tb) => (
+                    <button
+                      key={tb.key}
+                      type="button"
+                      onClick={() => setTab(tb.key)}
+                      aria-current={tab === tb.key ? "page" : undefined}
+                      className={cls(
+                        "relative flex items-center gap-2.5 rounded-[9px] px-3 py-2 text-left text-[12.5px] font-medium transition-colors duration-150",
+                        tab === tb.key ? "bg-selected text-ink" : "text-ink2 hover:bg-hover hover:text-ink",
+                      )}
+                    >
+                      {/* 激活态用左侧细条标记，与侧栏会话项同一套语言；
+                          右侧孤立小圆点看起来像未读提示，容易误读。 */}
+                      {tab === tb.key && (
+                        <span aria-hidden className="absolute top-1/2 left-0 h-4 w-[2px] -translate-y-1/2 rounded-r bg-accent" />
+                      )}
+                      <span className={cls("shrink-0", tab === tb.key ? "text-accent" : "text-ink3")}>{tb.icon}</span>
+                      {t(tb.labelKey, lang)}
+                    </button>
+                  ))}
+                </div>
               ))}
             </div>
             <div className="px-3 pb-3 pt-1">

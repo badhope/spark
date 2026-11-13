@@ -63,7 +63,39 @@ RELATIVE_PROTECTED = (
     ".git/config",
     ".git/info",
     ".gitmodules",
+    ".secrets",
+    ".agent-secrets",
 )
+
+# Credential-like filenames are unreadable/unwritable in every mode except
+# ``unrestricted``.  A coding agent has no legitimate reason to read a private
+# key or a live .env; examples/templates stay readable.
+_SENSITIVE_NAMES = {
+    ".env",
+    ".env.local",
+    ".env.production",
+    ".env.development",
+    ".netrc",
+    ".npmrc",
+    ".git-credentials",
+    "id_rsa",
+    "id_ed25519",
+    "id_ecdsa",
+    "id_dsa",
+    "credentials.json",
+    "secrets.json",
+}
+_SENSITIVE_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".jks", ".keystore"}
+_ENV_EXAMPLES = {".env.example", ".env.sample", ".env.template", ".env.dist"}
+
+
+def _is_sensitive_file(path: Path) -> bool:
+    name = path.name.lower()
+    if name in _SENSITIVE_NAMES:
+        return True
+    if name.startswith(".env.") and name not in _ENV_EXAMPLES:
+        return True
+    return path.suffix.lower() in _SENSITIVE_SUFFIXES
 
 
 def self_protected() -> list[str]:
@@ -78,6 +110,9 @@ def self_protected() -> list[str]:
     paths = [str(Path(_spark_pkg.__file__).resolve().parent)]
     config_toml = default_home() / "config.toml"
     paths.append(str(config_toml))
+    # Sessions, memory, credentials and checkpoints live under SPARK_HOME.
+    paths.append(str(default_home()))
+    paths.append(str(Path.home() / ".agent-secrets"))
     return paths
 
 # Commands that read sensitive material or modify system state; blocked outside full-access.
@@ -222,6 +257,33 @@ def _git_option_guard(tokens: list[str]) -> str | None:
             return "command blocked: git alias definitions can execute arbitrary commands"
         if low.startswith("--git-dir") or low.startswith("--work-tree"):
             return "command blocked: git --git-dir/--work-tree would leave the workdir"
+    return None
+
+
+def _inline_code_guard(tokens: list[str]) -> str | None:
+    """Block inline interpreter code in restricted modes.
+
+    ``python -c`` / ``node -e`` / PowerShell ``-Command`` can read arbitrary
+    files without ever putting a protected path in the command string, so the
+    path-token guard cannot see it. Scripts (``python foo.py``) stay allowed;
+    they are still subject to path + protected-file checks.
+    """
+    interpreters = {"python", "python3", "py", "node", "node.exe", "perl", "ruby", "php"}
+    flags = {"-c", "--eval", "-e", "-r", "-p", "--print", "-"}
+    shell_interpreters = {"powershell", "powershell.exe", "pwsh", "pwsh.exe"}
+    for index, token in enumerate(tokens):
+        name = Path(token).name.lower()
+        nxt = tokens[index + 1].lower() if index + 1 < len(tokens) else ""
+        if name in interpreters and nxt in flags:
+            return "command blocked: inline interpreter code is not allowed in restricted sandbox"
+        if name in shell_interpreters and nxt in {
+            "-c",
+            "-command",
+            "-encodedcommand",
+            "-e",
+            "-ec",
+        }:
+            return "command blocked: inline interpreter code is not allowed in restricted sandbox"
     return None
 
 
@@ -469,6 +531,19 @@ class WorkdirSandbox:
         return path
 
     def _check_protected(self, path: Path) -> None:
+        if not self.unrestricted and _is_sensitive_file(path):
+            from spark import audit
+
+            audit.record(
+                "sandbox_blocked",
+                path=str(path),
+                matched="credential_file",
+                root=str(getattr(self, "root", "")),
+                tool=getattr(self, "current_tool", ""),
+            )
+            raise SandboxPolicyError(
+                f"Blocked credential file: {path.name} (use unrestricted mode only if intended)"
+            )
         # Any .git control surface at any depth: a nested repo (`vendor/x/.git`)
         # or a submodule (`.git/modules/m/hooks`) is just as good a place to plant
         # a hook that runs on the user's next commit. 每个允许根都要查——
@@ -655,6 +730,9 @@ class WorkdirSandbox:
         except ValueError:
             tokens = normalised.split()
         tokens = [_strip_quotes(tok) for tok in tokens]
+        inline_reason = _inline_code_guard(tokens)
+        if inline_reason:
+            return inline_reason
         # git's own flags can re-enable arbitrary execution or move the repo:
         # `git -c alias.x='!cmd' x`, `git -C <dir> push`, `--work-tree`.
         git_reason = _git_option_guard(tokens)

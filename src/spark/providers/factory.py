@@ -40,4 +40,5 @@ def create_provider(cfg: SparkConfig, mock: MockProvider | None = None) -> Provi
         key or "",
         fallback_models=getattr(cfg.provider, "fallback_models", None),
         api_keys=getattr(cfg.provider, "api_keys", None),
+        thinking=getattr(cfg.provider, "thinking", "default"),
     )

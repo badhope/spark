@@ -3,8 +3,9 @@ import type { SessionRow } from "../types"
 import { useSessionStore } from "../store/sessionStore"
 import { useUiStore } from "../store/uiStore"
 import { ContextMeter } from "./ContextMeter"
+import { HeaderToolsMenu } from "./HeaderToolsMenu"
 import { IconButton } from "./ui"
-import { IconCommand, IconFolder, IconFork, IconGlobe, IconHelp, IconMenu, IconSpark, IconTerminal } from "./icons"
+import { IconCommand, IconHelp, IconMenu } from "./icons"
 import { t, type Lang } from "../i18n"
 
 export const Header = memo(function Header() {
@@ -15,11 +16,7 @@ export const Header = memo(function Header() {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
   const setPaletteOpen = useUiStore((s) => s.setPaletteOpen)
   const openHelp = useUiStore((s) => s.openHelp)
-  const openFiles = useUiStore((s) => s.openFiles)
   const toggleRightPanel = useUiStore((s) => s.toggleRightPanel)
-  const openBrowser = useUiStore((s) => s.openBrowser)
-  const openTerminal = useUiStore((s) => s.openTerminal)
-  const openGraph = useUiStore((s) => s.openGraph)
 
   const sessions = useSessionStore((s) => s.sessions)
   const title = (status && status.session_id && sessionTitle(lang, sessions, status.session_id)) || t("common.newChat", lang)
@@ -63,32 +60,9 @@ export const Header = memo(function Header() {
       <ContextMeter />
       {/* 响应式隐藏必须放在外层 span 上：IconButton 自带 inline-flex，
           与传入的 hidden 同属 display 工具类，胜负取决于 CSS 生成顺序，
-          实测 390px 下 9 个按钮全显示、标题被压成 0 宽、演示徽标与计量重叠。 */}
-      <span className="hidden sm:inline-flex">
-        <IconButton title={t("files.title", lang)} onClick={openFiles}>
-          <IconFolder size={16} />
-        </IconButton>
-      </span>
-      <span className="hidden sm:inline-flex">
-        <IconButton title={t("browser.title", lang)} onClick={openBrowser}>
-          <IconGlobe size={16} />
-        </IconButton>
-      </span>
-      <span className="hidden md:inline-flex">
-        <IconButton title={t("graph.title", lang)} onClick={openGraph}>
-          <IconSpark size={16} />
-        </IconButton>
-      </span>
-      <span className="hidden md:inline-flex">
-        <IconButton title={t("sidebar.fork", lang)} onClick={() => void useSessionStore.getState().handleFork()}>
-          <IconFork size={16} />
-        </IconButton>
-      </span>
-      <span className="hidden sm:inline-flex">
-        <IconButton title={`${t("terminal.title", lang)} (Ctrl+\`)`} onClick={openTerminal}>
-          <IconTerminal size={16} />
-        </IconButton>
-      </span>
+          实测 390px 下 9 个按钮全显示、标题被压成 0 宽、演示徽标与计量重叠。
+          低频工具收进下拉：九个同级图标让用户无从判断主次。 */}
+      <HeaderToolsMenu />
       <IconButton title={`${t("palette.title", lang)} (Ctrl+K)`} onClick={() => setPaletteOpen(true)}>
         <IconCommand size={16} />
       </IconButton>

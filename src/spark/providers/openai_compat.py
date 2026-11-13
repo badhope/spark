@@ -168,11 +168,13 @@ class OpenAICompatProvider:
         max_retries: int = 3,
         fallback_models: list[str] | None = None,
         api_keys: list[str] | None = None,
+        thinking: str = "default",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key = api_key
         self.max_retries = max_retries
+        self.thinking = thinking
         # P1：fallback 链（去重，排除主模型）；凭据池（api_key 永远是池首，去重保序）
         self.fallback_models = [m for m in (fallback_models or []) if m and m != model]
         pool: list[str] = []
@@ -304,6 +306,12 @@ class OpenAICompatProvider:
         )
         if provider_hint:
             completion_kwargs["custom_llm_provider"] = provider_hint
+        if self.thinking in {"disabled", "enabled"}:
+            # Passed through extra_body: drop_params=True would silently strip
+            # a top-level non-OpenAI field, making the switch a no-op.
+            extra = dict(completion_kwargs.get("extra_body") or {})
+            extra["thinking"] = {"type": self.thinking}
+            completion_kwargs["extra_body"] = extra
         if effort:
             completion_kwargs["reasoning_effort"] = effort
             if "deepseek" in target.lower():
@@ -424,6 +432,8 @@ class OpenAICompatProvider:
         tool_acc: dict[int, dict[str, str]] = {}
         think_state: dict[str, bool] = {"open": False, "closed": False}
         reported_usage: dict[str, int] = {}
+        text_seen = 0
+        finish_reason: str | None = None
 
         async for chunk in response:
             _collect_usage(chunk, reported_usage)
@@ -431,6 +441,8 @@ class OpenAICompatProvider:
             if not chunk or not chunk.choices:
                 continue
             choice = chunk.choices[0]
+            if getattr(choice, "finish_reason", None):
+                finish_reason = str(choice.finish_reason)
             delta = choice.delta if choice.delta else None
             if delta is None:
                 continue
@@ -450,6 +462,7 @@ class OpenAICompatProvider:
                     if kind == "reasoning":
                         yield ChatDelta(type="reasoning", text=piece)
                     elif piece:
+                        text_seen += len(piece)
                         yield ChatDelta(type="text", text=piece)
 
             # 3) Tool-call deltas (OpenAI-style incremental aggregation)
@@ -459,6 +472,23 @@ class OpenAICompatProvider:
         # Yield aggregated tool calls after the stream ends
         for delta in _tool_call_deltas(tool_acc):
             yield delta
+        # Reasoning models can spend the entire completion budget on hidden
+        # reasoning and emit zero answer text. Retrying is the only sane
+        # recovery: the caller would otherwise show an empty reply.
+        if (
+            not text_seen
+            and not tool_acc
+            and finish_reason == "length"
+            and self.fallback_models
+        ):
+            logger.warning("provider_empty_answer model=%s; trying fallback", self.model)
+            for fallback in self.fallback_models:
+                alt = OpenAICompatProvider(
+                    self.base_url, fallback, self.api_key, max_retries=0
+                )
+                async for delta in alt.stream(messages, tools, effort):
+                    yield delta
+                return
         yield ChatDelta(type="end", usage=reported_usage or None)
 
 
