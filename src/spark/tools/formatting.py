@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import logging
 import shutil
-import subprocess
 import sys
 from pathlib import Path
+
+from spark.proc import run_bounded
 
 logger = logging.getLogger(__name__)
 
@@ -79,14 +80,14 @@ def format_file(path: Path, root: Path, *, enabled: bool) -> dict:
         return result
     try:
         parts = command.split() if name == "ruff" else [command]
-        completed = subprocess.run(
+        completed = run_bounded(
             [*parts, *args, str(path)],
-            cwd=str(root),
-            capture_output=True,
-            text=True,
+            cwd=root,
             timeout=_FORMAT_TIMEOUT_SEC,
-            check=False,
         )
+        if completed.timed_out:
+            result["error"] = f"{name} timed out"
+            return result
         if completed.returncode == 0:
             result["formatted"] = True
             result["tool"] = name
@@ -94,8 +95,8 @@ def format_file(path: Path, root: Path, *, enabled: bool) -> dict:
             detail = (completed.stderr or completed.stdout or "").strip()
             result["error"] = detail[:300] or f"{name} exited {completed.returncode}"
             logger.debug("formatter %s failed on %s: %s", name, path, detail)
-    except (OSError, subprocess.SubprocessError) as exc:
-        # 超时、工具崩溃、权限问题：都只记录，不影响已写入的文件。
+    except OSError as exc:
+        # 工具崩溃、权限问题：都只记录，不影响已写入的文件。
         result["error"] = str(exc)[:300]
         logger.debug("formatter %s raised on %s", name, path, exc_info=True)
     return result

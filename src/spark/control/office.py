@@ -46,6 +46,7 @@ class ActionItem:
 class MeetingMinutes:
     title: str
     summary: str
+    ai_summary: str = ""
     attendees: list[str] = field(default_factory=list)
     topics: list[str] = field(default_factory=list)
     decisions: list[dict[str, Any]] = field(default_factory=list)
@@ -56,6 +57,7 @@ class MeetingMinutes:
         return {
             "title": self.title,
             "summary": self.summary,
+            "ai_summary": self.ai_summary,
             "attendees": list(self.attendees),
             "topics": list(self.topics),
             "decisions": list(self.decisions),
@@ -65,6 +67,8 @@ class MeetingMinutes:
 
     def markdown(self) -> str:
         lines = [f"# {self.title}", "", "## 摘要", self.summary, ""]
+        if self.ai_summary:
+            lines += ["## AI 摘要", self.ai_summary, ""]
         if self.attendees:
             lines += ["## 参会人员", "、".join(self.attendees), ""]
         if self.topics:
@@ -93,6 +97,8 @@ class MeetingMinutes:
         from spark.control.pdf import render_pdf
 
         blocks: list[tuple[str, Any]] = [("heading", "摘要"), ("paragraph", self.summary)]
+        if self.ai_summary:
+            blocks += [("heading", "AI 摘要"), ("paragraph", self.ai_summary)]
         if self.attendees:
             blocks += [("heading", "参会人员"), ("paragraph", "、".join(self.attendees))]
         if self.topics:
@@ -138,6 +144,9 @@ class MeetingMinutes:
         document.add_heading(self.title, level=0)
         document.add_heading("摘要", level=1)
         document.add_paragraph(self.summary)
+        if self.ai_summary:
+            document.add_heading("AI 摘要", level=1)
+            document.add_paragraph(self.ai_summary)
         if self.attendees:
             document.add_heading("参会人员", level=1)
             document.add_paragraph("、".join(self.attendees))
@@ -186,6 +195,8 @@ class MeetingMinutes:
         summary_slide.shapes.title.text = "摘要与议题"
         body = summary_slide.placeholders[1].text_frame
         body.text = self.summary
+        if self.ai_summary:
+            body.add_paragraph().text = "AI 摘要：" + self.ai_summary
         for topic in self.topics[:6]:
             paragraph = body.add_paragraph()
             paragraph.text = f"议题：{topic}"

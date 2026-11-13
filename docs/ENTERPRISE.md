@@ -157,6 +157,8 @@ curl -s http://127.0.0.1:18800/api/v1/me \
 | `SPARK_CONTROL_IMAP_USER` / `_IMAP_PASSWORD` | 空 | 邮箱凭据，只从环境读取，API 不返回 |
 | `SPARK_CONTROL_IMAP_MAILBOX` | `INBOX` | 默认邮箱 |
 | `SPARK_CONTROL_IMAP_SSL` | `true` | 是否使用 IMAPS |
+| `SPARK_CONTROL_MODEL_ASSIST` | `false` | 办公成果物启用模型摘要/章节；需同时配置模型网关 |
+| `SPARK_CONTROL_MODEL_TIMEOUT_SEC` | `45` | 模型摘要超时（秒），超时静默回退确定性结果 |
 
 ## 6. API（第一增量）
 
@@ -199,7 +201,10 @@ API：
 
 - 转写只在生成时处理，不写入任务 payload；持久化的是结构化纪要和成果物。
 - 行动项必须带负责人/截止时间，缺失时页面明确显示“待确认”，不伪装成确定结论。
-- 下一步再接模型摘要、会议室音频输入、模板与审批流。
+- 可选模型摘要：`SPARK_CONTROL_MODEL_ASSIST=true` 且模型网关已配置时，模型追加
+  一段“AI 摘要”；结构化决议/行动项与来源行号仍来自确定性解析。模型超时/失败
+  会静默回退，不阻塞纪要生成。
+- 下一步再接会议室音频输入、模板与审批流。
 
 ### 7.1 报告 / 表格
 
@@ -208,7 +213,8 @@ API：
 - 指标格式：`指标,实际,目标,单位[,lower]`；`lower` 表示越低越好（返工率、时延）。
 - 输出 Markdown、Excel（含“实际 vs 目标”柱状图）、Word、PPTX、PDF。
 - API：`/api/v1/office/reports` 列表/生成/详情/批准/下载（md/xlsx/docx/pptx/pdf）。
-- 当前同样是确定性生成；模型撰写报告正文后置。
+- 报告支持可选模型章节（`AI 结论` / `AI 风险`），与人工章节并列，指标计算不变。
+- 当前同样是确定性生成；模型摘要按 `SPARK_CONTROL_MODEL_ASSIST` 开关启用。
 
 ### 7.2 文档导入
 
@@ -224,7 +230,7 @@ API：
 ## 8. 当前边界
 
 - 这是控制面第一增量：**没有** 完整 OIDC 登录页、SCIM、组织成员管理 UI、RLS 迁移、对象存储、Temporal 工作流。
-- 会议纪要/报告是确定性解析；模型摘要与正文撰写尚未接入。
+- 会议纪要/报告的结构化部分保持确定性；模型只追加摘要/结论章节，且可关闭。
 - 会议室音频转写未接入；邮箱支持 IMAP 与 `.eml/.msg` 文件，IM/日历连接器未做。
 - 审计目前写 `audit_events` 表；企业版后续加导出/SIEM/防篡改。
 - Casbin 策略先用文件；后续可接数据库 adapter 与 OPA。

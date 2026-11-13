@@ -30,6 +30,7 @@ from spark.config import (
     env_api_key,
     write_config_template,
 )
+from spark.proc import run_bounded
 from spark.tools.shell import detect_env
 
 __all__ = ["diagnose", "repair", "probe_runtimes"]
@@ -309,14 +310,14 @@ def run_if_missing(cmd: list[str]) -> str | None:
     if exe is None:
         return None
     try:
-        proc = subprocess.run(
+        proc = run_bounded(
             cmd,
-            capture_output=True,
-            text=True,
             timeout=5,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0,
         )
-    except (OSError, subprocess.SubprocessError):
+    except OSError:
+        return None
+    if proc.timed_out:
         return None
     text = (proc.stdout or proc.stderr or "").strip().splitlines()
     return text[0][:80] if text else "installed"

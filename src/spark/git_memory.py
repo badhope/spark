@@ -18,12 +18,12 @@
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 
 from pydantic import BaseModel
 
 from spark.models import ToolResult
+from spark.proc import run_bounded
 from spark.sandbox import WorkdirSandbox
 from spark.tools import gitops
 
@@ -80,18 +80,15 @@ def _git(cwd: Path, *args: str, timeout: int = 60) -> tuple[int, str, str]:
     worktree API, so running read/lightweight git against it is safe here.
     """
     try:
-        completed = subprocess.run(
+        completed = run_bounded(
             ["git", *args],
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
+            cwd=cwd,
             timeout=timeout,
-            check=False,
         )
-    except subprocess.TimeoutExpired:
-        return 124, "", f"git {' '.join(args)} timed out"
     except OSError as exc:  # git missing etc.
         return 127, "", str(exc)
+    if completed.timed_out:
+        return 124, "", f"git {' '.join(args)} timed out"
     return completed.returncode, (completed.stdout or ""), (completed.stderr or "")
 
 

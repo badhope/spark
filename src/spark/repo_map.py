@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import logging
 import os
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+from spark.proc import run_bounded
 
 logger = logging.getLogger(__name__)
 
@@ -162,16 +163,14 @@ def _git_heat(root: Path, limit: int = 2000) -> dict[str, int]:
     非 git 仓库 / git 不可用 / 超时 → 返回空 dict，行为与旧版完全一致。
     """
     try:
-        proc = subprocess.run(
+        proc = run_bounded(
             ["git", "log", f"-{limit}", "--format=format:", "--name-only", "--"],
-            cwd=str(root),
-            capture_output=True,
-            text=True,
+            cwd=root,
             timeout=10,
         )
-    except (OSError, subprocess.SubprocessError):
+    except OSError:
         return {}
-    if proc.returncode != 0:
+    if proc.returncode != 0 or proc.timed_out:
         return {}
     heat: dict[str, int] = {}
     for line in proc.stdout.splitlines():

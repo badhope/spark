@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -20,6 +19,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from spark.models import ToolResult
+from spark.proc import run_bounded
 from spark.sandbox import WorkdirSandbox
 
 MAX_TIMEOUT = 60
@@ -73,10 +73,10 @@ def _ruff_diagnostics(root: Path, targets: list[str]) -> list[dict[str, Any]]:
     # can never be interpreted as a flag.
     cmd += ["--output-format", "json", "--no-cache", "--no-fix", "--", *(targets or ["."])]
     try:
-        proc = subprocess.run(
-            cmd, cwd=str(root), capture_output=True, text=True, timeout=MAX_TIMEOUT
-        )
-    except (OSError, subprocess.SubprocessError):
+        proc = run_bounded(cmd, cwd=root, timeout=MAX_TIMEOUT)
+    except OSError:
+        return []
+    if proc.timed_out:
         return []
     try:
         raw = json.loads(proc.stdout or "[]")
@@ -126,14 +126,14 @@ def _tsc_diagnostics(root: Path) -> list[dict[str, Any]]:
     if not (root / "tsconfig.json").exists() or not tsc:
         return []
     try:
-        proc = subprocess.run(
+        proc = run_bounded(
             [tsc, "--noEmit", "--pretty", "false"],
-            cwd=str(root),
-            capture_output=True,
-            text=True,
+            cwd=root,
             timeout=MAX_TIMEOUT,
         )
-    except (OSError, subprocess.SubprocessError):
+    except OSError:
+        return []
+    if proc.timed_out:
         return []
     out: list[dict[str, Any]] = []
     # tsc 人类可读输出：file(line,col): error TSxxxx: message

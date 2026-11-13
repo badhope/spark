@@ -129,6 +129,31 @@ async def test_credential_pool_rotates(monkeypatch):
     assert keys == ["k1", "k2"]  # 失败后轮换到池内下一把
 
 
+@pytest.mark.asyncio
+async def test_drops_reasoning_effort_after_400(monkeypatch):
+    class _BadRequest(Exception):
+        status_code = 400
+
+    p = OpenAICompatProvider("https://x.example/v1", "m", "k", max_retries=0)
+    calls = _patch_litellm(
+        monkeypatch,
+        [
+            _BadRequest("invalid request"),  # gateway rejects reasoning_effort
+            [_chunk("ok")],
+        ],
+    )
+    deltas = [
+        d
+        async for d in p.stream(
+            [ChatMessage(role="user", content="q")], tools=[], effort="medium"
+        )
+    ]
+    texts = "".join(d.text or "" for d in deltas if d.type == "text")
+    assert texts == "ok"
+    assert calls["kwargs"][0]["reasoning_effort"] == "medium"
+    assert "reasoning_effort" not in calls["kwargs"][1]
+
+
 def test_small_model_config_and_compactor_routing(tmp_path):
     from spark.core.compact import Compactor
     from spark.providers.mock import MockProvider

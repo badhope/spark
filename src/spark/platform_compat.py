@@ -140,6 +140,8 @@ def kill_process_tree(pid: int, process: subprocess.Popen | None = None) -> None
         return
     if IS_WINDOWS:
         try:
+            # stdout/stderr go to DEVNULL, so there is no pipe whose EOF the
+            # timeout fallback would have to wait for.
             subprocess.run(
                 ["taskkill", "/F", "/T", "/PID", str(pid)],
                 stdout=subprocess.DEVNULL,

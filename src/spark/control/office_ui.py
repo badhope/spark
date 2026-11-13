@@ -68,6 +68,9 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .result-empty .big{font-size:34px;opacity:.5}
 .summary{background:#fff7f1;border:1px solid #f3d6c5;border-left:3px solid var(--accent);border-radius:10px;
   padding:11px 13px;color:var(--ink2);margin-bottom:14px}
+.ai-note{margin-top:8px;background:#f2f7ff;border:1px solid #d6e2f3;border-left:3px solid #2f5597;border-radius:10px;
+  padding:10px 12px;font-size:12px;line-height:1.6;color:var(--ink2)}
+.ai-note b{color:#2f5597}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{border:1px solid var(--line);background:var(--panel2);color:var(--ink2);border-radius:999px;padding:3px 9px;font-size:11px}
 h3{font-size:12px;color:var(--ink3);text-transform:uppercase;letter-spacing:.9px;margin:16px 0 8px}
@@ -143,7 +146,7 @@ table td:first-child{word-break:break-word}
         <div class="actions">
           <button class="primary" id="generate">生成纪要</button>
           <button class="ghost" id="clear">清空</button>
-          <span class="muted" id="hint">本地确定性解析，不依赖模型；支持 md/docx/pptx/pdf 导出。</span>
+          <span class="muted" id="hint">确定性解析 + 可选模型摘要；支持 md/docx/pptx/pdf 导出。</span>
         </div>
       </div>
     </section>
@@ -286,6 +289,7 @@ function renderResult(data) {
   const pdf = artifacts.some(a => a.kind === "meeting_minutes_pdf");
   $("result").innerHTML = `
     <div class="summary">${escapeHtml(m.summary || "")}</div>
+    ${m.ai_summary ? `<div class="ai-note"><b>AI 摘要</b><br>${escapeHtml(m.ai_summary)}</div>` : ""}
     ${attendees ? `<h3>参会人员</h3><div class="chips">${attendees}</div>` : ""}
     ${topics ? `<h3>议题</h3><ul class="clean">${topics}</ul>` : ""}
     ${decisions ? `<h3>决议与结论</h3><ul class="clean">${decisions}</ul>` : ""}
@@ -343,7 +347,7 @@ async function loadMeetings() {
         <span class="recent-title">${escapeHtml(row.title)}</span>
         <span class="muted">${row.decision_count} 决议 · ${row.action_count} 行动</span>
       </div>`).join("");
-    document.querySelectorAll(".recent-item").forEach(el => {
+    document.querySelectorAll("#recent .recent-item").forEach(el => {
       el.onclick = () => openMeeting(el.dataset.id);
     });
   } catch (e) {
@@ -449,7 +453,7 @@ function renderReport(data) {
       <td>${escapeHtml(m.unit || "—")}</td></tr>`;
   }).join("");
   const sections = (r.sections || []).map(s =>
-    `<h3>${escapeHtml(s.heading)}</h3><p class="muted">${escapeHtml(s.body)}</p>`).join("");
+    `<h3>${escapeHtml(s.heading)}</h3><p class="muted" style="white-space:pre-line">${escapeHtml(s.body)}</p>`).join("");
   const has = (kind) => artifacts.some(a => a.kind === kind);
   $("report-result").innerHTML = `
     <div class="summary">${escapeHtml(r.summary || "")}</div>

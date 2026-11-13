@@ -4,6 +4,28 @@
 
 ## [Unreleased]
 
+### 办公模型摘要与网关修复（2026-11-13）
+
+- **模型摘要（可选）**：`SPARK_CONTROL_MODEL_ASSIST=true` 时，会议纪要追加
+  “AI 摘要”、报告追加“AI 结论 / AI 风险”章节；结构化解析与指标计算不变，
+  模型失败/超时/输出被截断时静默回退确定性结果（`src/spark/control/ai.py`）。
+- **网关修复**：LiteLLM Router 对自定义模型名缺少 provider hint 会抛
+  `LLM Provider NOT provided`；现在复用 `litellm_model_name()` 补 `openai`。
+  `create_app` 改用 `load_config`，使 `SPARK_BASE_URL` / `SPARK_MODEL` 生效。
+- **办公 UI 修复**：最近报告点击被会议的全局选择器覆盖导致 `meeting not found`，
+  改为 `#recent` / `#report-recent` 分区绑定；报告章节正文按换行渲染。
+
+### 真实模型接入与 provider 兼容（2026-11-12）
+
+- **provider 兼容**：OpenAI 兼容网关若以 400 拒绝 `reasoning_effort`，自动去掉该
+  可选参数重试一次，不消耗重试预算；普通对话/工具调用不再因网关不支持该参数失败。
+- **真实模型验证**：`spark-x2.6-4b`（`https://maas-api.cn-huabei-1.xf-yun.com/v2`）
+  跑通普通对话、SSE 流式、`list_dir` 工具调用和 Web UI；密钥仅保存在工作区
+  `.secrets/maas.key`，不进入仓库。
+- **opencode 接手改动核对**：新增 `spark.proc.run_bounded`，替换多处
+  `subprocess.run(timeout=...)`，修复 Windows 下子进程继承管道导致超时不生效；
+  相关测试通过。
+
 ### Wave 3：会议纪要与行动项第一增量（2026-11-11）
 
 - **新增 `/office` 工作台**：粘贴会议转写，生成参会人员、议题、决议、行动项；

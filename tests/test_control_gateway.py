@@ -29,3 +29,14 @@ def test_configured_provider_reports_status() -> None:
     status = gateway.status()
     assert status["model"] == "test-model"
     assert status["fallbacks"] == ["backup-model"]
+
+
+def test_router_accepts_custom_model_name() -> None:
+    """LiteLLM Router requires a provider hint for non-built-in model names."""
+    cfg = SparkConfig()
+    cfg.provider.name = "openai_compat"
+    cfg.provider.model = "spark-x2.6-4b"
+    cfg.provider.base_url = "https://example.invalid/v2"
+    cfg.provider.api_key = "test-key"
+    gateway = ModelGateway(cfg)
+    assert gateway.router() is not None

@@ -207,7 +207,8 @@ def probe_env() -> list[dict[str, str]]:
     供「设置 → 权限 → 运行环境探测」展示；探测失败的工具标记 unavailable。
     """
     import shutil
-    import subprocess
+
+    from spark.proc import run_bounded
 
     tools = [
         ("python", ["python", "--version"]),
@@ -225,13 +226,16 @@ def probe_env() -> list[dict[str, str]]:
             continue
         version = ""
         try:
-            proc = subprocess.run(
-                argv, capture_output=True, text=True, timeout=5, check=False
-            )
+            proc = run_bounded(argv, timeout=5)
+        except OSError:
+            proc = None
+        if proc is None:
+            version = "unavailable"
+        elif proc.timed_out:
+            version = "timeout"
+        else:
             version = (proc.stdout or proc.stderr).strip().splitlines()[0] if (
                 proc.stdout or proc.stderr
             ) else ""
-        except (OSError, subprocess.TimeoutExpired):
-            version = "unavailable"
         out.append({"name": name, "path": exe, "version": version or "?"})
     return out

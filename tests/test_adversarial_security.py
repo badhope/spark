@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from spark.config import SparkConfig, load_config
+from spark.proc import BoundedResult
 from spark.tools import gitops
 from spark.tools.registry import ToolContext, ToolRegistry
 
@@ -54,17 +55,12 @@ def test_run_tests_rejects_arbitrary_command_override(tmp_path: Path) -> None:
 def test_run_tests_never_uses_shell_true(tmp_path: Path, monkeypatch) -> None:
     captured: dict = {}
 
-    class _Result:
-        returncode = 0
-        stdout = "ok"
-        stderr = ""
-
-    def fake_run(args, **kwargs):
-        captured["args"] = args
+    def fake_run(argv, **kwargs):
+        captured["args"] = argv
         captured["kwargs"] = kwargs
-        return _Result()
+        return BoundedResult(args=list(argv), returncode=0, stdout="ok", stderr="")
 
-    monkeypatch.setattr(gitops.subprocess, "run", fake_run)
+    monkeypatch.setattr(gitops, "run_bounded", fake_run)
     (tmp_path / "pyproject.toml").write_text("[tool.pytest]\n", encoding="utf-8")
     (tmp_path / "tests").mkdir()
     result = gitops.run_tests(_Sandbox(tmp_path), gitops.RunTestsArgs(path="."))  # type: ignore[arg-type]
@@ -106,17 +102,12 @@ def test_hook_runs_without_cmd_wrapper(tmp_path: Path, monkeypatch) -> None:
 
     captured: dict = {}
 
-    class _Result:
-        returncode = 0
-        stdout = ""
-        stderr = ""
-
-    def fake_run(args, **kwargs):
-        captured["args"] = list(args)
+    def fake_run(argv, **kwargs):
+        captured["args"] = list(argv)
         captured["kwargs"] = kwargs
-        return _Result()
+        return BoundedResult(args=list(argv), returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr("spark.hooks.run_bounded", fake_run)
     hook = ShellHook("noop", ["echo", "hello"], tmp_path)
     decision = hook.run({})
     assert decision.allow

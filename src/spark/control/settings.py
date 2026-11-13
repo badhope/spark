@@ -55,6 +55,10 @@ class ControlSettings(BaseSettings):
     imap_password: str = ""
     imap_mailbox: str = "INBOX"
     imap_ssl: bool = True
+    #: Model-assisted office text (summary/narrative). Off by default so tests
+    #: and air-gapped deployments never call a model implicitly.
+    model_assist: bool = False
+    model_timeout_sec: float = Field(default=45.0, ge=1.0, le=300.0)
     #: None = create tables automatically for SQLite only (never for Postgres).
     auto_create_tables: bool | None = None
 

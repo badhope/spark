@@ -13,9 +13,10 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from spark.proc import run_bounded
 
 _MAX_DIFF_CHARS = 80_000
 
@@ -51,14 +52,14 @@ class ReviewResult:
 
 def _run_git(workdir: Path, args: list[str]) -> str:
     try:
-        proc = subprocess.run(
+        proc = run_bounded(
             ["git", "-C", str(workdir), *args],
-            capture_output=True,
-            text=True,
             timeout=60,
         )
-    except (OSError, subprocess.SubprocessError) as exc:
+    except OSError as exc:
         raise ReviewError(f"git 执行失败：{exc}") from exc
+    if proc.timed_out:
+        raise ReviewError("git 执行超时")
     if proc.returncode != 0:
         raise ReviewError((proc.stderr or "git failed").strip()[:400])
     return proc.stdout

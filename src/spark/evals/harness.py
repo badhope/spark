@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import subprocess
 import sys
 import time
 import traceback
@@ -28,6 +27,7 @@ from typing import Any
 from spark.config import SparkConfig
 from spark.core.loop import AgentLoop
 from spark.models import ChatDelta, ToolCall
+from spark.proc import run_bounded
 from spark.providers.mock import MockProvider
 from spark.sandbox import WorkdirSandbox
 from spark.store import SessionStore
@@ -148,16 +148,14 @@ def _judge_run_command(workdir: Path, spec: dict[str, Any]) -> JudgeResult:
 
     # ``{python}`` 占位符展开为当前解释器，避免不同环境下 ``python`` 指向不一致。
     cmd = shlex.split(str(spec["command"]).replace("{python}", f'"{sys.executable}"'))
-    proc = subprocess.run(
+    proc = run_bounded(
         cmd,
         cwd=workdir,
-        capture_output=True,
-        text=True,
         timeout=int(spec.get("timeout_sec", 120)),
     )
     expected_rc = int(spec.get("expect_returncode", 0))
     out = (proc.stdout + proc.stderr)[-2000:]
-    output_ok = proc.returncode == expected_rc
+    output_ok = proc.returncode == expected_rc and not proc.timed_out
     contains_bad = [s for s in spec.get("expect_output_contains", []) if s not in proc.stdout]
     passed = output_ok and not contains_bad
     detail = f"rc={proc.returncode} (want {expected_rc})"

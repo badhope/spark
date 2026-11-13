@@ -328,14 +328,31 @@ class OpenAICompatProvider:
     ) -> tuple[Any, Exception | None]:
         """单目标重试：可重试错误指数退避，不可重试立即返回；成功返回 (response, None)。"""
         last_exc: Exception | None = None
-        for attempt in range(self.max_retries + 1):
+        effective_effort = effort
+        dropped_effort = False
+        attempt = 0
+        while attempt <= self.max_retries:
             try:
                 response = await litellm.acompletion(
-                    **self._request_kwargs(target, messages, tools, effort)
+                    **self._request_kwargs(target, messages, tools, effective_effort)
                 )
             except Exception as exc:  # aqg: top-level boundary
                 last_exc = exc
                 status = self._extract_status_code(exc)
+                # Some OpenAI-compatible gateways reject `reasoning_effort`
+                # outright. It is an optional tuning hint, never a
+                # correctness requirement, so drop it once and retry before
+                # giving up on this target. This retry does not consume a
+                # retry budget slot: it is a request-shape correction.
+                if status == 400 and effective_effort and not dropped_effort:
+                    dropped_effort = True
+                    effective_effort = None
+                    logger.info(
+                        "provider_effort_unsupported model=%s base_url=%s; retrying without reasoning_effort",
+                        target,
+                        self.base_url,
+                    )
+                    continue
                 is_retryable = (
                     status in _RETRYABLE_STATUS_CODES
                     or (
@@ -355,6 +372,7 @@ class OpenAICompatProvider:
                         backoff,
                         str(exc)[:200],
                     )
+                    attempt += 1
                     await asyncio.sleep(backoff)
                     continue
                 # 本目标不可重试（如 4xx）——交给外层决定是否切下一目标

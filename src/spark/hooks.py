@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
+
+from spark.proc import run_bounded
 
 SHELL_METACHARACTERS = set("&|<>^%!\n\r\x00")
 
@@ -42,20 +43,17 @@ class ShellHook:
 
     def run(self, payload: dict[str, Any]) -> HookDecision:
         try:
-            completed = subprocess.run(
+            completed = run_bounded(
                 list(self.command),
-                cwd=str(self.cwd),
-                input=json.dumps(payload, ensure_ascii=False),
-                capture_output=True,
-                text=True,
+                cwd=self.cwd,
+                input_text=json.dumps(payload, ensure_ascii=False),
                 timeout=self.timeout,
                 shell=False,
-                check=False,
             )
-        except subprocess.TimeoutExpired:
-            return HookDecision(allow=False, reason=f"hook {self.name} timed out")
         except OSError as exc:
             return HookDecision(allow=False, reason=f"hook {self.name} failed: {exc}")
+        if completed.timed_out:
+            return HookDecision(allow=False, reason=f"hook {self.name} timed out")
         if completed.returncode == 0:
             return HookDecision(allow=True)
         reason = (completed.stderr or completed.stdout or "").strip()

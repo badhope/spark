@@ -17,6 +17,7 @@ source_modules =
     spark.errors
     spark.config
     spark.platform_compat
+    spark.proc
     spark.asyncutil
     spark.sanitize
     spark.structured

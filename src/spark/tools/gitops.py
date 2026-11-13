@@ -4,13 +4,13 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 from pydantic import BaseModel
 
 from spark.models import ToolResult
+from spark.proc import run_bounded
 from spark.sandbox import WorkdirSandbox
 from spark.tools._common import clip_text
 
@@ -157,18 +157,15 @@ def _run_git(
             ok=False, payload={"error": f"not a git repository: {cwd_arg}"}
         )
     try:
-        completed = subprocess.run(
+        completed = run_bounded(
             ["git", *args],
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
+            cwd=cwd,
             timeout=timeout,
-            check=False,
         )
-    except subprocess.TimeoutExpired:
-        return ToolResult(ok=False, payload={"error": f"git {args[0]} timed out"})
     except FileNotFoundError:
         return ToolResult(ok=False, payload={"error": "git is not installed"})
+    if completed.timed_out:
+        return ToolResult(ok=False, payload={"error": f"git {args[0]} timed out"})
     ok = completed.returncode == 0
     payload: dict = {
         "command": f"git {' '.join(args)}",
@@ -363,16 +360,15 @@ def run_tests(sandbox: WorkdirSandbox, args: RunTestsArgs) -> ToolResult:
         if resolved:
             argv[0] = resolved
     try:
-        completed = subprocess.run(
+        completed = run_bounded(
             argv,
-            cwd=str(root),
-            capture_output=True,
-            text=True,
+            cwd=root,
             timeout=timeout,
             shell=False,
-            check=False,
         )
-    except subprocess.TimeoutExpired:
+    except OSError as exc:
+        return ToolResult(ok=False, payload={"command": command, "error": str(exc)})
+    if completed.timed_out:
         return ToolResult(
             ok=False,
             payload={
@@ -380,8 +376,6 @@ def run_tests(sandbox: WorkdirSandbox, args: RunTestsArgs) -> ToolResult:
                 "error": f"tests timed out after {timeout}s",
             },
         )
-    except OSError as exc:
-        return ToolResult(ok=False, payload={"command": command, "error": str(exc)})
     output = (completed.stdout or "") + (completed.stderr or "")
     return ToolResult(
         ok=completed.returncode == 0,
@@ -396,14 +390,13 @@ def run_tests(sandbox: WorkdirSandbox, args: RunTestsArgs) -> ToolResult:
 
 def run_git_capture(cwd: Path, *args: str) -> str:
     try:
-        completed = subprocess.run(
+        completed = run_bounded(
             ["git", *args],
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
+            cwd=cwd,
             timeout=30,
-            check=False,
         )
-    except (OSError, subprocess.SubprocessError):
+    except OSError:
+        return ""
+    if completed.timed_out:
         return ""
     return completed.stdout or ""

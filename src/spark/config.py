@@ -16,7 +16,6 @@ import logging
 import os
 import re
 import shutil
-import subprocess
 import sys
 import time
 import tomllib
@@ -30,6 +29,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from spark.errors import ConfigError
 from spark.platform_compat import CREATE_NO_WINDOW
+from spark.proc import run_bounded
 
 logger = logging.getLogger(__name__)
 
@@ -1076,15 +1076,14 @@ def _harden_permissions(f: Path) -> None:
         sid = _win_user_sid()
         if sid:
             try:
-                completed = subprocess.run(
+                completed = run_bounded(
                     ["icacls", str(f), "/inheritance:r", "/grant:r", f"*{sid}:F"],
-                    capture_output=True,
                     timeout=30,
                     creationflags=CREATE_NO_WINDOW,
                 )
                 if completed.returncode == 0:
                     return
-            except (OSError, subprocess.SubprocessError):
+            except OSError:
                 pass
     try:
         os.chmod(f, 0o600)
@@ -1100,16 +1099,14 @@ def _win_user_sid() -> str | None:
     global _WIN_SID
     if _WIN_SID is None:
         try:
-            out = subprocess.run(
+            out = run_bounded(
                 ["whoami", "/user", "/fo", "csv", "/nh"],
-                capture_output=True,
-                text=True,
                 timeout=30,
                 creationflags=CREATE_NO_WINDOW,
             ).stdout
             m = re.search(r"S-1-\d[\d-]*\d", out)
             _WIN_SID = m.group(0) if m else ""
-        except (OSError, subprocess.SubprocessError):
+        except OSError:
             _WIN_SID = ""
     return _WIN_SID or None
 
@@ -1142,19 +1139,17 @@ def win_acl_restricted(f: Path) -> bool:
     if sys.platform != "win32":
         return False
     try:
-        completed = subprocess.run(
+        completed = run_bounded(
             ["icacls", str(f)],
-            capture_output=True,
-            text=True,
+            timeout=30,
             encoding="mbcs",
             errors="replace",
-            timeout=30,
             creationflags=CREATE_NO_WINDOW,
         )
         if completed.returncode != 0:
             return False
         out = completed.stdout or ""
-    except (OSError, subprocess.SubprocessError):
+    except OSError:
         return False
 
     aces = [ln for ln in out.splitlines() if ":(" in ln]

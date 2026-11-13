@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 import pytest
 
 from spark.config import McpServerConfig, McpTransportConfig, SparkConfig, load_config
+from spark.proc import BoundedResult
 from spark.store import SessionStore
 from spark.web.server import build_web_server
 
@@ -919,9 +920,9 @@ def test_harden_permissions_falls_back_when_icacls_fails(tmp_path: Path, monkeyp
     monkeypatch.setattr(config_module, "_win_user_sid", lambda: "S-1-5-21-test")
 
     def fake_run(*args, **kwargs):
-        return SimpleNamespace(returncode=1, stdout="", stderr="icacls failed")
+        return BoundedResult(args=[], returncode=1, stdout="", stderr="icacls failed")
 
-    monkeypatch.setattr(config_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(config_module, "run_bounded", fake_run)
     monkeypatch.setattr(
         config_module.os,
         "chmod",
@@ -936,9 +937,10 @@ def test_win_acl_restricted_rejects_nonzero_icacls(tmp_path: Path, monkeypatch) 
 
     monkeypatch.setattr(config_module.sys, "platform", "win32")
     monkeypatch.setattr(
-        config_module.subprocess,
-        "run",
-        lambda *args, **kwargs: SimpleNamespace(
+        config_module,
+        "run_bounded",
+        lambda *args, **kwargs: BoundedResult(
+            args=[],
             returncode=1,
             stdout="config.toml BUILTIN\\Users:(F)",
             stderr="icacls failed",

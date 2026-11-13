@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from spark.errors import PathEscapeError
 from spark.models import ToolResult
 from spark.platform_compat import kill_process_tree, popen_kwargs
+from spark.proc import run_bounded
 from spark.sandbox import SandboxPolicyError, WorkdirSandbox
 from spark.tools._common import clip_text
 
@@ -375,9 +376,10 @@ def detect_env(workdir) -> dict:
             else:
                 return None
         try:
-            completed = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=5, cwd=workdir
-            )
+            # run_bounded instead of subprocess.run(timeout=...): the latter is
+            # not a hard timeout on Windows and can hang the whole agent turn
+            # when a descendant keeps the captured pipe open.
+            completed = run_bounded(cmd, timeout=5, cwd=workdir)
             version = (completed.stdout or completed.stderr).strip().splitlines()
             return name, (version[0][:60] if version else "installed")
         except Exception:

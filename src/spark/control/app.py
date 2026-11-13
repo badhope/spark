@@ -31,7 +31,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from spark.adapters.legacy import LocalArtifactStore
-from spark.config import SparkConfig
+from spark.config import SparkConfig, load_config
+from spark.control.ai import OfficeAssistant
 from spark.control.auth import AuthContext, get_auth
 from spark.control.authz import CasbinAuthorizer
 from spark.control.db import Database
@@ -464,6 +465,11 @@ def _build_router() -> Any:
 
         service: MeetingMinutesService = request.app.state.meetings
         minutes = service.build(payload.title, transcript)
+        assistant: OfficeAssistant = request.app.state.assistant
+        ai_summary = assistant.minutes_summary(minutes, transcript)
+        if ai_summary:
+            # 模型只追加摘要层；结构化决议/行动项仍来自确定性解析与来源行号。
+            minutes.ai_summary = ai_summary
         minutes_data = minutes.to_dict()
         task = Task(
             tenant_id=auth.tenant_id,
@@ -557,6 +563,7 @@ def _build_router() -> Any:
             task_id=task.id,
             actions=len(minutes.actions),
             decisions=len(minutes.decisions),
+            ai_summary=bool(ai_summary),
         )
         session.commit()
         return _meeting_out(task, artifacts)
@@ -681,6 +688,11 @@ def _build_router() -> Any:
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        assistant: OfficeAssistant = request.app.state.assistant
+        ai_sections = assistant.report_sections(report)
+        if ai_sections:
+            # 模型章节追加在人工章节之后；指标与达成率仍由确定性计算给出。
+            report.sections.extend(ai_sections)
         task = Task(
             tenant_id=auth.tenant_id,
             project_id=project.id,
@@ -723,6 +735,7 @@ def _build_router() -> Any:
             task.title,
             task_id=task.id,
             metrics=len(report.metrics),
+            ai_sections=len(ai_sections),
         )
         session.commit()
         return _report_out(task, artifacts)
@@ -926,9 +939,12 @@ def _build_router() -> Any:
 def create_app(
     settings: ControlSettings | None = None,
     cfg: SparkConfig | None = None,
+    gateway: ModelGateway | None = None,
 ) -> FastAPI:
     settings = settings or ControlSettings()
-    cfg = cfg or SparkConfig()
+    # load_config applies SPARK_BASE_URL / SPARK_MODEL and the user's saved
+    # provider profile; SparkConfig() alone would silently keep the defaults.
+    cfg = cfg or load_config(workdir=Path.cwd())
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -939,7 +955,8 @@ def create_app(
             db.create_all()
             _ensure_default_tenant(db)
         app.state.authorizer = CasbinAuthorizer(settings)
-        app.state.gateway = ModelGateway(cfg)
+        app.state.gateway = gateway or ModelGateway(cfg)
+        app.state.assistant = OfficeAssistant(app.state.gateway, settings)
         app.state.artifacts = LocalArtifactStore(settings.artifact_root)
         app.state.meetings = MeetingMinutesService()
         app.state.reports = ReportService()
