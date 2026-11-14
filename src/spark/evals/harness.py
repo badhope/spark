@@ -167,6 +167,14 @@ def _judge_run_command(workdir: Path, spec: dict[str, Any]) -> JudgeResult:
 def _judge_tool_sequence(
     workdir: Path, spec: dict[str, Any], tool_calls: list[ToolCall]
 ) -> JudgeResult:
+    """Check the required tools were used, accepting equivalent alternatives.
+
+    A scenario may declare ``alternatives`` for a step: any call whose name is
+    in that set satisfies it, and ``args_optional`` drops the argument check for
+    steps where several equivalent paths are valid. Real models legitimately
+    reach the right answer by reading the one file that exists instead of
+    globbing first; failing them for that measures the script, not the model.
+    """
     expected: list[dict[str, Any]] = list(spec.get("calls", []))
     idx = 0
     matched: list[str] = []
@@ -174,13 +182,14 @@ def _judge_tool_sequence(
         if idx >= len(expected):
             break
         want = expected[idx]
-        if call.name != want.get("name"):
+        allowed = {want.get("name"), *(want.get("alternatives") or [])}
+        if call.name not in allowed:
             continue
         args_ok = all(
             str(v) in str(call.arguments.get(k, ""))
             for k, v in (want.get("args_contains") or {}).items()
         )
-        if args_ok:
+        if args_ok or want.get("args_optional"):
             matched.append(
                 f"{call.name}({call.arguments.get('path') or call.arguments.get('command') or ''})"
             )
@@ -266,17 +275,32 @@ async def _run_scenario_async(scenario: Scenario, workdir: Path) -> ScenarioResu
         path.write_text(content, encoding="utf-8")
 
     cfg = SparkConfig()
-    cfg.provider.name = "mock"
-    cfg.agent.approval = "full-auto"
-    cfg.agent.max_tool_rounds = 12
+    # Real-model mode: a scenario without a scripted transcript drives the
+    # configured provider, so the eval measures the actual model instead of a
+    # mock that was written to pass. Set SPARK_EVALS_REAL=1 plus the usual
+    # SPARK_API_KEY / SPARK_BASE_URL / SPARK_MODEL.
+    real = scenario.script is None or os.environ.get("SPARK_EVALS_REAL") == "1"
+    if real:
+        from spark.config import load_config
+        from spark.providers.factory import create_provider
+
+        cfg = load_config(workdir=workdir)
+        cfg.agent.approval = "full-auto"
+        cfg.agent.max_tool_rounds = 20
+    else:
+        cfg.provider.name = "mock"
+        cfg.agent.approval = "full-auto"
+        cfg.agent.max_tool_rounds = 12
     store = SessionStore(workdir / "evals.db")
-    sid = store.create_session(workdir, "mock", title=f"eval:{scenario.id}")
+    sid = store.create_session(
+        workdir, cfg.provider.model if real else "mock", title=f"eval:{scenario.id}"
+    )
     ctx = ToolContext(sandbox=WorkdirSandbox(workdir), config=cfg)
     registry = ToolRegistry(ctx)
     loop = AgentLoop(
         workdir=workdir,
         cfg=cfg,
-        provider=_build_provider(scenario.script),
+        provider=create_provider(cfg) if real else _build_provider(scenario.script),
         registry=registry,
         store=store,
         session_id=sid,

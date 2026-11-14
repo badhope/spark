@@ -161,6 +161,23 @@ def _handle_skills(handler: HandlerBase, body: dict) -> None:
             return
         resolved.parent.mkdir(parents=True, exist_ok=True)
         resolved.write_text(content, encoding="utf-8")
+        # A skill without ``---`` frontmatter is invisible to discovery, yet the
+        # endpoint answered ``ok`` and the list stayed empty — the user believes
+        # the save worked. Tell them instead of silently dropping the entry.
+        from spark.skills import discover_skills
+
+        names = {s.name for s in discover_skills(state.workdir)}
+        saved_name = resolved.stem
+        if saved_name not in names:
+            handler._json(
+                422,
+                {
+                    "error": "skill saved but not discoverable: add YAML frontmatter "
+                    "(name/description between --- lines)",
+                    "path": f"{SKILLS_DIR}/{name}",
+                },
+            )
+            return
         handler._json(200, {"ok": True, "items": _skill_entries(state.workdir)})
         return
 

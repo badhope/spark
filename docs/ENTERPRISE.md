@@ -69,6 +69,30 @@ alembic upgrade head
 
 > 当前机器没有 Docker/Podman，以下路径未在本机实跑；文件已按 Compose 语法校验。有容器环境时直接使用。
 
+### 没有 Docker 时：便携版基础设施（已实测）
+
+Windows 上不需要 Docker 也能把 PostgreSQL + Keycloak 真实跑起来：解压即用的
+二进制 + 一个控制脚本，不写注册表、不装系统服务、不改 PATH。
+
+```bash
+# 一次性下载并解压（放到 .infra/，约 690 MB）
+#   PostgreSQL 16.4  https://get.enterprisedb.com/postgresql/postgresql-16.4-1-windows-x64-binaries.zip
+#   Keycloak 26.0.5  maven.aliyun.com/repository/public/org/keycloak/keycloak-quarkus-dist/26.0.5/keycloak-quarkus-dist-26.0.5.zip
+#   Temurin JDK 21   https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jdk/hotspot/normal/eclipse
+
+python .tools/infra.py init     # 初始化 PostgreSQL 集群
+python .tools/infra.py up       # 启动 postgres(55432) + keycloak(18080)
+python .tools/infra.py status
+python .tools/infra.py down
+```
+
+注意：
+
+- `postgres.exe` 拒绝以管理员令牌运行，必须通过 `pg_ctl` 启动（脚本已处理）。
+- Keycloak 走阿里云 Maven 镜像下载，GitHub Release 长连接在本网络会被重置。
+- 默认凭据仅用于本机开发：`spark/spark-local-dev`、`admin/spark-local-admin`。
+- 导入 realm 后需给测试用户分配 `member`/`admin` 角色，否则 Casbin 会拒绝写入。
+
 ```bash
 cd D:/spark-workspace/spark
 uv sync --extra enterprise --extra postgres

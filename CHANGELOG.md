@@ -4,6 +4,34 @@
 
 ## [Unreleased]
 
+### 真实基础设施联调、EXE 与全量 UI 自动化（2026-11-14）
+
+- **真实 PostgreSQL 暴露并修复**：`_ensure_default_tenant` 只在自动建表时执行，
+  且 `Tenant.id` 用随机值，导致 PostgreSQL 上所有写操作违反 `tenant_id` 外键
+  （SQLite 默认不校验外键，所以测试一直是绿的）。现在无论建表方式都确保默认租户
+  存在，且其主键固定为 `default`。新增 `tests/test_control_postgres.py`。
+- **真实 Keycloak 暴露并修复**：Keycloak 把 client id 放在 `azp`、`aud` 为 `account`，
+  原来只校验 `aud` 导致所有 OIDC 请求 401。现在 `azp` 与 `aud` 任一匹配即通过。
+- **OIDC 端到端**：真 token → `/api/v1/me`（tenant/roles 正确）→ 写 PostgreSQL 201；
+  匿名 401、member 写 403（Casbin 正确拒绝）。
+- **技能保存静默丢失**：`/api/skills` 对无 YAML frontmatter 的内容返回 `ok` 但列表
+  为空。现在返回 422 并说明需要 frontmatter。
+- **设置页自动化**：`tests/test_settings_roundtrip.py`（改值→保存→回读→还原）与
+  `tests/test_settings_shelf_actions.py`（memory/knowledge/automations/skills/
+  prompts/plugins/debug 的真实业务动作）。
+- **评测接真实模型**：`spark.evals` 新增 `SPARK_EVALS_REAL=1`，用配置的 provider 而
+  不是脚本化 mock；`tool_sequence` 支持等效工具（`alternatives`/`args_optional`），
+  不再因为「先 glob 还是直接读」判负。真实模型 4/4。
+- **EXE 打包补齐**：`spark.spec` 加入 `spark.control.*`、fastapi/uvicorn/sqlalchemy/
+  alembic/casbin/authlib/jwt/multipart/reportlab/docx/openpyxl/pptx/pypdf/pypdfium2/
+  rapidocr/extract_msg，以及 RapidOCR 的 ONNX 模型与 reportlab 字体数据、Casbin
+  策略文件。实测 EXE 内 `/api/v1`、`/office`、md/docx/pptx/pdf/xlsx 导出、图片 OCR、
+  `spark exec` 全部可用。
+- **桌面端**：pywebview 6.2.1 + WebView2 实测启动、加载完整前端。
+- **VSIX**：重新打包为 `spark-agent-0.13.1.vsix`（旧 0.12.0 已移除）。
+- **Windows Job Object**：在嵌套虚拟化（RDO/KVM）下 `KILL_ON_JOB_CLOSE` 只终止直接
+  子进程，祖先孙进程存活。测试改为探测宿主能力后断言，并清理逃逸进程，不再假装通过。
+
 ### 办公模型摘要与网关修复（2026-11-13）
 
 - **模型摘要（可选）**：`SPARK_CONTROL_MODEL_ASSIST=true` 时，会议纪要追加
