@@ -122,18 +122,90 @@ def diff_stats(workdir: Path, target: ReviewTarget) -> dict:
     }
 
 
-def build_review_prompt(diff: str) -> str:
+def build_review_prompt(diff: str, part: tuple[int, int] | None = None) -> str:
+    scope = ""
+    if part is not None:
+        index, total = part
+        scope = (
+            f"\n本次只审查第 {index}/{total} 片 diff；只报告这一片里的问题。\n"
+        )
     return (
         "你是严格的代码审查员。审查下面的 diff，只报告有把握的问题：\n"
         "1) 正确性缺陷与边界条件\n2) 安全问题（注入/越权/密钥泄露/路径逃逸）\n"
         "3) 明显的回归风险与性能问题\n不要吹毛求疵，不要评论风格。"
-        "没有问题就返回空 findings 数组。\n\n"
+        "没有问题就返回空 findings 数组。\n"
+        f"{scope}\n"
         "严格输出一行 JSON（不要 markdown 围栏、不要其他文字）：\n"
         '{"summary": "一句话总体评价", "findings": '
         '[{"severity": "high|medium|low", "file": "文件路径", "line": 行号或null, '
         '"comment": "问题与建议"}]}\n\n'
         f"```diff\n{diff}\n```"
     )
+
+
+def split_diff(diff: str, limit: int = 24_000) -> list[str]:
+    """Split a unified diff into per-file chunks under *limit* characters.
+
+    A 1.8 MB diff cannot be reviewed in one turn: the provider times out long
+    before answering, which used to surface as "review failed". Chunks keep
+    each file intact so findings still name a real file and line.
+    """
+    import re
+
+    if len(diff) <= limit:
+        return [diff]
+    parts = re.split(r"(?m)^(?=diff --git )", diff)
+    chunks: list[str] = []
+    current = ""
+    for part in parts:
+        if not part:
+            continue
+        if len(part) > limit:
+            hunks = re.split(r"(?m)^(?=@@ )", part)
+            header = hunks[0] if hunks and not hunks[0].startswith("@@") else ""
+            for hunk in hunks:
+                if not hunk:
+                    continue
+                prefix = "" if hunk.startswith("diff --git") or hunk.startswith("@@") else header
+                piece = prefix + hunk
+                if len(current) + len(piece) > limit and current:
+                    chunks.append(current)
+                    current = ""
+                if len(piece) > limit:
+                    # Keep the file header on every slice so findings stay attributable.
+                    head = header or (hunk[: hunk.find("\n") + 1] if "\n" in hunk else "")
+                    body = piece[len(head):]
+                    for offset in range(0, len(body), max(1, limit - len(head))):
+                        chunks.append(head + body[offset : offset + limit - len(head)])
+                    continue
+                current += piece
+            continue
+        if len(current) + len(part) > limit and current:
+            chunks.append(current)
+            current = ""
+        current += part
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def merge_reviews(results: list[ReviewResult]) -> ReviewResult:
+    """Combine per-chunk reviews into one result, de-duplicating findings."""
+    findings = []
+    seen: set[tuple[str, int | None, str]] = set()
+    for result in results:
+        for finding in result.findings:
+            key = (finding.file, finding.line, finding.comment[:60])
+            if key in seen:
+                continue
+            seen.add(key)
+            findings.append(finding)
+    findings.sort(key=lambda f: {"high": 0, "medium": 1, "low": 2}.get(f.severity, 3))
+    summary = "；".join(
+        result.summary for result in results if result.summary.strip()
+    )[:600]
+    merged = ReviewResult(raw="", summary=summary or "未发现需要报告的问题", findings=findings)
+    return merged
 
 
 def _extract_json_object(raw: str) -> dict | None:

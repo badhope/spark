@@ -475,8 +475,10 @@ def review_cmd(
             build_review_prompt,
             collect_diff,
             diff_stats,
+            merge_reviews,
             parse_review,
             render_review,
+            split_diff,
         )
 
         if commit:
@@ -497,10 +499,26 @@ def review_cmd(
         cfg.agent.sandbox_mode = "sandbox-only"
         store = _store()
         session_id = store.create_session(workdir, cfg.provider.model, title="review")
-        review = asyncio.run(
-            _review_async(build_review_prompt(diff), workdir, cfg, store, session_id)
-        )
-        result = parse_review(review)
+        chunks = split_diff(diff)
+        if len(chunks) > 1:
+            typer.echo(f"diff 过大，分 {len(chunks)} 片审查…")
+        results = []
+        for index, chunk in enumerate(chunks, start=1):
+            prompt = build_review_prompt(
+                chunk, part=(index, len(chunks)) if len(chunks) > 1 else None
+            )
+            review = asyncio.run(
+                _review_async(
+                    prompt,
+                    workdir,
+                    cfg,
+                    store,
+                    session_id,
+                    close_store=(index == len(chunks)),
+                )
+            )
+            results.append(parse_review(review))
+        result = merge_reviews(results) if len(results) > 1 else results[0]
         result.stats = stats
         if as_json:
             import json as _json
@@ -537,8 +555,20 @@ def review_cmd(
 
 
 async def _review_async(
-    prompt: str, workdir: Path, cfg: SparkConfig, store: SessionStore, session_id: str
+    prompt: str,
+    workdir: Path,
+    cfg: SparkConfig,
+    store: SessionStore,
+    session_id: str,
+    *,
+    close_store: bool = True,
 ) -> str:
+    """Run one read-only review turn.
+
+    ``close_store=False`` when the caller loops over diff chunks: the store is
+    shared, and closing it after the first chunk made the second one fail with
+    "Cannot operate on a closed database".
+    """
     from spark.providers.factory import create_provider
 
     prov = create_provider(cfg)
@@ -573,7 +603,8 @@ async def _review_async(
         return final
     finally:
         await bridge.close()
-        store.close()
+        if close_store:
+            store.close()
 
 
 @app.command("update", help="检查并安装新版本（校验 SHA256；--check 只看不装）")

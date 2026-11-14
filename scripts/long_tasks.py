@@ -32,6 +32,39 @@ from spark.models import ChatMessage
 from spark.providers.factory import create_provider
 
 
+_RUN_LOCK: Any = None
+
+
+def _acquire_output_lock(out: Path) -> None:
+    """One writer per output directory.
+
+    Two concurrent runs appended chapters for the same numbers to the same
+    file, which produced duplicated headings and half-megabyte "chapters" —
+    the lock turns that silent corruption into a clear error.
+    """
+    global _RUN_LOCK
+    import os
+
+    out.mkdir(parents=True, exist_ok=True)
+    handle = (out / ".lock").open("w", encoding="utf-8")
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        raise SystemExit(
+            f"another long-task run is writing to {out}; wait for it to finish"
+        ) from None
+    _RUN_LOCK = handle
+    handle.write(str(os.getpid()))
+    handle.flush()
+
+
 class Journal:
     """Append-only progress log so a crashed run can be resumed."""
 
@@ -43,7 +76,6 @@ class Journal:
                 self.data = json.loads(path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 pass
-
     def done(self, key: str) -> bool:
         return key in self.data["steps"]
 
@@ -177,7 +209,7 @@ NOVEL_BIBLE = """《长夜灯塔》类型：近未来科幻悬疑。
 
 async def task_novel(args: argparse.Namespace, cfg: SparkConfig) -> None:
     out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
+    _acquire_output_lock(out)
     journal = Journal(out / "progress.json")
     provider = _provider(cfg)
 
@@ -246,7 +278,7 @@ WEB_FILES = {
 
 async def task_web(args: argparse.Namespace, cfg: SparkConfig) -> None:
     out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
+    _acquire_output_lock(out)
     journal = Journal(out / "progress.json")
     provider = _provider(cfg)
     spec = (
@@ -463,7 +495,7 @@ async def task_program(args: argparse.Namespace, cfg: SparkConfig) -> None:
     feed the error back, ask for the corrected file, run again.
     """
     out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
+    _acquire_output_lock(out)
     journal = Journal(out / "progress.json")
     provider = _provider(cfg)
     python = sys.executable
