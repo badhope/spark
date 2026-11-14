@@ -24,6 +24,26 @@ if _LITELLM_TOKENIZERS.is_dir():
         (str(_LITELLM_TOKENIZERS), "litellm/litellm_core_utils/tokenizers")
     )
 
+# --- 企业控制面 + 办公工作台的数据文件 ---
+# rapidocr 的 ONNX 模型 (~16MB) 与配置经包内相对路径读取，PyInstaller 静态
+# 分析看不到；缺了它们打包版的图片/扫描 PDF 导入会在运行时崩。
+_OPTIONAL_DATA = []
+for _mod, _patterns in (
+    ("rapidocr_onnxruntime", ("*.onnx", "*.yaml", "*.txt")),
+    ("reportlab", ("*.ttf", "*.afm", "*.pfb", "*.txt")),
+):
+    _spec = importlib.util.find_spec(_mod)
+    if not _spec or not _spec.origin:
+        continue
+    _root = Path(_spec.origin).parent
+    for _pattern in _patterns:
+        for _p in _root.rglob(_pattern):
+            if not _p.is_file():
+                continue
+            _rel = _p.relative_to(_root).parent
+            _dest = _mod if str(_rel) == "." else f"{_mod}/{_rel.as_posix()}"
+            _OPTIONAL_DATA.append((str(_p), _dest))
+
 # rfc3987_syntax 经 importlib.resources 读取 .lark 语法文件（Lark 语法定义），
 # PyInstaller 静态分析覆盖不到，冻结后 FileNotFoundError；递归收集整个包（排除 .pyc）。
 # 该包并非所有平台都随依赖树安装（find_spec 可能为 None），须 None 安全。
@@ -40,8 +60,10 @@ a = Analysis(
     ['src/spark/__main__.py'],
     pathex=[],
     binaries=[],
-    datas=[
+    datas=_OPTIONAL_DATA + [
         ('src/spark/web/dist', 'spark/web/dist'),  # 前端构建产物（仅 dist，不含 node_modules，控制体积）
+        # Casbin 策略随包分发；缺少它企业控制面启动即失败（authz.py 按模块路径查找）。
+        ('src/spark/control/policies', 'spark/control/policies'),
         ('src/spark/prompts', 'spark/prompts'),    # 系统提示词模板
         ('assets/logo.svg', 'assets'),             # 品牌 logo
         *_LITELLM_DATA,                            # litellm 运行时数据（importlib.resources 读取）
@@ -97,6 +119,17 @@ a = Analysis(
         'spark.web.sse',
         'spark.web.utils',
         'spark.desktop',
+        'spark.control',
+        'spark.control.app',
+        'spark.control.ai',
+        'spark.control.documents',
+        'spark.control.email_imap',
+        'spark.control.pdf',
+        'spark.adapters',
+        'fastapi', 'uvicorn', 'sqlalchemy', 'alembic', 'casbin',
+        'authlib', 'jwt', 'multipart', 'reportlab',
+        'docx', 'openpyxl', 'pptx', 'pypdf', 'pypdfium2',
+        'rapidocr_onnxruntime', 'extract_msg',
         'spark.tools',
         'spark.tools.web',
         # tree-sitter 语法包在 repo_map.py / wiki.py 里是函数内导入，

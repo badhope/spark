@@ -126,10 +126,17 @@ def _audit(
 
 
 def _ensure_default_tenant(db: Database) -> None:
+    """Create the tenant whose *id* matches what dev/oidc auth puts on requests.
+
+    Auth resolves the tenant as a slug (``default``) and every table FKs
+    ``tenants.id``. Letting ``id`` default to a random value made every write
+    fail the FK on PostgreSQL; SQLite does not enforce FKs by default, which is
+    why the bug only appeared against a real database.
+    """
     with db.session() as session:
-        existing = session.scalar(select(Tenant).where(Tenant.slug == "default"))
+        existing = session.get(Tenant, "default")
         if existing is None:
-            session.add(Tenant(slug="default", name="Default"))
+            session.add(Tenant(id="default", slug="default", name="Default"))
             session.commit()
 
 
@@ -953,7 +960,10 @@ def create_app(
         app.state.db = db
         if settings.should_create_tables:
             db.create_all()
-            _ensure_default_tenant(db)
+        # The default tenant must exist even when tables came from Alembic:
+        # with it missing every write fails the tenant_id foreign key on
+        # PostgreSQL (SQLite never enforced it, so the gap went unnoticed).
+        _ensure_default_tenant(db)
         app.state.authorizer = CasbinAuthorizer(settings)
         app.state.gateway = gateway or ModelGateway(cfg)
         app.state.assistant = OfficeAssistant(app.state.gateway, settings)

@@ -234,8 +234,14 @@ def builtin_scenarios() -> list[Scenario]:
             judges=[
                 {
                     "type": "tool_sequence",
+                    # Listing first is one valid path; reading the known file
+                    # directly is equally valid and is what real models do.
                     "calls": [
-                        {"name": "glob", "args_contains": {"pattern": "shipments"}},
+                        {
+                            "name": "glob",
+                            "alternatives": ["list_dir", "read_file"],
+                            "args_optional": True,
+                        },
                         {"name": "read_file", "args_contains": {"path": "ORD-555"}},
                     ],
                 },

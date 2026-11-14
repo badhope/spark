@@ -105,7 +105,11 @@ def decode_oidc_token(
     audience = claims.get("aud")
     if settings.oidc_audience:
         audiences = [audience] if isinstance(audience, str) else list(audience or [])
-        if settings.oidc_audience not in audiences:
+        # Keycloak puts the client id in ``azp`` and leaves ``aud`` as "account"
+        # unless an audience mapper is configured. Accepting ``azp`` is the
+        # documented equivalent check and keeps default realms working.
+        authorized_party = str(claims.get("azp") or "")
+        if settings.oidc_audience not in audiences and settings.oidc_audience != authorized_party:
             raise AuthError("bearer token audience mismatch")
     return claims
 

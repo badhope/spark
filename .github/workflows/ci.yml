@@ -63,6 +63,41 @@ jobs:
           # 缺口与原因见 docs/reviews/2026-10-22-full-audit.md 第十二节。
           python -m pytest -q --cov=spark --cov-report=term-missing --cov-fail-under=75
 
+  # 真实 PostgreSQL 契约：SQLite 不校验外键，控制面的 tenant FK 问题只能在真库上
+  # 暴露（部署环境曾因此每次写入都失败）。独立 job，失败时一眼看出是数据库契约。
+  postgres-contract:
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: spark
+          POSTGRES_USER: spark
+          POSTGRES_PASSWORD: spark-ci
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U spark -d spark"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e ".[dev,enterprise,office]" "psycopg[binary]"
+      - name: Alembic migrate
+        env:
+          SPARK_CONTROL_DATABASE_URL: postgresql+psycopg://spark:spark-ci@127.0.0.1:55432/spark
+        run: python -m alembic upgrade head
+      - name: Control-plane PostgreSQL contract
+        env:
+          SPARK_TEST_POSTGRES_URL: postgresql+psycopg://spark:spark-ci@127.0.0.1:55432/spark
+        run: python -m pytest tests/test_control_postgres.py -q
+
   # dist 是提交进仓库的（pip 安装要开箱即用），前端此前没有任何 CI 门禁：
   # 语法/类型/构建漂移只能在上游 release 时暴露。这一道门同时校验
   # "提交的 dist 与全新构建字节一致"，防止 CRLF/换行等静默漂移。
