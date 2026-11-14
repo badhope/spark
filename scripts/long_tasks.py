@@ -164,6 +164,31 @@ def _provider(cfg: SparkConfig):
     return create_provider(cfg)
 
 
+def _reconcile_novel(book: Path, journal: "Journal") -> list[int]:
+    """Drop journal entries whose chapter is absent from the file.
+
+    A crash between ``_append_chapter`` and ``journal.mark`` (or a manual
+    cleanup) leaves the journal claiming chapters the book never got; the
+    resumed run then skips them forever. Reconcile before writing anything.
+    """
+    import re
+
+    if not book.exists():
+        return []
+    present = {int(n) for n in re.findall(r"^## 第 (\d+) 章", book.read_text(encoding="utf-8"), re.M)}
+    missing: list[int] = []
+    for key in list(journal.data["steps"]):
+        if not key.startswith("chapter-"):
+            continue
+        number = int(key.split("-")[1]) + 1
+        if number not in present:
+            journal.data["steps"].pop(key, None)
+            missing.append(number)
+    if missing:
+        journal.save()
+    return sorted(missing)
+
+
 def _novel_tail(book: Path, chars: int = 1200) -> str:
     return book.read_text(encoding="utf-8")[-chars:] if book.exists() else ""
 
@@ -233,6 +258,9 @@ async def task_novel(args: argparse.Namespace, cfg: SparkConfig) -> None:
         lines = outline_text.splitlines()[:chapters]
 
     book = out / "novel.md"
+    finished = _reconcile_novel(book, journal)
+    if finished:
+        print(f"[novel] reconciled {len(finished)} chapter(s) missing from the file: {finished}")
     written = 0
     for index in range(chapters):
         key = f"chapter-{index:04d}"
