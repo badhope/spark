@@ -301,7 +301,7 @@ class SparkApp(App):
             memory=memory,
             checkpointer=persistent_checkpointer(),
         )
-        self._running = False
+        self._turn_running = False
         self._current_text = ""
         self._spinner_index = 0
 
@@ -341,6 +341,10 @@ class SparkApp(App):
     def on_mount(self) -> None:
         self._set_toolbar_compact(self.size.width <= _NARROW_TERMINAL_WIDTH)
         self.set_interval(0.1, self._tick_spinner)
+        # The composer must own focus at startup: Textual focuses the first
+        # focusable widget, which is the toolbar Button, so typing went to a
+        # button and Enter never submitted anything until the user tabbed here.
+        self.query_one("#composer", Input).focus()
         chat = self.query_one("#chat", RichLog)
         chat.write(welcome_text(self.cfg, str(self.workdir)))
         restored = 0
@@ -356,7 +360,7 @@ class SparkApp(App):
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
         event.input.value = ""
-        if not text or self._running:
+        if not text or self._turn_running:
             return
         from spark.slash import parse_slash
 
@@ -373,7 +377,7 @@ class SparkApp(App):
         self.query_one("#chat", RichLog).clear()
 
     def action_test_model(self) -> None:
-        if self._running:
+        if self._turn_running:
             return
         self.run_worker(self._test_model(), exclusive=True)
 
@@ -430,7 +434,7 @@ class SparkApp(App):
             expanded = None
         if expanded:
             turn_text = expanded
-        self._running = True
+        self._turn_running = True
         self._current_text = ""
         self._update_status()
         chat = self.query_one("#chat", RichLog)
@@ -440,12 +444,12 @@ class SparkApp(App):
                 self._render(event, chat)
         finally:
             self._flush_text(chat)
-            self._running = False
+            self._turn_running = False
             self._update_status()
 
     async def _run_test_slash(self, raw_args: str) -> None:
         """/test：跑仓库测试，渲染摘要；失败时把 traceback 回灌给 agent 修正。"""
-        self._running = True
+        self._turn_running = True
         self._current_text = ""
         self._update_status()
         chat = self.query_one("#chat", RichLog)
@@ -459,7 +463,7 @@ class SparkApp(App):
             result = await asyncio.to_thread(handle_test, sandbox, raw_args)
         except Exception as exc:  # noqa: BLE001 — TUI 不应因 slash 崩溃
             chat.write(f"[red]✗ /test 执行异常：{rich_escape(str(exc))}[/red]")
-            self._running = False
+            self._turn_running = False
             self._update_status()
             return
         color = "green" if result.ok else "red"
@@ -473,7 +477,7 @@ class SparkApp(App):
                     self._render(event, chat)
             finally:
                 self._flush_text(chat)
-        self._running = False
+        self._turn_running = False
         self._update_status()
 
     def _flush_text(self, chat: RichLog) -> None:
@@ -499,7 +503,8 @@ class SparkApp(App):
             status = "ok" if event.result.ok else "fail"
             color = "green" if event.result.ok else "red"
             chat.write(
-                f"[{color}]◀ {event.tool_call.name} [{status}][/color] {rich_escape(payload)}"
+                f"[{color}]◀ {rich_escape(event.tool_call.name)} "
+                f"{rich_escape('[' + status + ']')}[/{color}] {rich_escape(payload)}"
             )
         elif event.type == "plan" and event.data is not None:
             steps = event.data.get("steps") or []
@@ -540,7 +545,7 @@ class SparkApp(App):
         except NoMatches:
             return
         base = self._status_text()
-        if self._running and spinner_frame:
+        if self._turn_running and spinner_frame:
             status.update(f"Spark {spinner_frame} {base}")
             status.styles.color = "#ffcc00"
         else:
@@ -548,13 +553,13 @@ class SparkApp(App):
             status.styles.color = "#ff7a3d"
 
     def _tick_spinner(self) -> None:
-        if not self._running:
+        if not self._turn_running:
             return
         self._spinner_index = (self._spinner_index + 1) % len(_SPINNER_FRAMES)
         self._update_status(_SPINNER_FRAMES[self._spinner_index])
 
     def action_resume_session(self) -> None:
-        if self._running:
+        if self._turn_running:
             return
         self.run_worker(self._switch_session(), exclusive=True)
 

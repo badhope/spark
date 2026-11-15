@@ -264,7 +264,11 @@ def test_tui_app_has_memory_and_running_guard() -> None:
     from spark.tui import app as tui_app
 
     src = inspect.getsource(tui_app.SparkApp)
-    assert "if self._running" in src
+    # The flag must not be called `_running`: Textual's App uses that name for
+    # its own message loop and overwrote our value at startup (which disabled
+    # the composer). Guard by behaviour-relevant name instead.
+    assert "if self._turn_running" in src
+    assert "self._running" not in src
     assert "cancel" in src  # on_unmount cancels
 
 

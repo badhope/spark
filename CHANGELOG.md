@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+### 协议面实测（2026-11-15）
+
+- **TUI 无法输入（严重）**：`SparkApp` 把「回合进行中」标志命名为 `self._running`，
+  与 Textual `App` 自己的消息循环属性同名。Textual 在启动时把它置为 `True`，
+  于是 `on_input_submitted` 每次都直接 return，回车永远不提交、界面停在加载态。
+  改名为 `_turn_running`；同时启动后主动聚焦输入框（此前焦点落在第一个按钮上）。
+- **TUI 工具调用崩溃**：工具结果行写成 `[{color}]… [{status}][/color]`，Rich 把
+  `[ok]` 当作样式标签解析，`[/color]` 找不到匹配而抛 `MarkupError`，整个界面挂掉。
+  改为转义并闭合正确标签。
+- **A2A 回复重复两遍**：`message/send` 的 `collect` 忽略 `append` 标志，把终帧的
+  权威全文又拼接到增量缓冲后面。现在 `append=False` 时替换而非追加。
+- 以上三项均由真实客户端/PTY 驱动发现，已加回归测试
+  （`tests/test_tui_pilot.py`、A2A 断言），全量套件覆盖。
+
 ### 真实基础设施联调、EXE 与全量 UI 自动化（2026-11-14）
 
 - **真实 PostgreSQL 暴露并修复**：`_ensure_default_tenant` 只在自动建表时执行，

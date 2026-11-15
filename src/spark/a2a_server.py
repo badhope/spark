@@ -220,9 +220,14 @@ class A2AState:
 
         def collect(frame: dict) -> None:
             if frame.get("kind") == "artifact-update":
-                buffer["text"] = buffer.get("text", "") + frame["artifact"]["parts"][0][
-                    "text"
-                ]
+                chunk = frame["artifact"]["parts"][0]["text"]
+                # The final frame carries the authoritative full text with
+                # append=False; concatenating it like a delta duplicated the
+                # whole answer in every message/send response.
+                if frame.get("append", True):
+                    buffer["text"] = buffer.get("text", "") + chunk
+                else:
+                    buffer["text"] = chunk
             elif frame.get("kind") == "status-update" and frame.get("final"):
                 buffer["task_id"] = frame["taskId"]
                 buffer["context_id"] = frame["contextId"]

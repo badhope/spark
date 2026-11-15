@@ -41,11 +41,27 @@
 spark                     # 终端 TUI
 spark web --workdir DIR   # 浏览器 UI（默认只监听 127.0.0.1）
 spark desktop             # 原生窗口（pywebview）
+spark enterprise          # 企业控制面 /api/v1 与 /office 工作台
 spark exec "任务"          # 一次性执行，适合脚本/CI
 spark acp                 # 作为 ACP agent 供 Zed 等编辑器拉起
 spark mcp-serve           # 把内置工具暴露给别的 MCP 客户端
+spark a2a-serve           # A2A 协议服务（Agent Card + message/send + 流式）
 spark --version           # 版本号（与 pyproject / PyPI 同源）
 ```
+
+各形态实测状态（2026-11-15，均由真实客户端驱动，不是测试替身）：
+
+| 形态 | 实测方式 | 结果 |
+| --- | --- | --- |
+| TUI | PTY 内启动、键入任务、回车提交、读屏 | 输入 → 工具调用 → 结果渲染 → 回复，全链路可用 |
+| Web | Playwright + 真实 Edge | 设置 16 页签、30+ 控件、会话/工具/文件树/终端/命令面板 |
+| 桌面 | pywebview + WebView2 | 起服务、加载完整前端、窗口创建 |
+| CLI | `spark exec --json` | NDJSON 事件流，`final` 收尾 |
+| 企业控制面 | 真实 PostgreSQL + Keycloak | OIDC 鉴权、Casbin 授权、会议/报告/审计、全格式导出 |
+| MCP | 官方 Python SDK 客户端 | 37 个工具，`list_dir` 真实执行 |
+| ACP | 官方 SDK `spawn_stdio_connection` | `initialize` 返回 agentInfo，`session/new` 返回会话与六档审批 |
+| A2A | 真实 HTTP | Agent Card、`message/send`、`message/stream` 四帧协议 |
+
 
 ## 三、安全模型（三层，逐层收窄）
 
