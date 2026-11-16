@@ -46,6 +46,25 @@ def test_specs_ship_the_built_web_dist() -> None:
         assert "src/spark/web/dist" in text, f"{name} does not bundle the web UI"
 
 
+def test_specs_ship_the_casbin_policies() -> None:
+    """Without them the control plane raises at startup (authz.py loads the model).
+
+    The one-file and desktop specs were missing this while spark.spec had it,
+    so those two builds could not run `spark enterprise` at all.
+    """
+    for name in SPECS:
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert "src/spark/control/policies" in text, (
+            f"{name} does not bundle the Casbin policies"
+        )
+
+
+def test_specs_ship_the_prompt_templates() -> None:
+    for name in SPECS:
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert "src/spark/prompts" in text, f"{name} does not bundle the prompts"
+
+
 #: Third-party packages that read data files at runtime via importlib.resources.
 #: PyInstaller cannot see those reads, so the data has to be listed explicitly.
 #: Both entries here shipped broken builds before being added: rapidocr's ONNX

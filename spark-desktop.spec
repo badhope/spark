@@ -68,6 +68,8 @@ a = Analysis(
     binaries=[],
     datas=[
         ('src/spark/web/dist', 'spark/web/dist'),  # 前端构建产物（仅 dist，不含 node_modules，控制体积）
+        # Casbin 策略随包分发；缺少它企业控制面启动即失败（authz.py 按模块路径查找）。
+        ('src/spark/control/policies', 'spark/control/policies'),
         ('src/spark/prompts', 'spark/prompts'),    # 系统提示词模板
         ('assets/logo.svg', 'assets'),             # 品牌 logo
         *_LITELLM_DATA,
