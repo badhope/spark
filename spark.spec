@@ -130,6 +130,11 @@ a = Analysis(
         'authlib', 'jwt', 'multipart', 'reportlab',
         'docx', 'openpyxl', 'pptx', 'pypdf', 'pypdfium2',
         'rapidocr_onnxruntime', 'extract_msg',
+        # 会议录音转写（可选依赖 spark-agent[asr]）。两者都在函数内导入，
+        # PyInstaller 静态分析看不到；缺失时该端点如实返回 503，
+        # 其余办公能力不受影响。
+        'faster_whisper',
+        'av',
         'spark.tools',
         'spark.tools.web',
         # tree-sitter 语法包在 repo_map.py / wiki.py 里是函数内导入，

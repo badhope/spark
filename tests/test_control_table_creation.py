@@ -17,7 +17,6 @@ import sqlalchemy as sa
 from fastapi.testclient import TestClient
 
 from spark.control.app import create_app
-from spark.control.db import Database
 from spark.control.settings import ControlSettings
 
 

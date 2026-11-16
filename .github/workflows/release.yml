@@ -17,7 +17,7 @@ jobs:
         include:
           - os: windows-latest
             setup: |
-              pip install -e ".[dev,enterprise,office,platform]" pyinstaller pywebview "psycopg[binary]"
+              pip install -e ".[dev,enterprise,office,platform,asr]" pyinstaller pywebview "psycopg[binary]"
               python -m pytest -q
               pyinstaller --clean -y spark.spec
               pyinstaller --clean -y spark-desktop.spec
@@ -26,7 +26,7 @@ jobs:
             files: spark-windows-x86_64.zip
           - os: ubuntu-22.04   # GLIBC 2.35：兼容绝大多数发行版
             setup: |
-              pip install -e ".[dev,enterprise,office,platform]" pyinstaller
+              pip install -e ".[dev,enterprise,office,platform,asr]" pyinstaller
               python -m pytest -q
               pyinstaller --clean -y spark.spec
             pack: tar -czf spark-linux-x86_64.tar.gz -C dist spark
@@ -35,7 +35,7 @@ jobs:
           # macos-13 在免费额度下会长期排队（永不执行）；macos-latest 为 Apple Silicon
           - os: macos-latest
             setup: |
-              pip install -e ".[dev,enterprise,office,platform]" pyinstaller
+              pip install -e ".[dev,enterprise,office,platform,asr]" pyinstaller
               python -m pytest -q
               pyinstaller --clean -y spark.spec
             pack: tar -czf spark-macos-arm64.tar.gz -C dist spark
