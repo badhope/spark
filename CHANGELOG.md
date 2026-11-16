@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-11-16
+
+- 修复打包版会议录音转写：faster-whisper 的 Silero VAD 权重
+  （`assets/silero_vad_v6.onnx`）没有被收进产物，转写在 VAD 阶段抛
+  `onnxruntime NoSuchFile`，接口返回 500。0.15.0 的源码安装不受影响，
+  但下载的 EXE/压缩包会踩到，故单独发补丁版。
+- 修复英文纪要解析：`decided`/`decision` 之前只要出现在行内任意位置就算一条
+  决议，导致一段正常英文发言被整段当成「决议」，议题变空。现在要求标记出现在
+  行首或冒号前（`Decision: …`、`决定：…`、`It was agreed that …`），
+  叙述句归入议题。
+
 ## [0.15.0] - 2026-11-16
 
 **会议录音转写**
