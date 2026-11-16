@@ -44,6 +44,35 @@ def test_service_extracts_decisions_actions_and_citations() -> None:
     assert "来源行号" in minutes.markdown()
 
 
+def test_narrated_english_is_not_mistaken_for_a_decision() -> None:
+    """A spoken sentence is narration; only an explicit marker records a decision.
+
+    Before the marker had to introduce the line, "We decided to ship on Friday"
+    inside a paragraph matched, so an entire English transcript collapsed into a
+    single "decision" and the topics list came out empty.
+    """
+    minutes = MeetingMinutesService().build(
+        "standup",
+        "Good morning. We decided to ship the new release on Friday. "
+        "Alice will prepare the documentation.",
+    )
+    assert minutes.decisions == []
+    assert minutes.actions == []
+    assert minutes.topics, "the paragraph should still yield a topic"
+
+
+def test_explicit_english_markers_still_parse() -> None:
+    minutes = MeetingMinutesService().build(
+        "standup",
+        "Decision: ship the release on Friday.\n"
+        "Action item: prepare the docs, owner: Alice, due: 2026-11-20",
+    )
+    assert len(minutes.decisions) == 1
+    assert len(minutes.actions) == 1
+    assert minutes.actions[0].owner == "Alice"
+    assert minutes.actions[0].due == "2026-11-20"
+
+
 def test_meeting_create_download_approve(client: TestClient) -> None:
     created = client.post(
         "/api/v1/office/meetings",

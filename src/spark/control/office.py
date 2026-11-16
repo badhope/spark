@@ -16,8 +16,14 @@ from typing import Any
 _ATTENDEES = re.compile(r"^\s*(?:参会(?:人员)?|attendees?)\s*[:：]\s*(.+)$", re.IGNORECASE)
 _TOPIC = re.compile(r"^\s*(?:#{1,4}\s+|\d+[.、)]\s*)(.+)$")
 _TOPIC_LINE = re.compile(r"^\s*(?:议题|主题|topic)\s*[:：]\s*(.+)$", re.IGNORECASE)
+# A decision is a *record*, so the marker has to introduce it: "决定：…",
+# "Decision: …", "- agreed to …". A bare "we decided to ship next week" inside a
+# spoken paragraph is narration, not an action item — matching it anywhere turned
+# a whole English transcript into one giant "decision" and left topics empty.
 _DECISION = re.compile(
-    r"(决定\s*[:：]|决议\s*[:：]|结论\s*[:：]|达成一致|decision\b|decided\b|agreed\b)",
+    r"^\s*(?:[-*•]\s*)?(?:决定|决议|结论|decision|decided|agreed)\s*[:：]|"
+    r"(?:决定|决议|结论)\s*[:：]|"
+    r"^\s*(?:达成一致|agreed that\b|we agreed\b|it was agreed\b)",
     re.IGNORECASE,
 )
 # "行动" alone is too broad: "本周先做会议纪要与行动项" is a topic sentence,

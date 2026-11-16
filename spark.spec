@@ -27,10 +27,15 @@ if _LITELLM_TOKENIZERS.is_dir():
 # --- 企业控制面 + 办公工作台的数据文件 ---
 # rapidocr 的 ONNX 模型 (~16MB) 与配置经包内相对路径读取，PyInstaller 静态
 # 分析看不到；缺了它们打包版的图片/扫描 PDF 导入会在运行时崩。
+#
+# faster_whisper 同理：它的 VAD 模型 assets/silero_vad*.onnx 由
+# vad.py 用 importlib.resources 读，冻结后该文件不存在，
+# onnxruntime 抛 NoSuchFile —— 转写走到 VAD 阶段才炸，构建期完全看不出来。
 _OPTIONAL_DATA = []
 for _mod, _patterns in (
     ("rapidocr_onnxruntime", ("*.onnx", "*.yaml", "*.txt")),
     ("reportlab", ("*.ttf", "*.afm", "*.pfb", "*.txt")),
+    ("faster_whisper", ("*.onnx", "*.json", "*.txt")),
 ):
     _spec = importlib.util.find_spec(_mod)
     if not _spec or not _spec.origin:
