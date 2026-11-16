@@ -104,6 +104,13 @@ office = [
     "extract-msg>=0.58",
     "reportlab>=4.0",
 ]
+# 会议录音转写（本地 Whisper，CPU 推理；音频不出机器）。
+# 必须钉 av<15：faster-whisper 1.2 调用 av.open(metadata_errors=...)，
+# av 15+ 去掉了该参数，装上新版会在第一次转写时 TypeError。
+asr = [
+    "faster-whisper>=1.2",
+    "av>=13,<15",
+]
 # Notebook 执行（读取/编辑已由 nbformat 承担；执行 cell 需要 nbclient）
 notebook = [
     "nbclient>=0.11,<1.0",

@@ -12,7 +12,6 @@ covered automatically instead of silently escaping the suite.
 from __future__ import annotations
 
 import contextlib
-import os
 import socket
 import threading
 import time
@@ -20,24 +19,12 @@ from pathlib import Path
 
 import pytest
 
+from tests._ui_browser import SKIP_REASON, browser_available, launch
+
 playwright_api = pytest.importorskip("playwright.sync_api")
 sync_playwright = playwright_api.sync_playwright
 
-EDGE_PATHS = [
-    Path(r"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"),
-    Path(r"C:/Program Files/Microsoft/Edge/Application/msedge.exe"),
-]
-
-
-def _browser_available() -> bool:
-    if os.environ.get("CI"):
-        return True
-    if Path("/usr/bin/chromium").exists() or Path("/usr/bin/google-chrome").exists():
-        return True
-    return any(p.exists() for p in EDGE_PATHS)
-
-
-pytestmark = pytest.mark.skipif(not _browser_available(), reason="no Chromium/Edge")
+pytestmark = pytest.mark.skipif(not browser_available(), reason=SKIP_REASON)
 
 
 def _free_port() -> int:
@@ -78,10 +65,6 @@ def _server(tmp_path: Path):
         store.close()
 
 
-def _launch(playwright):
-    if any(p.exists() for p in EDGE_PATHS):
-        return playwright.chromium.launch(channel="msedge", headless=True)
-    return playwright.chromium.launch(headless=True)
 
 
 def _open_settings(page) -> object:
@@ -137,7 +120,7 @@ def _save(page, dialog) -> bool:
 @pytest.fixture()
 def live(tmp_path: Path):
     with _server(tmp_path) as (base, state), sync_playwright() as pw:
-        browser = _launch(pw)
+        browser = launch(pw)
         ctx = browser.new_context(viewport={"width": 1440, "height": 950})
         page = ctx.new_page()
         page.set_default_timeout(6000)

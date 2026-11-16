@@ -183,6 +183,34 @@ curl -s http://127.0.0.1:18800/api/v1/me \
 | `SPARK_CONTROL_IMAP_SSL` | `true` | 是否使用 IMAPS |
 | `SPARK_CONTROL_MODEL_ASSIST` | `false` | 办公成果物启用模型摘要/章节；需同时配置模型网关 |
 | `SPARK_CONTROL_MODEL_TIMEOUT_SEC` | `45` | 模型摘要超时（秒），超时静默回退确定性结果 |
+| `SPARK_CONTROL_MODEL_ROOT` | `$SPARK_HOME/models` | 本地模型根目录；Whisper 权重放在其下 `asr/<size>/` |
+| `SPARK_CONTROL_ASR_MODEL` | `small` | 本地转写模型档位（tiny/base/small/medium/large-v3） |
+| `SPARK_CONTROL_BRAND_NAME` | `Spark` | 文档页脚与工作台标题上的企业名称 |
+| `SPARK_CONTROL_BRAND_PRIMARY` | `#1F4E79` | 主色（表格表头、标题栏），须为 `#RRGGBB` |
+| `SPARK_CONTROL_BRAND_ACCENT` | `#17365D` | 强调色（文档标题），须为 `#RRGGBB` |
+| `SPARK_CONTROL_BRAND_FOOTER` | `本文件由{name}自动生成，请人工复核` | 页脚文案，`{name}` 会替换为品牌名 |
+| `SPARK_CONTROL_BRAND_LOGO` | 空 | PNG/JPG logo 路径（≤4MB）；画入 PDF 页眉、DOCX 顶部、PPTX 封面 |
+
+品牌只影响版式，不影响结构化内容、来源行号与审批流程：同一份转写在有无品牌时
+产出的决议、行动项、引用行号完全一致（`tests/test_control_branding.py` 断言）。
+
+### 会议录音转写
+
+`POST /api/v1/office/audio/transcribe`（`office:write`）接收 mp3/wav/m4a/flac/ogg/
+opus/aac/wma/mp4/webm，上限 200MB、3 小时、4000 段。音频写入
+`$SPARK_CONTROL_DOCUMENT_ROOT/audio/`，用本地 faster-whisper 在 CPU 上转写，
+**不发起任何推理期网络请求**；返回带 `[mm:ss]` 时间戳的文本，可直接提交给
+`POST /api/v1/office/meetings` 生成纪要。
+
+首次使用需安装可选依赖与模型：
+
+```bash
+pip install "spark-agent[asr]"
+export HF_ENDPOINT=https://hf-mirror.com   # 网络受限时
+python -c "from faster_whisper import WhisperModel; WhisperModel('small', download_root='$SPARK_HOME/models/asr/small')"
+```
+
+模型缺失时端点返回 503 并给出安装提示，其余办公功能不受影响。
 
 ## 6. API（第一增量）
 

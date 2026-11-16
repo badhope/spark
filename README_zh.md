@@ -44,8 +44,9 @@ spark web     # 打开浏览器界面（自动选择空闲端口）
   生产可切 PostgreSQL + Keycloak OIDC + Casbin。
 - **能产出真实文件的办公工作台。** `/office` 把会议转写和文档变成带来源行号的
   纪要、行动项、报告与表格，支持导出 Markdown、Word、Excel、PowerPoint、PDF；
-  可导入 docx/xlsx/pptx/pdf、邮件、图片与扫描 PDF（本地 OCR）；配置模型后可选用
-  AI 摘要与结论章节。
+  可导入 docx/xlsx/pptx/pdf、邮件、图片与扫描 PDF（本地 OCR）；可直接上传会议
+  录音在本地转写（Whisper，音频不出机器）；配置模型后可选用 AI 摘要与结论章节。
+  文档版式支持 `SPARK_CONTROL_BRAND_*` 换企业名称、主色与 logo，内容与来源行号不受影响。
 - **模型自由。** 任意 OpenAI 兼容端点、fallback 模型链、凭据池，以及独立的小模型
   承担辅助调用。
 

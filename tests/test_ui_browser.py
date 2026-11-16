@@ -22,26 +22,12 @@ from pathlib import Path
 
 import pytest
 
+from tests._ui_browser import SKIP_REASON, browser_available, launch
+
 playwright_api = pytest.importorskip("playwright.sync_api")
 sync_playwright = playwright_api.sync_playwright
 
-EDGE_PATHS = [
-    Path(r"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"),
-    Path(r"C:/Program Files/Microsoft/Edge/Application/msedge.exe"),
-]
-
-
-def _browser_available() -> bool:
-    if os.environ.get("CI"):
-        return True
-    if Path("/usr/bin/chromium").exists() or Path("/usr/bin/google-chrome").exists():
-        return True
-    return any(path.exists() for path in EDGE_PATHS)
-
-
-pytestmark = pytest.mark.skipif(
-    not _browser_available(), reason="no Chromium/Edge available for UI tests"
-)
+pytestmark = pytest.mark.skipif(not browser_available(), reason=SKIP_REASON)
 
 
 def _free_port() -> int:
@@ -88,16 +74,12 @@ def _live_server(tmp_path: Path):
         store.close()
 
 
-def _launch(playwright):
-    if any(path.exists() for path in EDGE_PATHS):
-        return playwright.chromium.launch(channel="msedge", headless=True)
-    return playwright.chromium.launch(headless=True)
 
 
 @pytest.fixture()
 def page(tmp_path: Path):
     with _live_server(tmp_path) as base, sync_playwright() as playwright:
-        browser = _launch(playwright)
+        browser = launch(playwright)
         context = browser.new_context(viewport={"width": 1440, "height": 900})
         page = context.new_page()
         page.set_default_timeout(4000)

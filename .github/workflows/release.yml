@@ -47,6 +47,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install browser for UI tests
+        # `python -m pytest` below runs the real-browser UI suite; without a
+        # browser it skips, and a broken frontend would ship unnoticed.
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
       - name: Build
         run: ${{ matrix.setup }}
       - name: Pack

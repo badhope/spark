@@ -46,13 +46,16 @@ def test_secret_files_are_blocked_but_examples_allowed(tmp_path: Path) -> None:
     assert box.resolve(".env.example").name == ".env.example"
 
 
-def test_inline_interpreter_code_is_blocked_in_workspace(tmp_path: Path) -> None:
+def test_inline_interpreter_code_is_allowed(tmp_path: Path) -> None:
+    """Inline code must not be special-cased.
+
+    An earlier revision blocked ``python -c`` in restricted modes. It was
+    removed: ``python foo.py`` gives the identical capability, so the rule
+    stopped no attacker while breaking ordinary development — and it only
+    matched POSIX spellings, so ``python.exe -c`` slipped through anyway. What
+    actually protects the machine is the path/credential guard, asserted above.
+    """
     box = WorkdirSandbox(tmp_path, _cfg("workspace"))
-    assert "inline interpreter" in (box.check_shell('python -c "print(1)"') or "")
-    assert "inline interpreter" in (box.check_shell('node -e "console.log(1)"') or "")
-    assert box.check_shell("python -m pytest -q") is None
-
-
-def test_inline_interpreter_code_allowed_in_unrestricted(tmp_path: Path) -> None:
-    box = WorkdirSandbox(tmp_path, _cfg("unrestricted"))
     assert box.check_shell('python -c "print(1)"') is None
+    assert box.check_shell('node -e "console.log(1)"') is None
+    assert box.check_shell("python -m pytest -q") is None

@@ -43,15 +43,49 @@ def _make_pptx(path: Path) -> None:
     presentation.save(path)
 
 
+_CJK_FONT_CANDIDATES = (
+    r"C:\Windows\Fonts\msyh.ttc",
+    r"C:\Windows\Fonts\simhei.ttf",
+    "/System/Library/Fonts/PingFang.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+)
+
+
+def _cjk_font(size: int = 42):
+    """A scalable CJK font, or ``None`` when this machine has none.
+
+    OCR of Chinese text is only meaningful with a real outline font. Pillow's
+    ``load_default()`` is a tiny bitmap face — it renders illegible glyphs, the
+    recogniser returns noise, and the assertion would fail for a reason that has
+    nothing to do with the code under test.
+    """
+    from PIL import ImageFont
+
+    for candidate in _CJK_FONT_CANDIDATES:
+        path = Path(candidate)
+        if path.is_file():
+            try:
+                return ImageFont.truetype(str(path), size)
+            except OSError:
+                continue
+    return None
+
+
+needs_cjk_font = pytest.mark.skipif(
+    _cjk_font() is None, reason="no scalable CJK font installed; OCR would read noise"
+)
+
+
 def _make_scan(path: Path, suffix: str = "png") -> None:
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw
 
     image = Image.new("RGB", (900, 220), "white")
     draw = ImageDraw.Draw(image)
-    try:
-        font = ImageFont.truetype(r"C:\Windows\Fonts\msyh.ttc", 42)
-    except Exception:
-        font = ImageFont.load_default()
+    font = _cjk_font()
+    if font is None:  # pragma: no cover - guarded by needs_cjk_font
+        raise RuntimeError("no CJK font available for the OCR fixture")
     draw.text((30, 50), "会议纪要 OCR 测试 2026", fill="black", font=font)
     draw.text((30, 120), "Action: review report", fill="black", font=font)
     image.save(path, format=suffix.upper() if suffix == "pdf" else None)
@@ -100,8 +134,6 @@ def client(tmp_path: Path):
         ("review.pptx", "季度复盘"),
         ("notes.md", "试点范围"),
         ("mail.eml", "接入邮件导入"),
-        ("scan.png", "OCR测试"),
-        ("scanned.pdf", "OCR测试"),
     ],
 )
 def test_extract_supported_documents(client: TestClient, filename: str, needle: str) -> None:
@@ -110,6 +142,19 @@ def test_extract_supported_documents(client: TestClient, filename: str, needle: 
     body = response.json()
     assert needle in body["text"]
     assert body["chars"] > 0
+
+
+@needs_cjk_font
+@pytest.mark.parametrize("filename", ["scan.png", "scanned.pdf"])
+def test_ocr_reads_scanned_pages(client: TestClient, filename: str) -> None:
+    """OCR is exercised on real rendered glyphs, not a synthetic text layer."""
+    response = client.post("/api/v1/office/documents/extract", json={"filename": filename})
+    assert response.status_code == 200, response.text
+    text = response.json()["text"]
+    # OCR output is imperfect by nature: assert on the machine-readable ASCII
+    # line plus the presence of Chinese characters, not an exact string.
+    assert "review" in text.lower()
+    assert any("\u4e00" <= ch <= "\u9fff" for ch in text)
 
 
 def test_extract_rejects_path_escape(client: TestClient) -> None:

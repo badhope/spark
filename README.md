@@ -49,8 +49,10 @@ in settings and the next turn uses the real model — no restart.
 - **Office workbench with real files.** `/office` turns meeting transcripts and
   documents into cited minutes, action items, reports and spreadsheets, then
   exports Markdown, Word, Excel, PowerPoint and PDF. Import docx/xlsx/pptx/pdf,
-  email, images and scanned PDFs (local OCR); optional AI summaries when a
-  model is configured.
+  email, images and scanned PDFs (local OCR); transcribe meeting recordings on
+  the machine (Whisper — the audio never leaves it); optional AI summaries when
+  a model is configured. `SPARK_CONTROL_BRAND_*` puts your own name, colour and
+  logo on the output without touching the content or the citations.
 - **Provider freedom.** Any OpenAI-compatible endpoint, fallback model chain,
   credential pool and a separate small model for auxiliary calls.
 

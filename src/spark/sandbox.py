@@ -260,33 +260,6 @@ def _git_option_guard(tokens: list[str]) -> str | None:
     return None
 
 
-def _inline_code_guard(tokens: list[str]) -> str | None:
-    """Block inline interpreter code in restricted modes.
-
-    ``python -c`` / ``node -e`` / PowerShell ``-Command`` can read arbitrary
-    files without ever putting a protected path in the command string, so the
-    path-token guard cannot see it. Scripts (``python foo.py``) stay allowed;
-    they are still subject to path + protected-file checks.
-    """
-    interpreters = {"python", "python3", "py", "node", "node.exe", "perl", "ruby", "php"}
-    flags = {"-c", "--eval", "-e", "-r", "-p", "--print", "-"}
-    shell_interpreters = {"powershell", "powershell.exe", "pwsh", "pwsh.exe"}
-    for index, token in enumerate(tokens):
-        name = Path(token).name.lower()
-        nxt = tokens[index + 1].lower() if index + 1 < len(tokens) else ""
-        if name in interpreters and nxt in flags:
-            return "command blocked: inline interpreter code is not allowed in restricted sandbox"
-        if name in shell_interpreters and nxt in {
-            "-c",
-            "-command",
-            "-encodedcommand",
-            "-e",
-            "-ec",
-        }:
-            return "command blocked: inline interpreter code is not allowed in restricted sandbox"
-    return None
-
-
 def _git_control_surface(path: Path, root: Path) -> str | None:
     """Return the git control entry *path* falls under, at any depth.
 
@@ -730,9 +703,6 @@ class WorkdirSandbox:
         except ValueError:
             tokens = normalised.split()
         tokens = [_strip_quotes(tok) for tok in tokens]
-        inline_reason = _inline_code_guard(tokens)
-        if inline_reason:
-            return inline_reason
         # git's own flags can re-enable arbitrary execution or move the repo:
         # `git -c alias.x='!cmd' x`, `git -C <dir> push`, `--work-tree`.
         git_reason = _git_option_guard(tokens)

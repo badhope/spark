@@ -34,6 +34,8 @@
 | 断网执行 | `tools/shell.py` | `agent.network_access = false`：bwrap 下跑空网络命名空间；不可用时如实告警 |
 | 配色主题 | `web/src/theme.ts` + `index.css` | 5 套强调色（Ember/Ocean/Forest/Violet/Mono），与明暗正交 |
 | 代码文档（Repo Wiki） | `wiki.py` + `spark wiki` + 设置→代码文档 | 用 tree-sitter 从源码结构生成本地文档：每个模块一张符号表，行号可核对；按内容哈希增量，可重复可 diff；`--summarize` 才调模型 |
+| 会议录音转写 | `control/audio.py` + `/api/v1/office/audio/transcribe` | faster-whisper 本地 CPU 推理，音频不出机器；返回带时间戳文本，可直接生成纪要；上限 200MB / 3 小时 |
+| 文档品牌化 | `control/branding.py` + `SPARK_CONTROL_BRAND_*` | 企业名称、主色、logo 写入 PDF/DOCX/PPTX/XLSX 版式；内容、来源行号、审批流程不受影响 |
 
 ## 二、形态与入口
 
@@ -113,9 +115,10 @@ spark --version           # 版本号（与 pyproject / PyPI 同源）
   `Ctrl+` 加反引号开终端、`Esc` 停止生成、`?` 帮助。六个全局键均可在
   设置→快捷键里改键并做冲突检测。
 - **审批卡片**：展示工具名、摘要、diff，并可展开查看完整参数。
-- **多级导航**：会话侧栏 → 会话 → 消息内工具块折叠 → 设置分 12 页签
-  （模型 / Agent / 权限 / 展示 / 记忆 / MCP / 技能 / 提示词 / 插件 / 快捷键 /
-  知识库 / 项目），默认只呈现一层。
+- **多级导航**：会话侧栏 → 会话 → 消息内工具块折叠 → 设置分 4 组 16 页签
+  （核心：模型/Agent/权限/展示 · 工作区：项目/记忆/知识库/代码文档/定时任务 ·
+  扩展：MCP/技能/提示词/插件 · 系统：快捷键/调试/诊断），默认只呈现一层；
+  分组标题可折叠，同一时刻只展开一组。
 - **会话检索**：侧栏搜索走 FTS5（trigram，中文子串友好），命中消息正文时
   在标题下显示片段。
 

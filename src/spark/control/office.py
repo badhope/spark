@@ -31,6 +31,19 @@ _OWNER = re.compile(r"(?:负责人|owner)\s*[:：]\s*([^\s,，;；]+)|@([A-Za-z0
 _DUE = re.compile(r"(?:截止|到期|due)\s*[:：]?\s*([0-9]{4}[-/][0-9]{1,2}[-/][0-9]{1,2}|[0-9]{1,2}月[0-9]{1,2}日)", re.IGNORECASE)
 
 
+def _rgb(hex_colour: str):
+    """``#1F4E79`` → a python-docx ``RGBColor``; malformed values degrade."""
+    from docx.shared import RGBColor
+
+    text = (hex_colour or "").lstrip("#")
+    if len(text) != 6:
+        text = "1F4E79"
+    try:
+        return RGBColor.from_string(text.upper())
+    except Exception:  # noqa: BLE001 - never fail an export over a colour
+        return RGBColor(0x1F, 0x4E, 0x79)
+
+
 @dataclass
 class ActionItem:
     text: str
@@ -52,6 +65,9 @@ class MeetingMinutes:
     decisions: list[dict[str, Any]] = field(default_factory=list)
     actions: list[ActionItem] = field(default_factory=list)
     citations: int = 0
+    #: Optional tenant branding (``spark.control.branding.Brand``). Kept as a
+    #: plain attribute so the structured content stays independent of styling.
+    brand: Any = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -89,7 +105,9 @@ class MeetingMinutes:
             "## 待确认",
             "- 负责人/截止时间缺失的行动项已标注“待确认”，需人工补齐。",
             "",
-            "> 本纪要由 Spark 自动生成；决议与行动项均附来源行号，请人工复核。",
+            f"> {self.brand.footer_text()}"
+            if self.brand is not None
+            else "> 本纪要由 Spark 自动生成；决议与行动项均附来源行号，请人工复核。",
         ]
         return "\n".join(lines)
 
@@ -130,8 +148,15 @@ class MeetingMinutes:
                     ),
                 ),
             ]
-        blocks.append(("note", "本纪要由 Spark 自动生成；决议与行动项均附来源行号，请人工复核。"))
-        return render_pdf(self.title, "会议纪要", blocks)
+        blocks.append(
+            (
+                "note",
+                self.brand.footer_text()
+                if self.brand is not None
+                else "本纪要由 Spark 自动生成；决议与行动项均附来源行号，请人工复核。",
+            )
+        )
+        return render_pdf(self.title, "会议纪要", blocks, brand=self.brand)
 
     def docx_bytes(self) -> bytes:
         try:
@@ -140,8 +165,14 @@ class MeetingMinutes:
             raise RuntimeError(
                 "docx export requires python-docx (install spark-agent[office])"
             ) from exc
+        from spark.control.branding import docx_decorate, docx_footer
+
         document = Document()
-        document.add_heading(self.title, level=0)
+        brand = self.brand
+        heading = document.add_heading(self.title, level=0)
+        if brand is not None:
+            for run in heading.runs:
+                run.font.color.rgb = _rgb(brand.accent)
         document.add_heading("摘要", level=1)
         document.add_paragraph(self.summary)
         if self.ai_summary:
@@ -172,7 +203,8 @@ class MeetingMinutes:
                 row[1].text = action.owner or "待确认"
                 row[2].text = action.due or "待确认"
                 row[3].text = f"第 {action.line} 行"
-        document.add_paragraph("本纪要由 Spark 自动生成，请人工复核。")
+        document.add_paragraph(docx_footer(brand))
+        docx_decorate(document, brand)
         buffer = BytesIO()
         document.save(buffer)
         return buffer.getvalue()
@@ -187,9 +219,15 @@ class MeetingMinutes:
             ) from exc
 
         presentation = Presentation()
+        from spark.control.branding import pptx_decorate
+
+        brand = self.brand
         title_slide = presentation.slides.add_slide(presentation.slide_layouts[0])
         title_slide.shapes.title.text = self.title
-        title_slide.placeholders[1].text = "Spark 自动生成 · 请人工复核"
+        title_slide.placeholders[1].text = (
+            brand.footer_text() if brand is not None else "Spark 自动生成 · 请人工复核"
+        )
+        pptx_decorate(presentation, title_slide, brand)
 
         summary_slide = presentation.slides.add_slide(presentation.slide_layouts[1])
         summary_slide.shapes.title.text = "摘要与议题"
@@ -282,7 +320,9 @@ class MeetingMinutesService:
             fallback = [
                 line
                 for line in raw_lines
-                if not _DECISION.search(line) and not _ACTION.search(line)
+                if not _DECISION.search(line)
+                and not _ACTION.search(line)
+                and not _ATTENDEES.match(line)
             ][:3]
             topics = [line[:60] for line in fallback]
         summary = (

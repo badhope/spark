@@ -8,6 +8,7 @@ OFFICE_HTML = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Spark Office · 会议纪要与行动项</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e8620c'/%3E%3Cpath d='M9 12h14M9 17h10M9 22h6' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
 :root{
   --bg:#f2f2f4; --panel:#ffffff; --panel2:#f7f7f9; --line:#dcdce2; --line-2:#c2c2cb;
@@ -102,7 +103,7 @@ table td:first-child{word-break:break-word}
 </head>
 <body>
 <header>
-  <div class="brand"><span class="dot"></span>Spark Office <span class="sub">/ 企业控制面</span></div>
+  <div class="brand" id="brandbar"><span class="dot"></span><span id="brandname">Spark Office</span> <span class="sub">/ 企业控制面</span></div>
   <div class="spacer"></div>
   <label class="token">Bearer Token（OIDC 时填写）
     <input id="token" type="password" placeholder="dev 模式留空" autocomplete="off">
@@ -139,6 +140,12 @@ table td:first-child{word-break:break-word}
         <input id="document-file" type="file" accept=".docx,.pdf,.pptx,.xlsx,.png,.jpg,.jpeg,.bmp,.tif,.tiff,.webp,.eml,.msg,.txt,.md,.csv,.json,.html,.htm">
         <input id="document" type="text" style="margin-top:6px" placeholder="或填 documents 目录中已有文件：meeting.docx / notes.pdf / scan.png / mail.msg">
         <div class="muted" id="upload-hint" style="margin:4px 0 0"></div>
+        <label style="margin-top:10px">会议录音（可选，本地转写，音频不出机器）</label>
+        <input id="audio-file" type="file" accept=".mp3,.wav,.m4a,.flac,.ogg,.opus,.aac,.wma,.mp4,.webm">
+        <div class="actions" style="margin-top:6px">
+          <button class="ghost" id="audio-transcribe" disabled>转写录音并填入</button>
+          <span class="muted" id="audio-hint">需已安装本地 Whisper 模型</span>
+        </div>
         <div class="actions" style="margin-top:8px">
           <button class="ghost" id="imap-fetch">从 IMAP 拉取最新邮件</button>
           <span class="muted" id="imap-hint">需配置 SPARK_CONTROL_IMAP_*</span>
@@ -257,6 +264,17 @@ async function health() {
     $("health").textContent = "连接失败";
   }
 }
+async function loadBrand() {
+  // Branding is deployment config: it only affects how generated files look.
+  try {
+    const brand = await api("/api/v1/office/brand");
+    if (brand.name) $("brandname").textContent = brand.name + " Office";
+    if (brand.primary) {
+      document.documentElement.style.setProperty("--accent", brand.primary);
+    }
+    document.title = (brand.name ? brand.name + " Office" : "Spark Office") + " · 会议纪要与行动项";
+  } catch (e) { /* keep the defaults */ }
+}
 async function loadProjects() {
   try {
     const projects = await api("/api/v1/projects");
@@ -354,6 +372,34 @@ async function loadMeetings() {
     $("recent").innerHTML = '<div class="card-b muted">加载失败：' + escapeHtml(e.message) + '</div>';
   }
 }
+$("audio-file").onchange = () => {
+  $("audio-transcribe").disabled = !$("audio-file").files.length;
+  $("audio-hint").textContent = $("audio-file").files[0]
+    ? "本地转写中可能需要数分钟，录音不超过 3 小时。"
+    : "需已安装本地 Whisper 模型";
+};
+$("audio-transcribe").onclick = async () => {
+  const file = $("audio-file").files[0];
+  if (!file) return;
+  const hint = $("audio-hint");
+  const button = $("audio-transcribe");
+  button.disabled = true;
+  hint.textContent = "上传并本地转写中…（首次会加载模型，请稍候）";
+  const form = new FormData();
+  form.append("file", file, file.name);
+  try {
+    const data = await api("/api/v1/office/audio/transcribe", { method: "POST", body: form });
+    const box = $("transcript");
+    box.value = box.value.trim() ? box.value.trimEnd() + "\n" + data.transcript : data.transcript;
+    hint.textContent = `已转写 ${data.duration}s · 语言 ${data.language || "未知"} · ` +
+      `${(data.segments || []).length} 段` +
+      (data.warnings && data.warnings.length ? " · " + data.warnings.join("；") : "");
+    toast("录音已转写，可直接生成纪要");
+  } catch (e) {
+    hint.textContent = "转写失败：" + e.message;
+    toast("转写失败：" + e.message, true);
+  } finally { button.disabled = false; }
+};
 $("document-file").onchange = async () => {
   const file = $("document-file").files[0];
   if (!file) return;
@@ -564,7 +610,7 @@ $("report-generate").onclick = async () => {
   } catch (e) { toast("生成失败：" + e.message, true); }
   finally { button.disabled = false; button.textContent = "生成报告"; }
 };
-health(); loadProjects(); loadMeetings(); loadReports();
+health(); loadBrand(); loadProjects(); loadMeetings(); loadReports();
 </script>
 </body>
 </html>

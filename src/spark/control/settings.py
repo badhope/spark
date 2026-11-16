@@ -58,6 +58,19 @@ class ControlSettings(BaseSettings):
     #: Model-assisted office text (summary/narrative). Off by default so tests
     #: and air-gapped deployments never call a model implicitly.
     model_assist: bool = False
+    #: Local ASR model size for meeting audio (tiny/base/small/medium/large-v3).
+    #: Downloaded once into ``model_root/asr``; empty disables nothing, it just
+    #: uses the default so a first upload works out of the box.
+    asr_model: str = "small"
+    #: Where downloaded models live (Whisper weights, embeddings, etc.).
+    model_root: str = ""
+    #: Tenant branding for generated documents. Presentation only; the
+    #: structured content and citations are unaffected.
+    brand_name: str = "Spark"
+    brand_primary: str = "#1F4E79"
+    brand_accent: str = "#17365D"
+    brand_footer: str = "本文件由{name}自动生成，请人工复核"
+    brand_logo: str = ""
     model_timeout_sec: float = Field(default=45.0, ge=1.0, le=300.0)
     #: None = create tables automatically for SQLite only (never for Postgres).
     auto_create_tables: bool | None = None
@@ -71,6 +84,13 @@ class ControlSettings(BaseSettings):
         return [part.strip() for part in self.dev_roles.split(",") if part.strip()]
 
     @property
+    def resolved_model_root(self) -> str:
+        if self.model_root:
+            return self.model_root
+        from spark.config import default_home
+
+        return str(default_home() / "models")
+
     def should_create_tables(self) -> bool:
         if self.auto_create_tables is not None:
             return self.auto_create_tables

@@ -58,6 +58,8 @@ class Report:
     summary: str
     metrics: list[Metric] = field(default_factory=list)
     sections: list[ReportSection] = field(default_factory=list)
+    #: Optional tenant branding (``spark.control.branding.Brand``).
+    brand: Any = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -77,7 +79,15 @@ class Report:
             )
         for section in self.sections:
             lines += ["", f"## {section.heading}", section.body]
-        lines += ["", "> 本报告由 Spark 自动生成；指标口径与数据来源需人工复核。"]
+        lines += [
+            "",
+            "> "
+            + (
+                self.brand.footer_text()
+                if self.brand is not None
+                else "本报告由 Spark 自动生成；指标口径与数据来源需人工复核。"
+            ),
+        ]
         return "\n".join(lines)
 
     def pdf_bytes(self) -> bytes:
@@ -106,8 +116,15 @@ class Report:
         ]
         for section in self.sections:
             blocks += [("heading", section.heading), ("paragraph", section.body)]
-        blocks.append(("note", "本报告由 Spark 自动生成；指标口径与数据来源需人工复核。"))
-        return render_pdf(self.title, "经营报告", blocks)
+        blocks.append(
+            (
+                "note",
+                self.brand.footer_text()
+                if self.brand is not None
+                else "本报告由 Spark 自动生成；指标口径与数据来源需人工复核。",
+            )
+        )
+        return render_pdf(self.title, "经营报告", blocks, brand=self.brand)
 
     def xlsx_bytes(self) -> bytes:
         try:
@@ -120,13 +137,16 @@ class Report:
             ) from exc
 
         workbook = Workbook()
+        from spark.control.branding import hex_colour
+
+        brand_primary = hex_colour(getattr(self.brand, "primary", ""), "1F4E79")
         summary = workbook.active
         summary.title = "Summary"
         summary.sheet_view.showGridLines = False
         summary.merge_cells("A1:E1")
         summary["A1"] = self.title
         summary["A1"].font = Font(size=16, bold=True, color="FFFFFF")
-        summary["A1"].fill = PatternFill("solid", fgColor="1F4E79")
+        summary["A1"].fill = PatternFill("solid", fgColor=brand_primary)
         summary["A1"].alignment = Alignment(vertical="center")
         summary.row_dimensions[1].height = 30
         summary.merge_cells("A3:E3")
@@ -139,7 +159,7 @@ class Report:
         for column, title in enumerate(header, 1):
             cell = summary.cell(row=5, column=column, value=title)
             cell.font = Font(bold=True, color="FFFFFF")
-            cell.fill = PatternFill("solid", fgColor="2F5597")
+            cell.fill = PatternFill("solid", fgColor=brand_primary)
             cell.alignment = Alignment(horizontal="center")
         thin = Side(style="thin", color="D9E2F3")
         for row, metric in enumerate(self.metrics, 6):
@@ -201,6 +221,8 @@ class Report:
             ) from exc
 
         document = Document()
+        from spark.control.branding import docx_decorate, docx_footer
+
         document.add_heading(self.title, level=0)
         document.add_heading("摘要", level=1)
         document.add_paragraph(self.summary)
@@ -219,7 +241,8 @@ class Report:
         for section in self.sections:
             document.add_heading(section.heading, level=1)
             document.add_paragraph(section.body)
-        document.add_paragraph("本报告由 Spark 自动生成，请人工复核。")
+        document.add_paragraph(docx_footer(self.brand))
+        docx_decorate(document, self.brand)
         for paragraph in document.paragraphs:
             for run in paragraph.runs:
                 run.font.size = Pt(10.5)
@@ -237,9 +260,14 @@ class Report:
             ) from exc
 
         presentation = Presentation()
+        from spark.control.branding import PPTX_FALLBACK_SUBTITLE, pptx_decorate
+
         title_slide = presentation.slides.add_slide(presentation.slide_layouts[0])
         title_slide.shapes.title.text = self.title
-        title_slide.placeholders[1].text = "Spark 自动生成 · 请人工复核"
+        title_slide.placeholders[1].text = (
+            self.brand.footer_text() if self.brand is not None else PPTX_FALLBACK_SUBTITLE
+        )
+        pptx_decorate(presentation, title_slide, self.brand)
 
         metrics_slide = presentation.slides.add_slide(presentation.slide_layouts[5])
         metrics_slide.shapes.title.text = "关键指标"

@@ -49,12 +49,25 @@ def _no_proxy_for_localhost():
 def _isolate_config(tmp_path):
     old = os.environ.get("SPARK_HOME")
     os.environ["SPARK_HOME"] = str(tmp_path / ".spark-home")
+    # A developer shell may export overrides for local runs (our own dev.sh sets
+    # SPARK_UPDATER__MODE=off to stay offline). Those must not leak into tests
+    # that assert on defaults — two settings tests failed exactly this way while
+    # passing in CI. Environment-driven config is popped for the whole session.
+    leaked = {
+        key: value
+        for key, value in os.environ.items()
+        if key.upper().startswith("SPARK_")
+        and key.upper() not in {"SPARK_HOME", "SPARK_TEST_DATABASE_URL"}
+    }
+    for key in leaked:
+        os.environ.pop(key, None)
     # The durable turn checkpointer is process-wide: one opened against the
     # previous test's home would keep its SQLite connection (bound to the
     # shared runtime loop) alive into the next test.
     _reset_checkpointer()
     yield
     _reset_checkpointer()
+    os.environ.update(leaked)
     if old is None:
         os.environ.pop("SPARK_HOME", None)
     else:

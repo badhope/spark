@@ -32,11 +32,16 @@ def render_pdf(
     subtitle: str,
     blocks: list[tuple[str, Any]],
     footer: str = "Spark 自动生成 · 请人工复核",
+    brand: Any = None,
 ) -> bytes:
     """Render blocks to PDF bytes.
 
     Block kinds: ``heading`` (str), ``paragraph`` (str), ``bullets``
     (list[str]), ``table`` ((headers, rows)), ``note`` (str).
+
+    ``brand`` is a ``spark.control.branding.Brand``; it only changes colours,
+    the footer and the logo band. Passing ``None`` keeps the Spark defaults, so
+    callers that do not care are unaffected.
     """
 
     try:
@@ -57,6 +62,8 @@ def render_pdf(
         ) from exc
 
     font = _register_font()
+    primary = getattr(brand, "primary", "#1F4E79") if brand else "#1F4E79"
+    accent = getattr(brand, "accent", "#17365D") if brand else "#17365D"
     base = ParagraphStyle(
         "SparkBody", fontName=font, fontSize=10.5, leading=16, spaceAfter=4
     )
@@ -65,7 +72,7 @@ def render_pdf(
         parent=base,
         fontSize=13,
         leading=19,
-        textColor=colors.HexColor("#1F4E79"),
+        textColor=colors.HexColor(primary),
         spaceBefore=12,
         spaceAfter=6,
     )
@@ -74,7 +81,7 @@ def render_pdf(
         parent=base,
         fontSize=19,
         leading=27,
-        textColor=colors.HexColor("#17365D"),
+        textColor=colors.HexColor(accent),
         spaceAfter=4,
     )
     subtitle_style = ParagraphStyle(
@@ -138,7 +145,7 @@ def render_pdf(
             table.setStyle(
                 TableStyle(
                     [
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2F5597")),
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(primary)),
                         ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#B8C6DB")),
                         ("VALIGN", (0, 0), (-1, -1), "TOP"),
                         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F3F6FB")]),
@@ -150,8 +157,26 @@ def render_pdf(
             story.append(table)
             story.append(Spacer(1, 6))
 
+    logo = None
+    if brand is not None:
+        footer = brand.footer_text()
+        logo_file = brand.logo()
+        if logo_file is not None:
+            try:
+                from reportlab.platypus import Image
+
+                logo = Image(str(logo_file), width=30 * mm, height=10 * mm, kind="proportional")
+            except Exception:  # noqa: BLE001 - a bad logo must not break the report
+                logo = None
+
     def _page(canvas, doc) -> None:
         canvas.saveState()
+        if logo is not None:
+            # Drawn in the page header area so it reads as letterhead.
+            try:
+                logo.drawOn(canvas, 18 * mm, A4[1] - 14 * mm)
+            except Exception:  # noqa: BLE001
+                pass
         canvas.setFont(font, 8)
         canvas.setFillColor(colors.HexColor("#777777"))
         canvas.drawString(18 * mm, 10 * mm, footer)

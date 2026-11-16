@@ -106,6 +106,31 @@ class DocumentExtractRequest(BaseModel):
     filename: str = Field(min_length=1, max_length=300)
 
 
+class TranscriptSegmentOut(BaseModel):
+    start: float
+    end: float
+    text: str
+
+
+class TranscriptOut(BaseModel):
+    filename: str
+    text: str
+    transcript: str
+    segments: list[TranscriptSegmentOut] = Field(default_factory=list)
+    language: str = ""
+    duration: float = 0
+    model: str = ""
+    warnings: list[str] = Field(default_factory=list)
+
+
+class BrandOut(BaseModel):
+    name: str
+    primary: str
+    accent: str
+    footer: str
+    logo: str = ""
+
+
 class ImapFetchRequest(BaseModel):
     limit: int = Field(default=5, ge=1, le=20)
     mailbox: str = Field(default="", max_length=200)

@@ -33,8 +33,10 @@ from sqlalchemy.orm import Session
 from spark.adapters.legacy import LocalArtifactStore
 from spark.config import SparkConfig, load_config
 from spark.control.ai import OfficeAssistant
+from spark.control.audio import MAX_AUDIO_BYTES, AudioTranscriber
 from spark.control.auth import AuthContext, get_auth
 from spark.control.authz import CasbinAuthorizer
+from spark.control.branding import brand_from_settings
 from spark.control.db import Database
 from spark.control.documents import (
     MAX_FILE_BYTES,
@@ -58,6 +60,7 @@ from spark.control.schemas import (
     ArtifactCreate,
     ArtifactOut,
     AuditOut,
+    BrandOut,
     DocumentExtractRequest,
     DocumentOut,
     FetchedEmailOut,
@@ -78,6 +81,7 @@ from spark.control.schemas import (
     TaskOut,
     TenantCreate,
     TenantOut,
+    TranscriptOut,
 )
 from spark.control.settings import ControlSettings
 
@@ -396,6 +400,19 @@ def _build_router() -> Any:
         )
         return list(session.scalars(stmt).all())
 
+    @router.get("/office/brand", response_model=BrandOut)
+    def get_brand(
+        request: Request,
+        auth: Annotated[AuthContext, Depends(_require("office", "read"))],
+    ) -> BrandOut:
+        """The branding applied to generated documents.
+
+        Read-only: branding is deployment configuration (``SPARK_CONTROL_BRAND_*``),
+        not per-request input, so a compromised client cannot restyle the
+        documents an auditor relies on.
+        """
+        return BrandOut(**request.app.state.brand.to_dict())
+
     @router.get("/office/meetings", response_model=list[MeetingListItem])
     def list_meetings(
         session: Annotated[Session, Depends(_get_session)],
@@ -472,6 +489,7 @@ def _build_router() -> Any:
 
         service: MeetingMinutesService = request.app.state.meetings
         minutes = service.build(payload.title, transcript)
+        minutes.brand = request.app.state.brand
         assistant: OfficeAssistant = request.app.state.assistant
         ai_summary = assistant.minutes_summary(minutes, transcript)
         if ai_summary:
@@ -695,6 +713,7 @@ def _build_router() -> Any:
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        report.brand = request.app.state.brand
         assistant: OfficeAssistant = request.app.state.assistant
         ai_sections = assistant.report_sections(report)
         if ai_sections:
@@ -862,6 +881,70 @@ def _build_router() -> Any:
         payload["filename"] = relative
         return DocumentOut(**payload)
 
+    @router.post("/office/audio/transcribe", response_model=TranscriptOut, status_code=201)
+    def transcribe_audio(
+        request: Request,
+        file: Annotated[UploadFile, File(...)],
+        session: Annotated[Session, Depends(_get_session)],
+        auth: Annotated[AuthContext, Depends(_require("office", "write"))],
+        language: Annotated[str | None, Query()] = None,
+    ) -> TranscriptOut:
+        """Turn a meeting recording into timestamped text.
+
+        The audio is written under the document root (so the same path-escape
+        rules apply), transcribed locally, and never leaves the machine. The
+        transcript is returned as timestamped lines the minutes parser accepts.
+        """
+        settings: ControlSettings = request.app.state.settings
+        original = Path(file.filename or "").name
+        suffix = Path(original).suffix.lower()
+        transcriber: AudioTranscriber = request.app.state.audio
+        if not transcriber.available:
+            raise HTTPException(
+                status_code=503,
+                detail="audio transcription is not installed (install spark-agent[office])",
+            )
+        data = file.file.read(MAX_AUDIO_BYTES + 1)
+        if not data:
+            raise HTTPException(status_code=422, detail="uploaded audio is empty")
+        if len(data) > MAX_AUDIO_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"audio is too large (limit {MAX_AUDIO_BYTES} bytes)",
+            )
+
+        stem = re.sub(r"[^A-Za-z0-9._\-\u4e00-\u9fff]+", "_", Path(original).stem).strip("._-")
+        safe_name = f"{uuid4().hex[:8]}-{(stem or 'audio')[:60]}{suffix}"
+        upload_root = Path(settings.document_root).expanduser().resolve() / "audio"
+        upload_root.mkdir(parents=True, exist_ok=True)
+        path = upload_root / safe_name
+        path.write_bytes(data)
+
+        try:
+            transcript = transcriber.transcribe(path, language=language or None)
+        except ValueError as exc:
+            path.unlink(missing_ok=True)
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            path.unlink(missing_ok=True)
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+        relative = f"audio/{safe_name}"
+        _audit(
+            session,
+            auth,
+            "audio.transcribe",
+            relative,
+            seconds=round(transcript.duration, 1),
+            segments=len(transcript.segments),
+            model=transcript.model,
+        )
+        session.commit()
+        payload = transcript.to_dict()
+        payload["filename"] = relative
+        payload["transcript"] = transcript.as_speaker_lines()
+        return TranscriptOut(**payload)
+
     @router.post("/office/documents/imap", response_model=ImapFetchOut)
     def fetch_imap(
         payload: ImapFetchRequest,
@@ -958,7 +1041,11 @@ def create_app(
         settings.validate_runtime()
         db = Database(settings.database_url)
         app.state.db = db
-        if settings.should_create_tables:
+        # Must be called: it is a method, and a bare truthiness check on the
+        # bound method is always True. That bug made every deployment run
+        # create_all() — including PostgreSQL, where Alembic owns the schema and
+        # auto-creation silently fights the migrations.
+        if settings.should_create_tables():
             db.create_all()
         # The default tenant must exist even when tables came from Alembic:
         # with it missing every write fails the tenant_id foreign key on
@@ -972,6 +1059,11 @@ def create_app(
         app.state.reports = ReportService()
         app.state.documents = DocumentIngestor()
         app.state.imap = ImapConnector(settings, app.state.documents)
+        app.state.audio = AudioTranscriber(
+            Path(settings.resolved_model_root).expanduser() / "asr",
+            settings.asr_model,
+        )
+        app.state.brand = brand_from_settings(settings)
         try:
             yield
         finally:
