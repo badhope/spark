@@ -44,3 +44,47 @@ def test_specs_ship_the_built_web_dist() -> None:
     for name in SPECS:
         text = (ROOT / name).read_text(encoding="utf-8")
         assert "src/spark/web/dist" in text, f"{name} does not bundle the web UI"
+
+
+#: Third-party packages that read data files at runtime via importlib.resources.
+#: PyInstaller cannot see those reads, so the data has to be listed explicitly.
+#: Both entries here shipped broken builds before being added: rapidocr's ONNX
+#: models (image/PDF import crashed) and faster-whisper's Silero VAD weights
+#: (transcription died with an ONNX NoSuchFile *after* the model had loaded).
+RUNTIME_DATA = {
+    "rapidocr_onnxruntime": ("*.onnx", "*.yaml"),
+    "faster_whisper": ("*.onnx",),
+}
+
+
+def test_specs_collect_runtime_data_files() -> None:
+    for name in SPECS:
+        text = (ROOT / name).read_text(encoding="utf-8")
+        for package, patterns in RUNTIME_DATA.items():
+            assert f'"{package}"' in text, f"{name} never collects data for {package}"
+            for pattern in patterns:
+                assert f'"{pattern}"' in text, (
+                    f"{name} does not collect {pattern} for {package}; "
+                    "the frozen build fails at runtime, not at build time"
+                )
+
+
+def test_specs_glob_their_data_patterns() -> None:
+    """Patterns must stay globs: upstream renames data files between releases.
+
+    faster-whisper already renamed its VAD asset once
+    (``silero_vad.onnx`` → ``silero_vad_v6.onnx``), so a hard-coded filename
+    would silently stop matching instead of failing loudly. Comments are ignored
+    here — they legitimately mention the file name to explain why it is globbed.
+    """
+    import re
+
+    for name in SPECS:
+        text = (ROOT / name).read_text(encoding="utf-8")
+        code = "\n".join(
+            line for line in text.splitlines() if not line.lstrip().startswith("#")
+        )
+        for match in re.finditer(r"silero[^\"']*", code):
+            raise AssertionError(
+                f"{name} hard-codes the VAD asset name {match.group(0)!r}; glob instead"
+            )
