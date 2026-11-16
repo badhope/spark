@@ -4,6 +4,39 @@
 
 ## [Unreleased]
 
+### 0.15.0（2026-11-16）
+
+**会议录音转写**
+
+- `POST /api/v1/office/audio/transcribe`：上传 mp3/wav/m4a/flac/ogg/opus/aac/wma/
+  mp4/webm，用本地 faster-whisper 在 CPU 上转写，音频不出机器、推理期零网络请求。
+  上限 200MB / 3 小时 / 4000 段；返回带 `[mm:ss]` 时间戳的文本，可直接生成纪要。
+- 办公工作台新增「转写录音并填入」；模型缺失时如实返回 503 并给安装提示，
+  其余办公功能不受影响。
+- 模型档位与目录可配（`SPARK_CONTROL_ASR_MODEL` / `_MODEL_ROOT`）。
+
+**文档品牌化**
+
+- `SPARK_CONTROL_BRAND_*` 把企业名称、主色、页脚与 logo 写入 PDF/DOCX/PPTX/XLSX。
+  只改版式：同一份转写在有无品牌时产出的决议、行动项、来源行号完全一致
+  （由 `tests/test_control_branding.py` 断言）。
+- 非法颜色或不可读的 logo 回退默认值，绝不因此让导出失败。
+- 新增只读 `GET /api/v1/office/brand` 供工作台与运维核对生效值。
+
+**修复**
+
+- `if settings.should_create_tables:` 判断的是绑定方法（恒真），导致 PostgreSQL
+  在 Alembic 之外也执行 `create_all()`。改为调用。
+- 移除「内联解释器代码」沙箱规则：`python foo.py` 与 `python -c` 能力等价，
+  该规则挡不住攻击却卡死常规开发，且只匹配 POSIX 写法。
+- `tests/conftest.py` 清除开发 shell 带入的 `SPARK_*` 覆盖，
+  否则本机 `SPARK_UPDATER__MODE=off` 会让两条设置测试在本地失败、CI 通过。
+- 三平台 release 构建：补齐 `asr`/`pty` extra 与 `faster_whisper`/`av`
+  隐式导入；`av` 版本窗口定为 `>=15,<19`（13/14 无 cp312 wheel，19 删除了
+  `metadata_errors`）。手动触发的 Release 现在从 `pyproject.toml` 推导 tag。
+- 浏览器测试不再因 `CI` 环境变量谎报「有浏览器」；改为实际试启动，
+  两个工作流都安装 Chromium。
+
 ### 协议面实测（2026-11-15）
 
 - **TUI 无法输入（严重）**：`SparkApp` 把「回合进行中」标志命名为 `self._running`，

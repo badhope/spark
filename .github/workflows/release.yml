@@ -88,6 +88,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve the release tag
+        id: tag
+        # `workflow_dispatch` has no tag context, so a manual run used to die at
+        # the upload step with "GitHub Releases requires a tag" after three
+        # successful builds. Derive it from the package version instead, which
+        # is the same number `spark --version` reports.
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            version=$(python -c "import re,pathlib; print(re.search(r'^version = \"([^\"]+)\"', pathlib.Path('pyproject.toml').read_text(), re.M).group(1))")
+            echo "name=v${version}" >> "$GITHUB_OUTPUT"
+          fi
+          cat "$GITHUB_OUTPUT"
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -102,6 +116,7 @@ jobs:
         run: ls -la dist-assets
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.name }}
           files: dist-assets/*
           generate_release_notes: true
           # `overwrite_files` 只在同一 tag 的草稿/新 release 上工作；对已经发布
