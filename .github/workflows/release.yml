@@ -17,7 +17,7 @@ jobs:
         include:
           - os: windows-latest
             setup: |
-              pip install -e ".[dev]" pyinstaller pywebview
+              pip install -e ".[dev,enterprise,office,platform]" pyinstaller pywebview "psycopg[binary]"
               python -m pytest -q
               pyinstaller --clean -y spark.spec
               pyinstaller --clean -y spark-desktop.spec
@@ -26,7 +26,7 @@ jobs:
             files: spark-windows-x86_64.zip
           - os: ubuntu-22.04   # GLIBC 2.35：兼容绝大多数发行版
             setup: |
-              pip install -e ".[dev]" pyinstaller
+              pip install -e ".[dev,enterprise,office,platform]" pyinstaller
               python -m pytest -q
               pyinstaller --clean -y spark.spec
             pack: tar -czf spark-linux-x86_64.tar.gz -C dist spark
@@ -35,7 +35,7 @@ jobs:
           # macos-13 在免费额度下会长期排队（永不执行）；macos-latest 为 Apple Silicon
           - os: macos-latest
             setup: |
-              pip install -e ".[dev]" pyinstaller
+              pip install -e ".[dev,enterprise,office,platform]" pyinstaller
               python -m pytest -q
               pyinstaller --clean -y spark.spec
             pack: tar -czf spark-macos-arm64.tar.gz -C dist spark
@@ -98,6 +98,11 @@ jobs:
         with:
           files: dist-assets/*
           generate_release_notes: true
+          # `overwrite_files` 只在同一 tag 的草稿/新 release 上工作；对已经发布
+          # 且 immutable 的 release，GitHub 会拒绝追加资产（422）。发布前请确认
+          # 目标 tag 尚未存在，或先删除旧 release。
+          draft: false
+          prerelease: false
 
   # 文档站点与安装脚本可用性在 tag 后由 docs.yml / CI 保证；
   # 这里只做发布资产，不做 PyPI（publish.yml 独立负责）。
