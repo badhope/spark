@@ -224,9 +224,18 @@ def test_file_tree_and_preview(page) -> None:
 
 
 def test_terminal_executes_command(page) -> None:
+    from spark.platform_compat import pty_supported
+
     page, _base = page
     _open_tool(page, "内置终端")
     page.wait_for_timeout(800)
+    if not pty_supported():
+        # The UI is right to report the missing backend; asserting a command ran
+        # would demand a capability this machine does not have. Skip, so the
+        # result never reads as "the terminal works" when it was not exercised.
+        assert "不支持伪终端" in page.inner_text('[role="dialog"]')
+        page.get_by_title("关闭").last.click()
+        pytest.skip("no PTY backend here (install the `pty` extra)")
     page.locator('textarea[aria-label="Terminal input"]').focus()
     page.keyboard.type("echo spark-ui-ok")
     page.keyboard.press("Enter")

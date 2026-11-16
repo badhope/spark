@@ -79,15 +79,25 @@ needs_cjk_font = pytest.mark.skipif(
 
 
 def _make_scan(path: Path, suffix: str = "png") -> None:
+    """A page-like image; drawn with real glyphs only when a CJK font exists.
+
+    The fixture must not fail the whole module when the machine has no CJK font
+    (bare CI runners don't): every other test in this file builds the same
+    workspace fixture and only needs *some* valid image. Text assertions live in
+    ``test_ocr_reads_scanned_pages``, which skips in that case.
+    """
     from PIL import Image, ImageDraw
 
     image = Image.new("RGB", (900, 220), "white")
     draw = ImageDraw.Draw(image)
     font = _cjk_font()
-    if font is None:  # pragma: no cover - guarded by needs_cjk_font
-        raise RuntimeError("no CJK font available for the OCR fixture")
-    draw.text((30, 50), "会议纪要 OCR 测试 2026", fill="black", font=font)
-    draw.text((30, 120), "Action: review report", fill="black", font=font)
+    if font is not None:
+        draw.text((30, 50), "会议纪要 OCR 测试 2026", fill="black", font=font)
+        draw.text((30, 120), "Action: review report", fill="black", font=font)
+    else:
+        # A few strokes so the page is not blank; content is not asserted on.
+        for offset in range(0, 800, 40):
+            draw.line([(40 + offset, 60), (60 + offset, 160)], fill="black", width=3)
     image.save(path, format=suffix.upper() if suffix == "pdf" else None)
 
 
