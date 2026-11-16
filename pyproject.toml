@@ -105,11 +105,15 @@ office = [
     "reportlab>=4.0",
 ]
 # 会议录音转写（本地 Whisper，CPU 推理；音频不出机器）。
-# 必须钉 av<15：faster-whisper 1.2 调用 av.open(metadata_errors=...)，
-# av 15+ 去掉了该参数，装上新版会在第一次转写时 TypeError。
+# av 的版本窗口由两个硬约束夹出来，两边都不能动：
+#   * av<19：faster-whisper 1.2 调用 av.open(metadata_errors=...)，
+#     该参数在 av 19 被删除（CHANGELOG: "Remove the metadata_encoding and
+#     metadata_errors arguments to av.open"），装上新版第一次转写就 TypeError。
+#   * av>=15：av 13/14 在 Linux 没有 cp312 manylinux wheel，pip 回退源码编译，
+#     而源码编译要求 FFmpeg 7 的头文件，CI 与干净机器上必然失败。
 asr = [
     "faster-whisper>=1.2",
-    "av>=13,<15",
+    "av>=15,<19",
 ]
 # Notebook 执行（读取/编辑已由 nbformat 承担；执行 cell 需要 nbclient）
 notebook = [
