@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-11-16
+
+- 补齐 `spark-onefile.spec` 与 `spark-desktop.spec`：两者此前既没有
+  `_OPTIONAL_DATA`，也缺 `src/spark/control/policies`。单文件/桌面产物因此
+  没有 OCR 模型、reportlab 字体，且 `spark enterprise` 启动即失败
+  （authz.py 按模块路径找 Casbin 策略）。`spark.spec` 一直是全的，
+  所以只有这两个产物中招。
+- 打包契约测试覆盖三个 spec：运行时数据（OCR/ASR/reportlab）、Casbin 策略、
+  提示词模板、前端 dist；并禁止硬编码 VAD 文件名（上游已改过一次）。
+
 ## [0.15.1] - 2026-11-16
 
 - 修复打包版会议录音转写：faster-whisper 的 Silero VAD 权重
