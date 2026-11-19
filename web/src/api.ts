@@ -16,6 +16,29 @@ import type {
 import { useUiStore } from "./store/uiStore"
 
 const DEFAULT_TIMEOUT_MS = 30000
+export const REMOTE_TOKEN_KEY = "spark-remote-token"
+
+export function getRemoteToken(): string {
+  try {
+    return localStorage.getItem(REMOTE_TOKEN_KEY) || ""
+  } catch {
+    return ""
+  }
+}
+
+export function setRemoteToken(token: string): void {
+  try {
+    if (token) localStorage.setItem(REMOTE_TOKEN_KEY, token)
+    else localStorage.removeItem(REMOTE_TOKEN_KEY)
+  } catch {
+    /* private mode: pairing still works for this page load via URL token */
+  }
+}
+
+/** A 401 from a non-loopback server means "pair this device", not "app broken". */
+export function isAuthError(err: unknown): boolean {
+  return !!err && typeof err === "object" && (err as { status?: number }).status === 401
+}
 
 export async function fetchWithTimeout(
   url: string,
@@ -32,7 +55,10 @@ export async function fetchWithTimeout(
     options.signal.addEventListener("abort", onCallerAbort, { once: true })
   }
   try {
-    return await fetch(url, { ...options, signal: controller.signal })
+    const headers = new Headers(options?.headers)
+    const token = getRemoteToken()
+    if (token) headers.set("X-Spark-Token", token)
+    return await fetch(url, { ...options, headers, signal: controller.signal })
   } finally {
     clearTimeout(timeoutId)
     // 关键：请求结束后移除监听，避免长生命周期 signal 上堆积回调（泄漏）
@@ -55,13 +81,72 @@ async function readJson<T>(res: Response): Promise<T> {
   }
   if (!res.ok) {
     const fromBody = (data as { error?: string } | null)?.error
-    throw new Error(fromBody || `HTTP ${res.status} ${text.slice(0, 120)}`.trim())
+    const err = new Error(fromBody || `HTTP ${res.status} ${text.slice(0, 120)}`.trim()) as Error & { status?: number }
+    err.status = res.status
+    throw err
   }
   return data as T
 }
 
 export async function fetchStatus(): Promise<Status> {
   return readJson<Status>(await fetchWithTimeout("/api/status"))
+}
+
+export async function claimPairing(code: string, name: string): Promise<{ token: string; device: { id: string; name: string } }> {
+  return readJson(
+    await fetchWithTimeout("/api/pair/claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, name }),
+    }),
+  )
+}
+
+export async function createPairCode(): Promise<{ code: string; expires_at: number; ttl_sec: number }> {
+  return readJson(await fetchWithTimeout("/api/pair/code", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }))
+}
+
+export async function fetchPairDevices(): Promise<{ devices: { id: string; name: string; created_at: number; expires_at: number; last_seen_at: number }[] }> {
+  return readJson(await fetchWithTimeout("/api/pair/devices"))
+}
+
+export async function revokePairDevice(device_id: string): Promise<{ ok: boolean; devices: { id: string; name: string; created_at: number; expires_at: number; last_seen_at: number }[] }> {
+  return readJson(await fetchWithTimeout("/api/pair/revoke", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device_id }) }))
+}
+
+export type QueueTask = {
+  id: string
+  title: string
+  prompt: string
+  status: string
+  priority: number
+  attempts: number
+  session_id: string
+  result: string
+  error: string
+  created_at: number
+  started_at: number | null
+  finished_at: number | null
+}
+
+export type QueueState = {
+  paused: boolean
+  counts: Record<string, number>
+  tasks: QueueTask[]
+}
+
+export async function fetchQueue(): Promise<QueueState> {
+  return readJson(await fetchWithTimeout("/api/queue"))
+}
+
+export async function queueAction(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return readJson(
+    await fetchWithTimeout("/api/queue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  )
 }
 
 export async function fetchConfig(): Promise<FullConfig> {
@@ -829,6 +914,17 @@ export interface FsEntry {
   type: "dir" | "file"
   size?: number
   mtime?: number
+}
+
+export async function fetchGitChanges(): Promise<{
+  repo: boolean
+  branch?: string
+  entries: { code: string; path: string; old_path?: string }[]
+  diff: string
+  truncated?: boolean
+  status_count?: number
+}> {
+  return readJson(await fetchWithTimeout("/api/git/changes"))
 }
 
 export async function fetchFsTree(path: string): Promise<{ path?: string; entries?: FsEntry[]; error?: string }> {

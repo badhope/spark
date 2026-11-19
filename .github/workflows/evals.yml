@@ -2,9 +2,20 @@ name: Evals
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
+  schedule:
+    # 02:00 Asia/Shanghai (18:00 UTC): nightly baseline drift check.
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 # P1-6 agent evals 基线：fixture 驱动的 mock 模式回归（不联网、不跑真实 LLM）。
 # eval 失败即红，给后续每一项能力改造提供迭代依据。
@@ -26,6 +37,8 @@ jobs:
         run: ruff check src/spark/evals tests/test_p1_06_evals.py
       - name: Agent evals (mock fixtures)
         run: python -m spark.evals --json evals-report.json
+      - name: Eval regression gate
+        run: python scripts/check_eval_regression.py evals-report.json evals/baseline.json 2
       - name: Upload eval report
         if: always()
         uses: actions/upload-artifact@v4

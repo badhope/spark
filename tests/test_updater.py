@@ -238,3 +238,30 @@ def test_safe_extract_rejects_symlink_members(tmp_path: Path) -> None:
     dest.mkdir()
     with pytest.raises(updater.UpdateError, match="链接/设备"):
         updater._safe_extract(archive, dest)
+
+
+def test_fetch_latest_canary_uses_prerelease_list(monkeypatch) -> None:
+    from spark import updater
+
+    payload = [
+        {"tag_name": "v0.15.3-beta.1", "draft": True, "assets": []},
+        {
+            "tag_name": "v0.15.3-beta.2",
+            "draft": False,
+            "prerelease": True,
+            "body": "canary",
+            "assets": [{"name": "spark-linux-x86_64.tar.gz", "browser_download_url": "https://example.invalid/x"}],
+        },
+    ]
+    monkeypatch.setattr(updater, "_get_json_any", lambda *a, **k: payload)
+    release = updater.fetch_latest(channel="canary")
+    assert release.version == "0.15.3-beta.2"
+    assert release.assets[0]["name"] == "spark-linux-x86_64.tar.gz"
+
+
+def test_fetch_latest_canary_empty_list(monkeypatch) -> None:
+    from spark import updater
+
+    monkeypatch.setattr(updater, "_get_json_any", lambda *a, **k: [])
+    with __import__("pytest").raises(updater.UpdateError):
+        updater.fetch_latest(channel="canary")

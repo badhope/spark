@@ -263,6 +263,7 @@ class UpdaterConfig(BaseModel):
     """
 
     mode: Literal["notify", "off"] = "notify"
+    channel: Literal["stable", "canary"] = "stable"
 
 
 class ReplayConfig(BaseModel):
@@ -1102,7 +1103,9 @@ def save_config(cfg: SparkConfig, path: Path | None = None) -> Path:
     # [replay]
     doc.add("replay", tomlkit.table().add("enabled", bool(cfg.replay.enabled)))
     # [updater]
-    doc.add("updater", tomlkit.table().add("mode", cfg.updater.mode))
+    updater_table = tomlkit.table().add("mode", cfg.updater.mode)
+    updater_table.add("channel", cfg.updater.channel)
+    doc.add("updater", updater_table)
     # [[approval_profiles]] + active id（H4 审批/行为档案）
     ap = _approval_profiles_aot(cfg)
     if ap is not None:

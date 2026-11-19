@@ -103,6 +103,7 @@ GET_ROUTES = [
     "/api/commands",
     "/api/history",
     "/api/fs/tree",
+    "/api/git/changes",
     "/api/diagnostics",
 ]
 
@@ -552,3 +553,60 @@ def test_pty_stream_unknown_tab_is_404(web) -> None:
     base, _, _ = web
     status, body = _request(base, "/api/pty/stream?tab_id=ghost")
     assert status == 404
+
+
+def test_pwa_manifest_and_icons_are_served(web) -> None:
+    """The installable shell must ship with its manifest and real PNG icons."""
+    base, _, _ = web
+    status, manifest = _request(base, "/manifest.webmanifest")
+    assert status == 200
+    assert manifest["name"].startswith("Spark")
+    assert manifest["display"] == "standalone"
+    assert manifest["start_url"] == "/"
+    sizes = {icon["sizes"] for icon in manifest["icons"]}
+    assert {"192x192", "512x512"} <= sizes
+    for icon in ("/icon-192.png", "/icon-512.png", "/icon-180.png"):
+        with urllib.request.urlopen(base + icon, timeout=10) as resp:
+            assert resp.status == 200
+            assert resp.headers.get_content_type() == "image/png"
+            assert len(resp.read()) > 1000
+
+
+def test_remote_pairing_roundtrip(web) -> None:
+    """Pair code -> device token -> local device list -> revoke."""
+    base, state, _ = web
+    status, minted = _request(base, "/api/pair/code", {})
+    assert status == 200 and minted["code"]
+    status, claimed = _request(
+        base, "/api/pair/claim", {"code": minted["code"], "name": "phone"}
+    )
+    assert status == 200
+    token = claimed["token"]
+    assert state.authorize_token(token) == "device"
+    status, listed = _request(base, "/api/pair/devices")
+    assert status == 200
+    assert [d["name"] for d in listed["devices"]] == ["phone"]
+    status, revoked = _request(
+        base, "/api/pair/revoke", {"device_id": claimed["device"]["id"]}
+    )
+    assert status == 200
+    assert state.authorize_token(token) is None
+
+
+def test_task_queue_http_roundtrip(web) -> None:
+    base, _, _ = web
+    status, paused = _request(base, "/api/queue", {"action": "pause"})
+    assert status == 200 and paused["paused"] is True
+    status, created = _request(
+        base, "/api/queue", {"action": "create", "prompt": "queued prompt", "title": "q1"}
+    )
+    assert status == 200
+    task_id = created["task"]["id"]
+    status, listed = _request(base, "/api/queue", {"action": "list"})
+    assert status == 200
+    assert listed["paused"] is True
+    assert listed["tasks"][0]["status"] == "queued"
+    status, cancelled = _request(base, "/api/queue", {"action": "cancel", "id": task_id})
+    assert status == 200 and cancelled["ok"] is True
+    status, resumed = _request(base, "/api/queue", {"action": "resume"})
+    assert status == 200 and resumed["paused"] is False

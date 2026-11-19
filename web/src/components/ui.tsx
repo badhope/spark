@@ -15,6 +15,7 @@ export function Spinner({ size = 14, className }: { size?: number; className?: s
     <span
       className={cls("spin inline-block shrink-0 rounded-full border-2 border-transparent", className)}
       style={{ width: size, height: size, borderTopColor: "currentColor", borderRightColor: "currentColor" }}
+      role="status"
       aria-label="loading"
     />
   )

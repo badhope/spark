@@ -680,3 +680,16 @@ def test_set_plugin_enabled_preserves_unrelated_config(tmp_path: Path) -> None:
     set_plugin_enabled("demo", True, path=path)
     doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     assert "demo" in list(doc["plugins"]["enabled"])
+
+def test_official_bundle_members_disable_independently(tmp_path: Path) -> None:
+    """The official bundle is a convenience install, not an all-or-nothing switch."""
+    from spark.plugins import set_plugin_enabled
+
+    path = tmp_path / "config.toml"
+    path.write_text('[plugins]\nenabled = ["review-checklist", "ship-checklist"]\n', encoding="utf-8")
+    set_plugin_enabled("review-checklist", False, path=path)
+    loaded = __import__("tomlkit").parse(path.read_text(encoding="utf-8"))
+    assert list(loaded["plugins"]["enabled"]) == ["ship-checklist"]
+    set_plugin_enabled("ship-checklist", False, path=path)
+    loaded = __import__("tomlkit").parse(path.read_text(encoding="utf-8"))
+    assert list(loaded["plugins"]["enabled"]) == []

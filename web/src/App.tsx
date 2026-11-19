@@ -10,7 +10,8 @@ import { QuestionCard } from "./components/QuestionCard"
 import { Onboarding } from "./components/Onboarding"
 import Toast from "./components/Toast"
 import { ConfirmDialog } from "./components/ConfirmDialog"
-import { fetchStatus } from "./api"
+import { RemoteUnlock } from "./components/RemoteUnlock"
+import { fetchStatus, isAuthError, setRemoteToken } from "./api"
 import type { Status } from "./types"
 import { useChatStore } from "./store/chatStore"
 import { useSessionStore } from "./store/sessionStore"
@@ -25,11 +26,7 @@ import { activateModelProfile, listModelProfiles } from "./api"
 const SettingsModal = lazy(() => import("./components/SettingsModal"))
 const CommandPalette = lazy(() => import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })))
 const CheckpointModal = lazy(() => import("./components/CheckpointModal").then((m) => ({ default: m.CheckpointModal })))
-const FileViewer = lazy(() => import("./components/FileViewer").then((m) => ({ default: m.FileViewer })))
-const BrowserModal = lazy(() => import("./components/BrowserModal").then((m) => ({ default: m.BrowserModal })))
-const Terminal = lazy(() => import("./components/Terminal").then((m) => ({ default: m.Terminal })))
 const ReplayModal = lazy(() => import("./components/ReplayModal").then((m) => ({ default: m.ReplayModal })))
-const ExecutionGraph = lazy(() => import("./components/ExecutionGraph").then((m) => ({ default: m.ExecutionGraph })))
 
 export default function App() {
   // Selector subscriptions only: subscribing to whole stores re-rendered this
@@ -41,16 +38,34 @@ export default function App() {
   const closeSettings = useUiStore((s) => s.closeSettings)
   const toasts = useUiStore((s) => s.toasts)
   const dismissToast = useUiStore((s) => s.dismissToast)
+  const [remoteAuth, setRemoteAuth] = useState(false)
 
   useEffect(() => {
+    // A token in the URL is a one-shot handoff from `spark web` (or a QR code).
+    // Persist it, strip it from the address bar, then let normal auth take over.
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const urlToken = params.get("token")
+      if (urlToken) {
+        setRemoteToken(urlToken)
+        params.delete("token")
+        const clean = params.toString()
+        window.history.replaceState(null, "", `${window.location.pathname}${clean ? `?${clean}` : ""}${window.location.hash}`)
+      }
+    } catch {
+      /* malformed URL: ignore */
+    }
     fetchStatus()
       .then((s) => {
         setStatus(s)
         useSessionStore.getState().setPlan(s.plan || [])
+        refreshSessions()
+        loadInitialHistory()
       })
-      .catch(() => useUiStore.getState().pushToast("toast.backendError", "error"))
-    refreshSessions()
-    loadInitialHistory()
+      .catch((e) => {
+        if (isAuthError(e)) setRemoteAuth(true)
+        else useUiStore.getState().pushToast("toast.backendError", "error")
+      })
   }, [setStatus, refreshSessions, loadInitialHistory])
 
   // 回合结束 / 等待审批时的桌面通知（设置 → 展示页可开；默认关）
@@ -149,20 +164,14 @@ export default function App() {
   const settingsOpen = useUiStore((s) => s.settingsOpen)
   const paletteOpen = useUiStore((s) => s.paletteOpen)
   const checkpointsOpen = useUiStore((s) => s.checkpointsOpen)
-  const filesOpen = useUiStore((s) => s.filesOpen)
-  const browserOpen = useUiStore((s) => s.browserOpen)
-  const terminalOpen = useUiStore((s) => s.terminalOpen)
-  const graphOpen = useUiStore((s) => s.graphOpen)
   const replayOpen = useUiStore((s) => s.replayOpen)
   const seen = useSeenSurfaces({
     palette: paletteOpen,
     checkpoints: checkpointsOpen,
-    files: filesOpen,
-    browser: browserOpen,
-    terminal: terminalOpen,
-    graph: graphOpen,
     replay: replayOpen,
   })
+
+  if (remoteAuth) return <RemoteUnlock />
 
   return (
     <div className="flex h-full overflow-hidden bg-canvas text-ink">
@@ -187,10 +196,6 @@ export default function App() {
       <Suspense fallback={<SurfaceLoading />}>
         {seen.palette && <CommandPalette />}
         {seen.checkpoints && <CheckpointModal />}
-        {seen.files && <FileViewer />}
-        {seen.browser && <BrowserModal />}
-        {seen.terminal && <Terminal />}
-        {seen.graph && <ExecutionGraph />}
         {seen.replay && <ReplayModal />}
       </Suspense>
       {settingsOpen && (

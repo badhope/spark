@@ -1,16 +1,19 @@
-# Spark 文档 / Documentation
+# Spark Documentation
 
-| 文档 | 中文 | English |
-| --- | --- | --- |
-| **功能总览（以实现为准）** | [docs/FEATURES.md](FEATURES.md) | — |
-| 安装与打包（含 Windows EXE） | [docs/INSTALL.md](INSTALL.md) | [docs/en/INSTALL.md](en/INSTALL.md) |
-| 配置参考 config.toml | [docs/CONFIG.md](CONFIG.md) | [docs/en/CONFIG.md](en/CONFIG.md) |
-| HTTP API 参考 | [docs/API.md](API.md) | [docs/en/API.md](en/API.md) |
-| 企业控制面 `/api/v1` | [docs/ENTERPRISE.md](ENTERPRISE.md) | — |
-| A2A Server（agent-to-agent） | [docs/A2A.md](A2A.md) | — |
-| 架构说明 | [docs/ARCHITECTURE.md](ARCHITECTURE.md) | [docs/en/ARCHITECTURE.md](en/ARCHITECTURE.md) |
-| 模型路由矩阵 | [docs/model-routing.md](model-routing.md) | — |
-| 评测套件 | [docs/evals.md](evals.md) | — |
-| 任务即分支（git 记忆） | [docs/git-memory.md](git-memory.md) | — |
+The English README is the primary entry point; a [Chinese translation](../README_zh.md) is available from the language switch at the top of every README.
 
-更多：根目录 [README](../README.md)（功能一览/截图/多语言）。
+| Topic | English | 中文 |
+|---|---|---|
+| Feature map | [FEATURES.md](FEATURES.md) | [功能总览](FEATURES.md) |
+| Install and packaging | [en/INSTALL.md](en/INSTALL.md) | [INSTALL.md](INSTALL.md) |
+| Configuration reference | [en/CONFIG.md](en/CONFIG.md) | [CONFIG.md](CONFIG.md) |
+| HTTP API and SSE | [en/API.md](en/API.md) | [API.md](API.md) |
+| Architecture | [en/ARCHITECTURE.md](en/ARCHITECTURE.md) | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Enterprise control plane | [ENTERPRISE.md](ENTERPRISE.md) | [ENTERPRISE.md](ENTERPRISE.md) |
+| A2A server | [A2A.md](A2A.md) | [A2A.md](A2A.md) |
+| ACP / IDE setup | [ACP.md](ACP.md) | [ACP.md](ACP.md) |
+| Model routing | [model-routing.md](model-routing.md) | [模型路由](model-routing.md) |
+| Evaluations | [evals.md](evals.md) | [评测](evals.md) |
+| Task-as-branch memory | [git-memory.md](git-memory.md) | [任务即分支](git-memory.md) |
+
+More: [English docs index](en/README.md) · [project README](https://github.com/badhope/spark/blob/main/README.md) · [中文 README](https://github.com/badhope/spark/blob/main/README_zh.md).

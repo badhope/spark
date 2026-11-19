@@ -286,6 +286,7 @@ export type ChatEvent = ChatEnvelope &
   | { type: "subtask_end"; text?: string; data: { index: number; summary: string } }
   | { type: "subtask_progress"; data: { index: number; phase: "thinking" | "answering"; chars: number } }
   | { type: "subtask_trace"; data: { index: number; thinking_chars: number; answer_chars: number; tools: number } }
+  | { type: "review"; data: { verdict: string; reason?: string; degraded?: boolean } }
   | { type: "question"; data: { question: string; options: string[]; tool_id: string } }
   | { type: "tool_end"; tool: ToolCall; ok: boolean; result: unknown; data?: { subtask_index?: number } }
   | { type: "approval_needed"; approval: ApprovalInfo; tool: ToolCall }

@@ -85,7 +85,7 @@ export const Header = memo(function Header() {
       <IconButton title={`${t("palette.title", lang)} (Ctrl+K)`} onClick={() => setPaletteOpen(true)}>
         <IconCommand size={16} />
       </IconButton>
-      {/* 右侧面板（文件/预览/网页）：与左侧边栏对称，默认折叠 */}
+      {/* 工作台：文件/变更/终端/网页/追踪，与左侧边栏对称，默认折叠 */}
       <span className="hidden md:inline-flex">
         <IconButton title={t("rightPanel.title", lang)} onClick={toggleRightPanel}>
           <IconMenu size={16} />

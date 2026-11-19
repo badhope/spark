@@ -29,6 +29,7 @@ from pathlib import Path
 from spark import __version__
 
 RELEASE_API = "https://api.github.com/repos/badhope/spark/releases/latest"
+CANARY_API = "https://api.github.com/repos/badhope/spark/releases?per_page=10"
 DEFAULT_TIMEOUT = 20.0
 
 
@@ -73,7 +74,7 @@ def is_newer(remote: str, local: str = __version__) -> bool:
     return parse_version(remote) > parse_version(local)
 
 
-def _get_json(url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
+def _get_json_any(url: str, timeout: float = DEFAULT_TIMEOUT) -> object:
     if not url.startswith("https://"):
         raise UpdateError(f"refusing non-https URL: {url}")
     req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
@@ -86,8 +87,14 @@ def _get_json(url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
         raise UpdateError("发布源返回的不是合法 JSON") from exc
 
 
-def fetch_latest(api_url: str = RELEASE_API) -> ReleaseInfo:
-    data = _get_json(api_url)
+def _get_json(url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
+    data = _get_json_any(url, timeout)
+    if not isinstance(data, dict):
+        raise UpdateError("发布源返回格式异常")
+    return data
+
+
+def _release_from_payload(data: dict) -> ReleaseInfo:
     if not isinstance(data, dict):
         raise UpdateError("发布源返回格式异常")
     tag = str(data.get("tag_name") or "")
@@ -104,6 +111,24 @@ def fetch_latest(api_url: str = RELEASE_API) -> ReleaseInfo:
     if not version:
         raise UpdateError("发布信息缺少 tag_name")
     return ReleaseInfo(version=version, tag=tag, notes=str(data.get("body") or ""), assets=assets)
+
+
+def fetch_latest(api_url: str = RELEASE_API, channel: str = "stable") -> ReleaseInfo:
+    """Fetch the newest release for ``stable`` or ``canary``.
+
+    ``stable`` uses GitHub's ``releases/latest``, which excludes prereleases.
+    ``canary`` lists releases and takes the first non-draft entry (usually the
+    newest prerelease), so opt-in users can dogfood a tagged build.
+    """
+    if channel == "canary":
+        data = _get_json_any(CANARY_API if api_url == RELEASE_API else api_url)
+        if not isinstance(data, list):
+            raise UpdateError("canary 发布源应返回 release 列表")
+        for item in data:
+            if isinstance(item, dict) and not item.get("draft"):
+                return _release_from_payload(item)
+        raise UpdateError("canary 发布源没有可用 release")
+    return _release_from_payload(_get_json(api_url))
 
 
 def select_asset(release: ReleaseInfo, name: str | None = None) -> dict:

@@ -120,6 +120,28 @@ class SessionStore:
                     last_error TEXT NOT NULL DEFAULT '',
                     skipped_count INTEGER NOT NULL DEFAULT 0
                 );
+                CREATE TABLE IF NOT EXISTS agent_queue (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL DEFAULT '',
+                    prompt TEXT NOT NULL,
+                    workdir TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'queued',
+                    priority INTEGER NOT NULL DEFAULT 0,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    session_id TEXT NOT NULL DEFAULT '',
+                    result TEXT NOT NULL DEFAULT '',
+                    error TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL,
+                    started_at REAL,
+                    finished_at REAL
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_queue_status
+                    ON agent_queue(status, priority DESC, created_at ASC);
+                CREATE TABLE IF NOT EXISTS agent_queue_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    paused INTEGER NOT NULL DEFAULT 0
+                );
+                INSERT OR IGNORE INTO agent_queue_state (id, paused) VALUES (1, 0);
                 """
             )
             # FTS5 trigram 全文索引（中文子串检索；短查询回退 LIKE）
@@ -1190,6 +1212,131 @@ class SessionStore:
         转义 FTS 特殊字符（trigram 下空格分词，短语即子串命中）。"""
         escaped = q.replace('"', '""')
         return f'"{escaped}"'
+
+    # ---- agent queue（空闲任务队列） ---------------------------------------
+
+    def enqueue_agent_task(
+        self, prompt: str, *, title: str = "", workdir: str = "", priority: int = 0
+    ) -> dict:
+        prompt = str(prompt or "").strip()
+        if not prompt:
+            raise ValueError("prompt is required")
+        task_id = uuid.uuid4().hex
+        now = time.time()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO agent_queue
+                   (id, title, prompt, workdir, status, priority, attempts, created_at)
+                   VALUES (?, ?, ?, ?, 'queued', ?, 0, ?)""",
+                (task_id, str(title or "").strip()[:120], prompt, str(workdir or ""), int(priority), now),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT * FROM agent_queue WHERE id = ?", (task_id,)
+            ).fetchone()
+        return dict(row) if row else {"id": task_id}
+
+    def list_agent_tasks(self, limit: int = 50) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM agent_queue ORDER BY created_at DESC LIMIT ?",
+                (max(1, int(limit)),),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def claim_next_agent_task(self) -> dict | None:
+        """Atomically move the highest-priority queued task to ``running``."""
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT * FROM agent_queue
+                   WHERE status = 'queued'
+                   ORDER BY priority DESC, created_at ASC LIMIT 1"""
+            ).fetchone()
+            if row is None:
+                return None
+            now = time.time()
+            self._conn.execute(
+                """UPDATE agent_queue
+                   SET status = 'running', attempts = attempts + 1, started_at = ?,
+                       finished_at = NULL, error = ''
+                   WHERE id = ?""",
+                (now, row["id"]),
+            )
+            self._conn.commit()
+            updated = self._conn.execute(
+                "SELECT * FROM agent_queue WHERE id = ?", (row["id"],)
+            ).fetchone()
+            return dict(updated) if updated else dict(row)
+
+    def finish_agent_task(
+        self,
+        task_id: str,
+        *,
+        status: str,
+        result: str = "",
+        error: str = "",
+        session_id: str = "",
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                """UPDATE agent_queue
+                   SET status = ?, result = ?, error = ?, session_id = ?,
+                       finished_at = ? WHERE id = ?""",
+                (status, str(result or "")[:2000], str(error or "")[:500], session_id, time.time(), task_id),
+            )
+            self._conn.commit()
+
+    def requeue_agent_task(self, task_id: str, error: str = "") -> None:
+        with self._lock:
+            self._conn.execute(
+                """UPDATE agent_queue
+                   SET status = 'queued', error = ?, started_at = NULL, finished_at = NULL
+                   WHERE id = ?""",
+                (str(error or "")[:500], task_id),
+            )
+            self._conn.commit()
+
+    def cancel_agent_task(self, task_id: str) -> bool:
+        """Cancel only a queued task; a running turn must be cancelled via /api/cancel."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE agent_queue SET status = 'cancelled', finished_at = ? WHERE id = ? AND status = 'queued'",
+                (time.time(), task_id),
+            )
+            self._conn.commit()
+            return bool(cur.rowcount)
+
+    def recover_agent_queue(self) -> int:
+        """On startup, a ``running`` row means the previous process died mid-task."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE agent_queue SET status = 'queued', started_at = NULL WHERE status = 'running'"
+            )
+            self._conn.commit()
+            return int(cur.rowcount or 0)
+
+    def queue_paused(self) -> bool:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT paused FROM agent_queue_state WHERE id = 1"
+            ).fetchone()
+            return bool(row and row["paused"])
+
+    def set_queue_paused(self, paused: bool) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO agent_queue_state (id, paused) VALUES (1, ?) "
+                "ON CONFLICT(id) DO UPDATE SET paused = excluded.paused",
+                (1 if paused else 0,),
+            )
+            self._conn.commit()
+
+    def queue_counts(self) -> dict[str, int]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT status, COUNT(*) AS n FROM agent_queue GROUP BY status"
+            ).fetchall()
+        return {str(row["status"]): int(row["n"]) for row in rows}
 
     # ---- automations（定时任务） -------------------------------------------
 

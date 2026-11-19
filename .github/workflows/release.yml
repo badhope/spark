@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   # 先构建三平台产物（各自上传为 workflow artifact，不碰 Release）
@@ -107,11 +109,24 @@ jobs:
         with:
           path: dist-assets
           merge-multiple: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Generate SBOM
+        run: |
+          pip install -e .
+          spark sbom -o dist-assets/spark-sbom.json
       - name: Generate SHA256SUMS
         run: |
           cd dist-assets
-          sha256sum spark-windows-x86_64.zip spark-linux-x86_64.tar.gz spark-macos-arm64.tar.gz > SHA256SUMS
+          sha256sum spark-windows-x86_64.zip spark-linux-x86_64.tar.gz spark-macos-arm64.tar.gz spark-sbom.json > SHA256SUMS
           cat SHA256SUMS
+      - name: Verify release assets
+        run: python scripts/check_release_assets.py dist-assets
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist-assets/*"
       - name: List assets
         run: ls -la dist-assets
       - uses: softprops/action-gh-release@v2

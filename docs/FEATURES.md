@@ -41,6 +41,16 @@
 | IDE 一键接入 | `ide.py` + `spark ide install` | Zed（`agent.custom_servers`）、JetBrains 2025.3+（原生 `~/.jetbrains/acp.json`）、Neovim（CodeCompanion 独立 Lua 模块）；先备份、未知键保留、坏配置拒绝覆盖 |
 | 自动审查 | `core/review.py` | `agent.auto_review`：写/执行前用独立模型审一次，block 即拒绝；默认关 |
 | 断网执行 | `tools/shell.py` | `agent.network_access = false`：bwrap 下跑空网络命名空间；不可用时如实告警 |
+| 评测回归门 | `evals/baseline.json` + `scripts/check_eval_regression.py` | mock eval 12 场景基线；掉 2 点或任一原通过场景转失败即阻断；push/PR + 每日夜间跑 |
+| UI 可访问性/布局 | `tests/test_ui_a11y.py` | 6 屏关键项 + 真 axe-core WCAG A/AA 亮/暗双主题 0 serious/critical + 8 屏 × 桌面/手机视口无横向溢出；像素基线仍待做 |
+| 性能预算门 | `scripts/check_perf_budget.py` + `perf/budgets.json` | 本地校验 CLI 启动 p50/p95、首屏 JS gzip、`/api/status/sessions/history/fs/tree` p95；`.github/workflows/ci.yml` 独立 perf job 已接，SSE/内存预算待接；`spark --version` 走轻量入口，当前 p50 约 150ms |
+| 空闲任务队列 | `task_queue.py` + `agent_queue` 表 + `spark queue` | SQLite 单表、单 worker；只在无会话忙碌时跑；持久暂停/恢复；进程崩溃把 running 恢复为 queued；失败最多重试 3 次；Web 设置页可入队/暂停/取消，CLI 可脚本化 |
+| 远程设备配对 | `web/remote.py` + `/api/pair/*` | 本机生成 5 分钟 6 位配对码；远程设备换 7 天独立令牌，只存 SHA-256；支持设备列表/吊销；`spark web --host 0.0.0.0` 启动时打印配对码；Web 端 401 自动进入远程解锁页，支持配对码或粘贴令牌；设备令牌为“只读/运行”权限，设置、插件、直接 shell、配对管理仍只允许本机控制令牌 |
+| 供应链 SBOM | `sbom.py` + `spark sbom` | 生成 CycloneDX 1.5 JSON（完整 Python 环境 + Spark 组件）；发布流水线生成 `spark-sbom.json` 并用 GitHub build provenance 做来源证明 |
+| 发布资产校验 | `scripts/check_release_assets.py` | 发布前校验 3 平台包 + SBOM 是否齐全、SHA256 是否匹配、SBOM 是否 CycloneDX 1.5；缺文件/多文件/坏哈希都阻断 |
+| 发布通道 | `updater.py` + `spark update --channel` | stable 默认走 latest；canary 显式选预发布 tag；安装仍强制 SHA256SUMS 校验与安全解压 |
+| 手机/PWA 入口 | `web/public/manifest.webmanifest` + `web/index.html` | 可安装的 standalone manifest、192/512 图标、apple-touch-icon；`GET /manifest.webmanifest` 由现有静态服务提供，不引入 Service Worker 缓存 |
+| 右侧工作台 | `web/src/components/RightPanel.tsx` + `GET /api/git/changes` | 单一 Workbench 壳，5 个 tab：文件（树+预览）、变更（Git 只读状态/diff）、终端（内嵌 PTY）、网页（阅读模式）、追踪（实时执行图/最近 workflow）；旧的文件/浏览器/终端/执行图独立弹层已从 App 入口移除，工具菜单统一打开工作台 |
 | 配色主题 | `web/src/theme.ts` + `index.css` | 5 套强调色（Ember/Ocean/Forest/Violet/Mono），与明暗正交 |
 | 代码文档（Repo Wiki） | `wiki.py` + `spark wiki` + 设置→代码文档 | 用 tree-sitter 从源码结构生成本地文档：每个模块一张符号表，行号可核对；按内容哈希增量，可重复可 diff；`--summarize` 才调模型 |
 | 会议录音转写 | `control/audio.py` + `/api/v1/office/audio/transcribe` | faster-whisper 本地 CPU 推理，音频不出机器；返回带时间戳文本，可直接生成纪要；上限 200MB / 3 小时 |
@@ -71,7 +81,7 @@ spark --version           # 版本号（与 pyproject / PyPI 同源）
 | 形态 | 实测方式 | 结果 |
 | --- | --- | --- |
 | TUI | PTY 内启动、键入任务、回车提交、读屏 | 输入 → 工具调用 → 结果渲染 → 回复，全链路可用 |
-| Web | Playwright + 真实 Edge | 设置 16 页签、30+ 控件、会话/工具/文件树/终端/命令面板 |
+| Web | Playwright + Chromium | 设置 5 页（模型/外观/工作区/扩展/系统，页内 16 个细分页签）、30+ 控件、Workbench 5 tab、会话/工具/文件树/终端/命令面板 |
 | 桌面 | pywebview + WebView2 | 起服务、加载完整前端、窗口创建 |
 | CLI | `spark exec --json` | NDJSON 事件流，`final` 收尾 |
 | 企业控制面 | 真实 PostgreSQL + Keycloak | OIDC 鉴权、Casbin 授权、会议/报告/审计、全格式导出 |

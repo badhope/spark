@@ -20,10 +20,18 @@ from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qs, unquote, urlparse
 
 from spark.web.session_stream import serve_session_events
+from spark.web.git_api import git_changes
+from spark.web.remote_api import (
+    handle_pair_claim,
+    handle_pair_code,
+    handle_pair_devices,
+    handle_pair_revoke,
+)
 
 if TYPE_CHECKING:
     from spark.providers.routing import Budget, TaskType
-from spark.web._handlers import (  # noqa: F401  (re-export for backward-compat)
+from spark.web._handlers import (
+    _handle_queue,  # noqa: F401  (re-export for backward-compat)
     _handle_agents_md,
     _handle_approval,
     _handle_automations,
@@ -309,16 +317,38 @@ def build_handler_class(html: str):
                 return False
             return host.lower() == request_host and port == request_port
 
-        def _authorized(self) -> bool:
-            import secrets as _secrets
-
+        def _auth_role(self) -> str | None:
+            """Return the caller role: control (local) or device."""
             if self._server_is_loopback():
-                return True
-            supplied = (self.headers.get("X-Spark-Token") or "").encode("utf-8", "replace")
+                return "control"
+            supplied = self.headers.get("X-Spark-Token") or ""
             state = _route_state(self)
-            return bool(state.control_token) and _secrets.compare_digest(
-                supplied, state.control_token.encode("utf-8")
-            )
+            return state.authorize_token(supplied) if supplied else None
+
+        def _authorized(self) -> bool:
+            return self._auth_role() is not None
+
+        def _device_may_write(self, path: str) -> bool:
+            """Device tokens are for remote operation, not administrative control.
+
+            A paired phone must start/stop turns, answer approvals, switch or
+            rename sessions, inspect files/diffs and use the idle queue. It must
+            not disable approval via settings, run a direct shell, install plugins,
+            or mint/revoke pairing credentials.
+            """
+            return path in {
+                "/api/chat",
+                "/api/chat/stream",
+                "/api/approval",
+                "/api/question/answer",
+                "/api/cancel",
+                "/api/sessions/new",
+                "/api/sessions/switch",
+                "/api/sessions/rename",
+                "/api/sessions/fork",
+                "/api/queue",
+                "/api/debug/client_log",
+            }
 
         def _guard(self, path: str) -> bool:
             if not self._host_is_local():
@@ -327,16 +357,38 @@ def build_handler_class(html: str):
             if not self._origin_allowed():
                 self._json(403, {"error": "cross-origin request rejected"})
                 return True
-            if self._server_is_loopback() or self._authorized():
+            # Pairing claim is the one unauthenticated mutation: the short-lived
+            # one-time code is the credential.  Host/origin checks still run.
+            if path == "/api/pair/claim":
                 return False
-            self._json(
-                401,
-                {
-                    "error": "unauthorized",
-                    "hint": "remote access requires the X-Spark-Token header",
-                },
-            )
-            return True
+            role = self._auth_role()
+            if role is None:
+                self._json(
+                    401,
+                    {
+                        "error": "unauthorized",
+                        "hint": "remote access requires the X-Spark-Token header",
+                    },
+                )
+                return True
+            if role == "device":
+                if (
+                    path.startswith("/api/pty/")
+                    or path.startswith("/api/pair/")
+                    or (path.startswith("/api/debug") and path != "/api/debug/client_log")
+                ):
+                    self._json(403, {"error": "device token cannot use this endpoint"})
+                    return True
+                if self.command not in {"GET", "HEAD", "OPTIONS"} and not self._device_may_write(path):
+                    self._json(
+                        403,
+                        {
+                            "error": "device token is read/run only",
+                            "hint": "use the local control token to change settings, plugins, or shell",
+                        },
+                    )
+                    return True
+            return False
 
         def _guard_mutation(self, path: str) -> bool:
             if self._guard(path):
@@ -745,6 +797,20 @@ def build_handler_class(html: str):
                     },
                 )
                 return
+            if path == "/api/git/changes":
+                self._json(200, git_changes(str(state.workdir)))
+                return
+            if path == "/api/pair/devices":
+                handle_pair_devices(self, {})
+                return
+            if path == "/api/queue":
+                state = _route_state(self)
+                queue = getattr(state, "queue", None)
+                if queue is None:
+                    self._json(503, {"error": "task queue unavailable"})
+                else:
+                    self._json(200, queue.status())
+                return
             if path == "/api/fs/tree":
                 query = parse_qs(urlparse(self.path).query)
                 rel = (query.get("path", [""])[0] or "").strip()
@@ -829,6 +895,7 @@ _POST_HANDLERS: dict[str, Any] = {
     "/api/models/activate": _handle_models_activate,
     "/api/debug/client_log": handle_debug_client_log,
     "/api/automations": _handle_automations,
+    "/api/queue": _handle_queue,
     "/api/automations/cron_check": _handle_automations_cron_check,
     "/api/permissions/rules": _handle_permissions_rules,
     "/api/permissions/rules/delete": _handle_permissions_rules_delete,
@@ -861,6 +928,9 @@ _POST_HANDLERS: dict[str, Any] = {
     "/api/settings": _handle_settings,
     "/api/test": _handle_test,
     "/api/shell": _handle_shell,
+    "/api/pair/code": handle_pair_code,
+    "/api/pair/claim": handle_pair_claim,
+    "/api/pair/revoke": handle_pair_revoke,
 }
 
 # P1-5：内置终端（PTY）写路径（读流是 GET /api/pty/stream，见 _handle_get）

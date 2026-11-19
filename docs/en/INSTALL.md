@@ -3,7 +3,7 @@
 ## Option A — run from source (fastest)
 
 ```bash
-git clone https://gitcode.com/badhope/spark.git
+git clone https://github.com/badhope/spark.git
 cd spark
 python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
@@ -24,7 +24,7 @@ dist\spark\spark.exe web
 ```
 
 Or grab the ready-made artifact from **GitHub Releases** — tag a version
-(`git tag v0.9.0 && git push --tags`) and the `Release` workflow builds
+(`git tag v0.15.2 && git push --tags`) and the `Release` workflow builds
 `spark-windows-x86_64.zip` (plus Linux/macOS archives) automatically.
 
 ### Linux / macOS

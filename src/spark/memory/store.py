@@ -9,6 +9,7 @@ from array import array
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import chromadb
 
@@ -89,31 +90,14 @@ class MemoryStore:
         self._dim: int | None = None  # detected embedding dimension
         self._lock = threading.RLock()
 
-        # Build ChromaDB client --------------------------------------------
-        if str(db_path) == ":memory:":
-            self._client = chromadb.EphemeralClient()
-        else:
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-            chroma_dir = db_path.parent / f"{db_path.stem}_chroma"
-            from chromadb.config import Settings as ChromaSettings
-
-            self._client = chromadb.PersistentClient(
-                path=str(chroma_dir),
-                settings=ChromaSettings(anonymized_telemetry=False),
-            )
-
-        self._collection = self._client.get_or_create_collection(
-            "memories",
-            metadata={"hnsw:space": "cosine"},
-        )
-        if str(db_path) != ":memory:" and not self._collection.get().get("ids"):
-            self._maybe_migrate_sqlite(db_path)
-        self._detect_dimension()
-
-        # 修复 (Fix 1): 时间戳 + 单调计数器，替代 "max(existing)+1" 的并发不安全模式。
-        # 锁内递增保证同一进程多线程下不会产出重复 id。
+        # ChromaDB is opened lazily: a web server that never touches memory
+        # should not pay for (or leak) a native persistent client per instance.
+        self._client: Any = None
+        self._collection_obj: Any = None
+        self._next_id: int | None = None
+        self._closed = False
+        # 时间戳 + 单调计数器；锁内递增保证多线程不产出重复 id。
         self._id_lock = threading.Lock()
-        self._next_id = self._compute_next_start_id()
 
         # Health tracking: timestamp of last exception (for degraded status)
         self._last_error_time: float | None = None
@@ -121,6 +105,39 @@ class MemoryStore:
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
+
+    def _ensure_chroma(self) -> None:
+        if self._collection_obj is not None:
+            return
+        if self._closed:
+            raise RuntimeError("memory store is closed")
+        with self._lock:
+            if self._collection_obj is not None:
+                return
+            db_path = self.db_path
+            if str(db_path) == ":memory:":
+                self._client = chromadb.EphemeralClient()
+            else:
+                db_path.parent.mkdir(parents=True, exist_ok=True)
+                chroma_dir = db_path.parent / f"{db_path.stem}_chroma"
+                from chromadb.config import Settings as ChromaSettings
+
+                self._client = chromadb.PersistentClient(
+                    path=str(chroma_dir),
+                    settings=ChromaSettings(anonymized_telemetry=False),
+                )
+            self._collection_obj = self._client.get_or_create_collection(
+                "memories",
+                metadata={"hnsw:space": "cosine"},
+            )
+            if str(db_path) != ":memory:" and not self._collection_obj.get().get("ids"):
+                self._maybe_migrate_sqlite(db_path)
+            self._detect_dimension()
+
+    @property
+    def _collection(self):
+        self._ensure_chroma()
+        return self._collection_obj
 
     def _now(self) -> int:
         return int(time.time())
@@ -141,6 +158,8 @@ class MemoryStore:
     def _next_monotonic_id(self) -> int:
         """返回一个新的、严格递增的 id；线程安全（锁内操作）。"""
         with self._id_lock:
+            if self._next_id is None:
+                self._next_id = self._compute_next_start_id()
             self._next_id += 1
             return self._next_id
 
@@ -440,11 +459,16 @@ class MemoryStore:
             return {"status": "degraded", "count": -1, "dim": self._dim or _DEFAULT_DIM}
 
     def close(self) -> None:
-        try:
-            self._client.reset()
-        except Exception:
-            # reset 失败不影响进程退出
-            logger.debug("ChromaDB client reset 失败", exc_info=True)
+        self._closed = True
+        client = self._client
+        self._collection_obj = None
+        self._client = None
+        if client is not None:
+            try:
+                client.reset()
+            except Exception:
+                # reset 失败不影响进程退出
+                logger.debug("ChromaDB client reset 失败", exc_info=True)
 
     def _apply_metadata_update(
         self, memory_id: int, set_pairs: list[tuple[str, object]]

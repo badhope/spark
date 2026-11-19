@@ -4,6 +4,8 @@ import type { Palette, Theme } from "../theme"
 import { applyPalette, applyTheme, getStoredPalette, getStoredTheme, initTheme } from "../theme"
 import type { CheckpointRow } from "../api"
 
+export type WorkbenchTab = "files" | "changes" | "run" | "web" | "trace"
+
 export type SettingsTab =
   | "model"
   | "agent"
@@ -18,6 +20,7 @@ export type SettingsTab =
   | "knowledge"
   | "project"
   | "automations"
+  | "wiki"
   | "debug"
   | "advanced"
 
@@ -46,6 +49,7 @@ interface UiState {
   settingsOpen: boolean
   sidebarOpen: boolean
   rightPanelOpen: boolean
+  workbenchTab: WorkbenchTab
   paletteOpen: boolean
   checkpointsOpen: boolean
   filesOpen: boolean
@@ -70,6 +74,8 @@ interface UiState {
   setSidebarOpen: (open: boolean) => void
   toggleRightPanel: () => void
   setRightPanelOpen: (open: boolean) => void
+  setWorkbenchTab: (tab: WorkbenchTab) => void
+  openWorkbench: (tab: WorkbenchTab) => void
   setPaletteOpen: (open: boolean) => void
   openCheckpoints: () => void
   closeCheckpoints: () => void
@@ -102,6 +108,7 @@ export const useUiStore = create<UiState>((set) => ({
   settingsOpen: false,
   sidebarOpen: window.innerWidth >= 1024,
   rightPanelOpen: false,
+  workbenchTab: "files",
   paletteOpen: false,
   checkpointsOpen: false,
   filesOpen: false,
@@ -141,17 +148,19 @@ export const useUiStore = create<UiState>((set) => ({
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
   setRightPanelOpen: (open) => set({ rightPanelOpen: open }),
+  setWorkbenchTab: (tab) => set({ workbenchTab: tab }),
+  openWorkbench: (tab) => set({ rightPanelOpen: true, workbenchTab: tab, settingsOpen: false, terminalOpen: false, graphOpen: false, browserOpen: false, filesOpen: false }),
   setPaletteOpen: (open) => set({ paletteOpen: open }),
 
   openCheckpoints: () => set({ settingsOpen: false, checkpointsOpen: true, filesOpen: false, browserOpen: false, graphOpen: false, replayOpen: false, terminalOpen: false }),
   closeCheckpoints: () => set({ checkpointsOpen: false }),
-  openFiles: () => set({ settingsOpen: false, checkpointsOpen: false, filesOpen: true, browserOpen: false, graphOpen: false, replayOpen: false, terminalOpen: false }),
+  openFiles: () => set({ settingsOpen: false, checkpointsOpen: false, filesOpen: false, browserOpen: false, graphOpen: false, replayOpen: false, terminalOpen: false, rightPanelOpen: true, workbenchTab: "files" }),
   closeFiles: () => set({ filesOpen: false }),
-  openBrowser: () => set({ settingsOpen: false, checkpointsOpen: false, filesOpen: false, browserOpen: true, graphOpen: false, replayOpen: false, terminalOpen: false }),
+  openBrowser: () => set({ settingsOpen: false, checkpointsOpen: false, filesOpen: false, browserOpen: false, graphOpen: false, replayOpen: false, terminalOpen: false, rightPanelOpen: true, workbenchTab: "web" }),
   closeBrowser: () => set({ browserOpen: false }),
-  openTerminal: () => set({ settingsOpen: false, checkpointsOpen: false, filesOpen: false, browserOpen: false, graphOpen: false, replayOpen: false, terminalOpen: true }),
+  openTerminal: () => set({ settingsOpen: false, checkpointsOpen: false, filesOpen: false, browserOpen: false, graphOpen: false, replayOpen: false, terminalOpen: false, rightPanelOpen: true, workbenchTab: "run" }),
   closeTerminal: () => set({ terminalOpen: false }),
-  openGraph: () => set({ settingsOpen: false, checkpointsOpen: false, filesOpen: false, browserOpen: false, graphOpen: true, replayOpen: false, terminalOpen: false }),
+  openGraph: () => set({ settingsOpen: false, checkpointsOpen: false, filesOpen: false, browserOpen: false, graphOpen: false, replayOpen: false, terminalOpen: false, rightPanelOpen: true, workbenchTab: "trace" }),
   closeGraph: () => set({ graphOpen: false }),
   openReplay: () => set({ settingsOpen: false, checkpointsOpen: false, filesOpen: false, browserOpen: false, graphOpen: false, replayOpen: true, terminalOpen: false }),
   closeReplay: () => set({ replayOpen: false }),

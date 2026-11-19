@@ -1,14 +1,24 @@
 name: docs
+
 on:
   push:
     branches: [main]
     paths: ["docs/**", "mkdocs.yml", "src/spark/**", "README*.md"]
   workflow_dispatch:
+
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
-  build-deploy:
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -17,5 +27,19 @@ jobs:
         run: |
           pip install -e . -i https://mirrors.aliyun.com/pypi/simple/
           pip install mkdocs-material mkdocstrings[python] -i https://mirrors.aliyun.com/pypi/simple/
-      - name: Deploy to GitHub Pages
-        run: mkdocs gh-deploy --force --no-history
+      - name: Build site
+        run: mkdocs build --site-dir site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

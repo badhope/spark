@@ -106,11 +106,12 @@ def _open_tool(page, label: str) -> None:
 def test_shell_renders_core_surfaces(page) -> None:
     page, _base = page
     assert page.title()
-    for title in ("命令面板", "右侧面板", "工具"):
+    for title in ("命令面板", "工作台", "工具"):
         assert page.get_by_title(title).count() >= 1, title
     _open_tool(page, "文件查看器")
-    assert page.get_by_role("dialog").count() >= 1
-    page.keyboard.press("Escape")
+    # Files now lives inside the single Workbench surface, not a separate dialog.
+    assert page.get_by_test_id("workbench").count() == 1
+    assert page.get_by_title("文件").count() >= 1
 
 
 def _settings_content(dialog):
@@ -136,20 +137,23 @@ def test_settings_all_tabs_render_without_errors(page) -> None:
     page.get_by_role("button", name="设置").first.click()
     dialog = page.get_by_role("dialog")
     dialog.wait_for(state="visible")
-    tabs = dialog.locator("nav button")
-    count = tabs.count()
-    assert count >= 15, count
+    pages = dialog.locator("[data-settings-page]:visible")
+    assert pages.count() == 5, pages.count()
     problems: list[str] = []
-    for index in range(count):
-        tab = tabs.nth(index)
-        label = tab.inner_text().strip()
-        tab.click()
+    for pi in range(pages.count()):
+        pages.nth(pi).click()
         page.wait_for_timeout(220)
-        text = _settings_content(dialog).inner_text()
-        if len(text.strip()) < 40:
-            problems.append(f"{label}: blank")
-        if "加载失败" in text or "Failed to load" in text:
-            problems.append(f"{label}: load failure")
+        tabs = dialog.locator("[data-settings-tab]:visible")
+        for ti in range(tabs.count()):
+            tab = tabs.nth(ti)
+            label = tab.inner_text().strip()
+            tab.click()
+            page.wait_for_timeout(220)
+            text = _settings_content(dialog).inner_text()
+            if len(text.strip()) < 40:
+                problems.append(f"{label}: blank")
+            if "加载失败" in text or "Failed to load" in text:
+                problems.append(f"{label}: load failure")
     page.get_by_title("关闭").first.click()
     assert not problems, problems
 
@@ -164,35 +168,39 @@ def test_settings_controls_are_clickable(page) -> None:
     page.get_by_role("button", name="设置").first.click()
     dialog = page.get_by_role("dialog")
     dialog.wait_for(state="visible")
-    tabs = dialog.locator("nav button")
-    tab_count = tabs.count()
+    pages = dialog.locator("[data-settings-page]:visible")
+    assert pages.count() == 5, pages.count()
     clicked = 0
     skipped: list[str] = []
-    for index in range(tab_count):
-        tabs.nth(index).click()
+    for pi in range(pages.count()):
+        pages.nth(pi).click()
         page.wait_for_timeout(200)
-        seen = 0
-        while seen < 10:
-            content = _settings_content(dialog)
-            buttons = content.locator("button:visible")
-            total = buttons.count()
-            if seen >= total:
-                break
-            btn = buttons.nth(seen)
-            seen += 1
-            try:
-                title = (btn.get_attribute("title") or "") + " " + btn.inner_text()
-            except Exception:  # noqa: BLE001 - pane re-rendered under us
-                continue
-            if any(k in title for k in ("删除", "卸载", "重置", "清空", "Delete", "Remove", "Reset")):
-                skipped.append(title.strip()[:40])
-                continue
-            try:
-                btn.click(timeout=2000)
-                clicked += 1
-                page.wait_for_timeout(80)
-            except Exception:  # noqa: BLE001 - disabled or overlay is fine
-                continue
+        tabs = dialog.locator("[data-settings-tab]:visible")
+        for ti in range(tabs.count()):
+            dialog.locator("[data-settings-tab]:visible").nth(ti).click()
+            page.wait_for_timeout(200)
+            seen = 0
+            while seen < 10:
+                content = _settings_content(dialog)
+                buttons = content.locator("button:visible")
+                total = buttons.count()
+                if seen >= total:
+                    break
+                btn = buttons.nth(seen)
+                seen += 1
+                try:
+                    title = (btn.get_attribute("title") or "") + " " + btn.inner_text()
+                except Exception:  # noqa: BLE001 - pane re-rendered under us
+                    continue
+                if any(k in title for k in ("删除", "卸载", "重置", "清空", "Delete", "Remove", "Reset")):
+                    skipped.append(title.strip()[:40])
+                    continue
+                try:
+                    btn.click(timeout=2000)
+                    clicked += 1
+                    page.wait_for_timeout(80)
+                except Exception:  # noqa: BLE001 - disabled or overlay is fine
+                    continue
     # A click may leave a nested dialog/pane open; Escape first, then the X.
     for _ in range(3):
         if page.get_by_role("dialog").count() == 0:
@@ -215,9 +223,10 @@ def test_send_message_and_tool_call(page) -> None:
 
 def test_file_tree_and_preview(page) -> None:
     page, _base = page
-    page.get_by_title("右侧面板（文件 / 预览 / 网页）").click()
+    page.get_by_title("工作台（文件 / 变更 / 终端 / 网页 / 追踪）").click()
     page.wait_for_timeout(500)
-    readme = page.locator("aside").last.get_by_role("button").filter(has_text="README.md").first
+    workbench = page.get_by_test_id("workbench")
+    readme = workbench.get_by_role("button").filter(has_text="README.md").first
     readme.click()
     page.wait_for_timeout(800)
     assert "Spark" in page.inner_text("body")
@@ -233,15 +242,15 @@ def test_terminal_executes_command(page) -> None:
         # The UI is right to report the missing backend; asserting a command ran
         # would demand a capability this machine does not have. Skip, so the
         # result never reads as "the terminal works" when it was not exercised.
-        assert "不支持伪终端" in page.inner_text('[role="dialog"]')
-        page.get_by_title("关闭").last.click()
+        assert "不支持伪终端" in page.get_by_test_id("workbench").inner_text()
+        page.get_by_title("收起右侧面板").click()
         pytest.skip("no PTY backend here (install the `pty` extra)")
-    page.locator('textarea[aria-label="Terminal input"]').focus()
+    page.get_by_test_id("workbench").locator('textarea[aria-label="Terminal input"]').focus()
     page.keyboard.type("echo spark-ui-ok")
     page.keyboard.press("Enter")
     page.wait_for_timeout(1500)
-    assert "spark-ui-ok" in page.inner_text('[role="dialog"]')
-    page.get_by_title("关闭").last.click()
+    assert "spark-ui-ok" in page.get_by_test_id("workbench").inner_text()
+    page.get_by_title("收起右侧面板").click()
 
 
 def test_command_palette_opens(page) -> None:
@@ -277,3 +286,18 @@ def test_office_workbench_renders(tmp_path: Path) -> None:
             json={"title": "UI 会议", "transcript": "参会：甲\n决定：通过\n行动项：补测试，负责人：甲，截止：2026-12-01"},
         )
         assert meeting.status_code == 201
+
+
+def test_workbench_five_tabs_render(page) -> None:
+    """Workbench is one surface with five stable tabs; none may be blank."""
+    page, _base = page
+    _open_tool(page, "文件查看器")
+    workbench = page.get_by_test_id("workbench")
+    assert workbench.count() == 1
+    for label in ("文件", "变更", "终端", "网页", "追踪"):
+        button = workbench.get_by_title(label, exact=True).first
+        assert button.count() >= 1, label
+        button.click()
+        page.wait_for_timeout(400)
+        # The panel body must still be present after the lazy tab loads.
+        assert workbench.is_visible(), label

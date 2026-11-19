@@ -379,6 +379,21 @@ def test_context_settings_round_trip(tmp_path: Path) -> None:
     store.close()
 
 
+def test_agent_cost_cap_is_exposed_in_config(tmp_path: Path) -> None:
+    """The settings form edits this field, so /api/config must echo it back."""
+    from spark.config import SparkConfig
+    from spark.store import SessionStore as _Store
+    from spark.web.state import SparkWebState
+
+    cfg = SparkConfig()
+    cfg.provider.name = "mock"
+    cfg.agent.max_session_cost_usd = 3.5
+    store = _Store(tmp_path / "s.db")
+    state = SparkWebState(tmp_path, cfg, store)
+    assert state.full_config()["agent"]["max_session_cost_usd"] == 3.5
+    store.close()
+
+
 def test_diagnostics_never_runs_repo_supplied_tsc() -> None:
     """diagnostics runs without approval, so it must not execute repo binaries."""
     import inspect

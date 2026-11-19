@@ -1,22 +1,22 @@
-site_name: Spark Agent
-site_description: 本地自托管 AI 编程智能体 · 代码在你手，密钥在你手
+site_name: Spark
+site_description: Local-first AI coding agent and office workbench with auditable guardrails
 repo_url: https://github.com/badhope/spark
 repo_name: badhope/spark
 
 theme:
   name: material
-  language: zh
+  language: en
   palette:
     - scheme: default
       primary: deep orange
       toggle:
         icon: material/brightness-4
-        name: 暗色
+        name: Dark mode
     - scheme: slate
       primary: deep orange
       toggle:
         icon: material/brightness-7
-        name: 亮色
+        name: Light mode
   features:
     - navigation.tabs
     - navigation.sections
@@ -24,27 +24,33 @@ theme:
     - content.code.copy
 
 nav:
-  - 首页: index.md
-  - 功能总览: FEATURES.md
-  - 开始:
-      - 安装: INSTALL.md
-      - 配置: CONFIG.md
-      - 配置参考: CONFIG.md
-  - 深入:
-      - 架构: ARCHITECTURE.md
+  - Home: index.md
+  - Features: FEATURES.md
+  - Start:
+      - Install: INSTALL.md
+      - Configuration: CONFIG.md
+  - Reference:
+      - Architecture: ARCHITECTURE.md
       - API: API.md
-      - ACP 接入: ACP.md
-      - 观测: OBSERVABILITY.md
-      - 模型路由: model-routing.md
-      - Git 任务记忆: git-memory.md
-      - 评测: evals.md
-  - 图表与运维:
-      - 图表与密钥运维手册: diagrams-ops.md
-  - 工程决策与规划:
-      - 建设计划: reviews/2026-10-17-master-plan.md
-      - 审查与方向: reviews/2026-10-17-audit-and-direction.md
-      - 会话锚点: reviews/2026-10-17-session-digest.md
-      - 竞品对比: competitive-comparison.md
+      - Observability: OBSERVABILITY.md
+      - Model routing: model-routing.md
+      - Task memory: git-memory.md
+      - Evaluations: evals.md
+      - English docs index: en/README.md
+  - Protocols:
+      - A2A: A2A.md
+      - ACP / IDE: ACP.md
+  - Enterprise:
+      - Control plane: ENTERPRISE.md
+      - PR review: PR_REVIEW.md
+      - Workflow: WORKFLOW.md
+  - Operations:
+      - Diagrams and secrets: diagrams-ops.md
+  - Decisions:
+      - Master plan: reviews/2026-10-17-master-plan.md
+      - Audit and direction: reviews/2026-10-17-audit-and-direction.md
+      - Session digest: reviews/2026-10-17-session-digest.md
+      - Competitive comparison: competitive-comparison.md
 
 markdown_extensions:
   - admonition

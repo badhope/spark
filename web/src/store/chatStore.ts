@@ -798,6 +798,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }))
           break
         }
+        case "review": {
+          // 自动审查（Guardian）：只在拦截时打扰用户，降级时提示一次。
+          flush()
+          const verdict = ev.data?.verdict || ""
+          const reason = ev.data?.reason || ""
+          if (verdict === "block") {
+            set((s) => ({
+              items: [...s.items, { id: uid(), role: "notice" as const, text: t("review.blocked", useUiStore.getState().lang, { reason }), segments: [] }],
+            }))
+          } else if (ev.data?.degraded) {
+            set((s) => ({
+              items: [...s.items, { id: uid(), role: "notice" as const, text: t("review.degraded", useUiStore.getState().lang, { reason }), segments: [] }],
+            }))
+          }
+          break
+        }
         case "turn_end":
           flush()
           graphNodes[0].status = "done"

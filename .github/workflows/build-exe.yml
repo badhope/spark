@@ -39,7 +39,7 @@ jobs:
       - name: Build frontend (dist 写入 src/spark/web/dist)
         working-directory: web
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run build
 
       - name: Install PyInstaller

@@ -945,16 +945,32 @@ async def _review_async(
             store.close()
 
 
+@app.command("sbom", help="生成 CycloneDX 1.5 SBOM（发布资产与供应链审计用）")
+def sbom_cmd(
+    out: Path = typer.Option(Path("sbom.json"), "--out", "-o", help="输出路径"),
+) -> None:
+    from spark.sbom import write_sbom
+
+    data = write_sbom(out)
+    typer.echo(f"◆ SBOM: {out} ({len(data['components'])} components, {data['metadata']['component']['version']})")
+
+
 @app.command("update", help="检查并安装新版本（校验 SHA256；--check 只看不装）")
 def update_cmd(
     check: bool = typer.Option(False, "--check", help="只检查是否有新版本，不下载"),
     force: bool = typer.Option(False, "--force", help="即使已是新版也重新安装"),
     api_url: str | None = typer.Option(None, "--api-url", help="自定义 Release API（内网镜像）"),
+    channel: str = typer.Option(
+        "stable", "--channel", help="发布通道：stable（默认）或 canary（含预发布）"
+    ),
 ) -> None:
     from spark import updater
 
+    if channel not in {"stable", "canary"}:
+        typer.echo("--channel 只支持 stable / canary", err=True)
+        raise typer.Exit(1)
     try:
-        release = updater.fetch_latest(api_url or updater.RELEASE_API)
+        release = updater.fetch_latest(api_url or updater.RELEASE_API, channel=channel)
     except updater.UpdateError as exc:
         typer.echo(f"检查更新失败：{exc}", err=True)
         raise typer.Exit(1) from exc
@@ -1047,8 +1063,14 @@ def web_cmd(
         )
         typer.echo(f"◆ Spark Web  →  http://{host}:{port}")
         if host not in {"127.0.0.1", "localhost", "::1"}:
+            pair = state.pairing.new_code()
             typer.echo(
-                f"◆ 远程访问令牌（请求头 X-Spark-Token）: {state.control_token}"
+                f"◆ 远程配对码（5 分钟内有效）: {pair['code']}\n"
+                f"  手机打开 http://{host}:{port}，在远程解锁页输入配对码；\n"
+                f"  配对成功后设备获得 7 天独立令牌。"
+            )
+            typer.echo(
+                f"◆ 破窗控制令牌（X-Spark-Token，仅应急）: {state.control_token}"
             )
         try:
             server.serve_forever()
@@ -2708,6 +2730,70 @@ def config_set_cmd(
 def config_path_cmd() -> None:
     """Print the configuration file location."""
     typer.echo(str(default_home() / "config.toml"))
+
+
+@app.command("queue", help="管理空闲任务队列（入队/列出/暂停/恢复/取消）")
+def queue_cmd(
+    action: str = typer.Argument("list", help="list / add / pause / resume / cancel"),
+    prompt: str | None = typer.Argument(None, help="add 时的任务提示词"),
+    task_id: str | None = typer.Option(None, "--id", help="cancel 时的任务 id"),
+    title: str = typer.Option("", "--title", help="任务标题"),
+    workdir: str = typer.Option("", "--workdir", help="任务工作目录（默认当前目录）"),
+    priority: int = typer.Option(0, "--priority", help="优先级，越大越先跑"),
+    as_json: bool = typer.Option(False, "--json", help="输出 JSON"),
+) -> None:
+    import json as _json
+    from pathlib import Path as _Path
+
+    store = _store()
+    try:
+        act = action.strip().lower()
+        if act == "add":
+            if not prompt or not prompt.strip():
+                typer.echo("add 需要任务提示词", err=True)
+                raise typer.Exit(1)
+            task = store.enqueue_agent_task(
+                prompt,
+                title=title,
+                workdir=workdir or str(_Path.cwd()),
+                priority=priority,
+            )
+            typer.echo(f"已入队：{task['id']}")
+            return
+        if act == "pause":
+            store.set_queue_paused(True)
+            typer.echo("队列已暂停")
+            return
+        if act == "resume":
+            store.set_queue_paused(False)
+            typer.echo("队列已恢复")
+            return
+        if act == "cancel":
+            if not task_id:
+                typer.echo("cancel 需要 --id", err=True)
+                raise typer.Exit(1)
+            if not store.cancel_agent_task(task_id):
+                typer.echo("任务不存在或已在运行", err=True)
+                raise typer.Exit(1)
+            typer.echo(f"已取消：{task_id}")
+            return
+        if act != "list":
+            typer.echo("action 只支持 list/add/pause/resume/cancel", err=True)
+            raise typer.Exit(1)
+        data: dict[str, Any] = {
+            "paused": store.queue_paused(),
+            "counts": store.queue_counts(),
+            "tasks": store.list_agent_tasks(),
+        }
+        if as_json:
+            typer.echo(_json.dumps(data, ensure_ascii=False, indent=2))
+            return
+        typer.echo("暂停" if data["paused"] else "运行中", nl=False)
+        typer.echo("  " + ", ".join(f"{k}={v}" for k, v in sorted(data["counts"].items())))
+        for row in data["tasks"]:
+            typer.echo(f"{row['id']}\t{row['status']}\t{row.get('title') or row['prompt'][:40]}")
+    finally:
+        store.close()
 
 
 @app.command("enterprise", help="启动企业控制面 API（/api/v1；默认仅回环 127.0.0.1:18800）")

@@ -132,8 +132,9 @@ export function buildGraph(nodes: ExecutionNode[], edges: ExecutionEdge[], lang:
   return { nodes: rfNodes, edges: rfEdges }
 }
 
-export const ExecutionGraph = memo(function ExecutionGraph() {
-  const open = useUiStore((s) => s.graphOpen)
+export const ExecutionGraph = memo(function ExecutionGraph({ embedded = false }: { embedded?: boolean }) {
+  const storeOpen = useUiStore((s) => s.graphOpen)
+  const open = embedded || storeOpen
   const close = useUiStore((s) => s.closeGraph)
   const lang = useUiStore((s) => s.lang)
   const live = useChatStore((s) => s.turnGraph)
@@ -191,6 +192,39 @@ export const ExecutionGraph = memo(function ExecutionGraph() {
   )
 
   if (!open) return null
+
+  if (embedded) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col bg-canvas">
+        <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+          <IconSpark size={13} className="text-accent" />
+          <span className="text-[12px] font-semibold text-ink">{t("graph.title", lang)}</span>
+          <span className="ml-1 truncate text-[10px] text-ink3">
+            {hasGraph
+              ? hasLive
+                ? streaming
+                  ? t("graph.liveRunning", lang)
+                  : t("graph.liveDone", lang)
+                : t("graph.workflowDone", lang)
+              : t("graph.empty", lang)}
+          </span>
+        </div>
+        <div className="min-h-0 flex-1">
+          {!hasGraph ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
+              <IconSpark size={24} className="text-ink3" />
+              <p className="max-w-xs text-[11.5px] leading-relaxed text-ink3">{t("graph.emptyHint", lang)}</p>
+            </div>
+          ) : (
+            <ReactFlow nodes={nodes} edges={edges} fitView proOptions={{ hideAttribution: true }}>
+              <Background gap={20} color="var(--line)" />
+              <Controls showInteractive={false} />
+            </ReactFlow>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]" onClick={close}>

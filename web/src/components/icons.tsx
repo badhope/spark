@@ -1,3 +1,4 @@
+import { useId } from "react"
 import type { ReactNode, SVGProps } from "react"
 
 type P = SVGProps<SVGSVGElement> & { size?: number }
@@ -167,23 +168,26 @@ export const IconFolder = (p: P) =>
       <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
     </>
   ))
-export const IconSpark = ({ size = 20, ...p }: P) => (
+export const IconSpark = ({ size = 20, ...p }: P) => {
+  const gradId = `spark-grad-${useId().replace(/:/g, "")}`
+  return (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" {...p}>
     <path
       d="M12 2c.7 3.9 2.4 6.1 6.2 7.3-.7 1.1-1.3 2-1.7 3.5M12 2C9.6 5.4 7.6 7.3 3.9 8.2c.8 1.4 1.6 2.4 2.5 3.6M12 2c1.2 4.9 3.4 7.9 7.9 9.4M12 22c-.6-3.4-2.1-5.3-5.4-6.4.6-1 1.1-1.7 1.5-3M12 22c2-3 3.7-4.6 7-5.5-.7-1.2-1.4-2-2.2-3M12 22c-1-4.2-2.9-6.8-6.8-8.1"
-      stroke="url(#spark-grad)"
+      stroke={`url(#${gradId})`}
       strokeWidth="1.6"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
     <defs>
-      <linearGradient id="spark-grad" x1="4" y1="2" x2="20" y2="22" gradientUnits="userSpaceOnUse">
+      <linearGradient id={gradId} x1="4" y1="2" x2="20" y2="22" gradientUnits="userSpaceOnUse">
         <stop stopColor="var(--accent-strong)" />
         <stop offset="1" stopColor="var(--accent)" />
       </linearGradient>
     </defs>
   </svg>
-)
+  )
+}
 export const IconLayers = (p: P) =>
   base(p, (
     <>

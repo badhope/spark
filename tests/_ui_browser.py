@@ -38,6 +38,9 @@ def _system_browser_exists() -> bool:
         return True
     return any(
         shutil.which(name) for name in ("google-chrome", "chromium", "chromium-browser")
+    ) or any(
+        Path(path).exists()
+        for path in ("/usr/local/bin/chromium", "/usr/local/bin/chromium-browser")
     )
 
 
@@ -74,6 +77,9 @@ def launch(playwright):
         return playwright.chromium.launch(channel=override, headless=True)
     if any(path.exists() for path in EDGE_PATHS):
         return playwright.chromium.launch(channel="msedge", headless=True)
+    for candidate in (Path("/usr/local/bin/chromium"), Path("/usr/local/bin/chromium-browser")):
+        if candidate.exists():
+            return playwright.chromium.launch(executable_path=str(candidate), headless=True)
     if any(path.exists() for path in CHROME_PATHS):
         return playwright.chromium.launch(channel="chrome", headless=True)
     if shutil.which("google-chrome"):

@@ -55,9 +55,21 @@ python -m spark.evals --refresh-real
 
 ### CI
 
-`.github/workflows/evals.yml`：push/PR 时跑 `python -m spark.evals --json
-evals-report.json`，失败即红；报告作为 artifact 留存 14 天。CI 全程 mock，
-不联网、不烧 token，分钟内完成。
+`.github/workflows/evals.yml`：push/PR + 每天 18:00 UTC（02:00 Asia/Shanghai）跑
+`python -m spark.evals --json evals-report.json`；失败即红，报告作为 artifact
+留存 14 天。CI 全程 mock，不联网、不烧 token，分钟内完成。
+
+每次运行还会对比 `evals/baseline.json`：
+
+- 通过数比基线下降超过 2 点 → 阻断；
+- 基线里原本通过、现在失败的场景 → 即使总数没掉也阻断（防止“修一个坏一个”）。
+
+```bash
+python scripts/check_eval_regression.py evals-report.json evals/baseline.json 2
+```
+
+基线更新是显式动作：确认掉点是预期变更后，重新生成 `evals/baseline.json`
+并随变更一起评审，不允许 CI 自动改写基线。
 
 ## 5. 如何扩展场景
 

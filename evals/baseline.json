@@ -1,0 +1,18 @@
+{
+  "total": 12,
+  "passed": 12,
+  "scenarios": [
+    "swe-toy-calc-add",
+    "swe-toy-parser-first",
+    "tau-toy-order-refund",
+    "tau-toy-shipment-lookup",
+    "swe-real-astropy__astropy-12907",
+    "swe-real-astropy__astropy-14182",
+    "swe-real-astropy__astropy-14365",
+    "swe-real-astropy__astropy-14995",
+    "swe-real-django__django-10914",
+    "swe-real-django__django-10924",
+    "swe-real-django__django-11001",
+    "swe-real-django__django-11019"
+  ]
+}

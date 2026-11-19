@@ -176,10 +176,12 @@ class TestPluginsEndpoint:
         code, body = call(_handle_plugins, state, {"action": "list"})
         assert code == 200 and body["items"][0]["name"] == "p1"
 
-    def test_write_rejected(self, state) -> None:
+    def test_install_is_not_exposed_over_http(self, state) -> None:
+        # Installing runs code and stays a CLI-only action; the HTTP surface
+        # must not silently accept it.
         code, body = call(_handle_plugins, state, {"action": "install"})
         assert code == 400
-        assert "read-only" in body["error"]
+        assert "unknown plugin action" in body["error"]
 
 
 class TestKnowledgeEndpoint:

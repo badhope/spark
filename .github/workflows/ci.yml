@@ -2,9 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   quality:
@@ -57,11 +65,19 @@ jobs:
         # whole terminal surface untested on the platform that supports it.
         run: |
           pip install -e ".[dev,pty]"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Install browser for UI tests
         # The UI tests drive a real browser; they never stub the frontend.
         # Without this they skip, which quietly drops the whole web surface
         # from CI coverage.
         run: python -m playwright install --with-deps chromium
+      - name: Install frontend audit deps (axe-core)
+        # test_ui_a11y injects axe-core and audits both themes; without this
+        # npm install it would skip and the a11y gate would silently vanish.
+        working-directory: web
+        run: npm ci --no-audit --no-fund
       - name: Lint (ruff)
         run: ruff check src/spark tests scripts
       - name: Test (pytest + coverage)
@@ -70,6 +86,30 @@ jobs:
           # 平台差异（Windows 与 Linux 覆盖面不同）误伤。90%/85% 的红线还没到，
           # 缺口与原因见 docs/reviews/2026-10-22-full-audit.md 第十二节。
           python -m pytest -q --cov=spark --cov-report=term-missing --cov-fail-under=75
+
+  # 性能预算独立 job：启动/首屏/核心 API 的预算不该和并行测试抢 CPU，
+  # 也不该因为一次抖动阻塞功能测试。这里单独给一台安静 runner，失败直接
+  # 指向 perf/budgets.json。SSE/内存预算仍在本地门禁与后续迭代中补齐。
+  perf:
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Performance budgets (CLI / first-screen / API p95)
+        run: python scripts/check_perf_budget.py --json-out perf-current.json
+      - name: Upload perf report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-report
+          path: perf-current.json
+          if-no-files-found: ignore
 
   # 真实 PostgreSQL 契约：SQLite 不校验外键，控制面的 tenant FK 问题只能在真库上
   # 暴露（部署环境曾因此每次写入都失败）。独立 job，失败时一眼看出是数据库契约。

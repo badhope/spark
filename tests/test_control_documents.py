@@ -158,6 +158,7 @@ def test_extract_supported_documents(client: TestClient, filename: str, needle: 
 @pytest.mark.parametrize("filename", ["scan.png", "scanned.pdf"])
 def test_ocr_reads_scanned_pages(client: TestClient, filename: str) -> None:
     """OCR is exercised on real rendered glyphs, not a synthetic text layer."""
+    pytest.importorskip("rapidocr_onnxruntime")
     response = client.post("/api/v1/office/documents/extract", json={"filename": filename})
     assert response.status_code == 200, response.text
     text = response.json()["text"]
@@ -185,7 +186,7 @@ def test_extract_rejects_unsupported_type(client: TestClient, tmp_path: Path) ->
 def test_extract_msg_maps_fields(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import extract_msg
+    extract_msg = pytest.importorskip("extract_msg")
 
     class FakeMessage:
         subject = "季度复盘"

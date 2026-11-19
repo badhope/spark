@@ -57,6 +57,7 @@ from spark.web._handlers_models import (  # noqa: F401
     _handle_models_delete,
     _handle_models_save,
 )
+from spark.web._handlers_queue import _handle_queue  # noqa: F401
 from spark.web._handlers_sessions import (  # noqa: F401
     _handle_approval,
     _handle_cancel,
@@ -87,6 +88,7 @@ __all__ = [
     "handle_debug_client_log",
     "_handle_automations",
     "_handle_automations_cron_check",
+    "_handle_queue",
     "_handle_approval",
     "_handle_approval_profiles_activate",
     "_handle_approval_profiles_delete",

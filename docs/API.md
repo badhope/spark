@@ -7,9 +7,11 @@
 
 服务默认只监听本机 `127.0.0.1`（`spark web --host 0.0.0.0` 可显式开放到局域网，风险自负）。
 
-- 鉴权实现位于 `routes.py` 的 `_guard` / `_authorized`；非回环来源必须带控制令牌。
-- 令牌在服务启动时随机生成（`SparkWebState.control_token`），只在控制台对象上提供，不会写进日志。
-- 本机（127.0.0.1 / ::1 / localhost）请求免令牌；其他来源一律 `401`，需带 `X-Spark-Token` 请求头。
+- 鉴权实现位于 `routes.py` 的 `_guard` / `_authorized`；非回环来源必须带控制令牌或已配对设备令牌。
+- 控制令牌在服务启动时随机生成（`SparkWebState.control_token`），只在控制台对象上提供，不会写进日志；建议作为破窗凭证。
+- 手机/远程浏览器优先走短时配对：`POST /api/pair/code`（仅本机）生成 6 位码，`POST /api/pair/claim` 用码换 7 天设备令牌；设备令牌同样通过 `X-Spark-Token` 请求头提交。
+- 本机（127.0.0.1 / ::1 / localhost）请求免令牌；其他来源一律 `401`，除非令牌有效。
+- 设备令牌是“只读/运行”权限：可发起/停止回合、审批/回答、切会话和读取文件/diff；修改设置、插件、直接 shell、PTY、配对管理仍只允许本机控制令牌。
 - 额外防护：Host 头非本机 → `403`；带 Origin 头且非本机来源 → `403`（防 CSRF）；POST 的 Content-Type 必须是 `application/json`，否则 `415`。
 
 ## 静态资源
@@ -27,6 +29,8 @@
 | `GET` | `/api/config` | 设置视图（部分敏感值打码，并非全部配置）：provider、agent、context（含 `agents_md` / `repo_map_max_chars` / `knowledge_*`）、memory（含 `embedding_*` / `rerank_model`）、mcp_servers、hooks（含 `on_deny`）、replay、updater，以及 `permission_rules` / `approval_profiles` / `active_approval_profile_id` |
 | `GET` | `/api/models` | 模型 profile 列表（api_key 打码，含 `active` 标记） |
 | `GET` | `/api/agents_md` | 读取工作目录内 AGENTS.md 的内容与状态 |
+| `GET` | `/api/pair/devices` | 已配对设备列表（仅本机；不含令牌明文） |
+| `GET` | `/api/queue` | 空闲任务队列：`paused` / 各状态计数 / 最近 50 条任务 |
 | `GET` | `/api/memory` | 长期记忆：`items` 全量、`search?q=关键词` 检索（带 score）、`stats` 统计 |
 | `GET` | `/api/sessions` | 当前工作目录的会话列表（最近 50 条）+ `current` 会话 id |
 | `GET` | `/api/checkpoints` | 当前会话的检查点列表 |
@@ -40,6 +44,10 @@
 | `POST` | `/api/chat` | `{prompt}` | 非流式对话，返回完整事件数组（调试用） |
 | `POST` | `/api/cancel` | — | 取消当前回合与待审批 |
 | `POST` | `/api/approval` | `{decision}` | 审批决定：`allow` / `allow_always` / `deny` |
+| `POST` | `/api/queue` | `{action, prompt?, title?, id?}` | `list` / `create` / `pause` / `resume` / `cancel`；任务只在没有会话忙碌时执行，暂停跨重启保留 |
+| `POST` | `/api/pair/code` | `{}` | 生成 6 位短时配对码（仅本机，5 分钟有效） |
+| `POST` | `/api/pair/claim` | `{code, name}` | 远程设备用配对码换设备令牌；这是唯一免鉴权的写接口，Host/Origin 仍校验 |
+| `POST` | `/api/pair/revoke` | `{device_id}` | 吊销设备令牌（仅本机） |
 | `POST` | `/api/models/save` | `{name, base_url, model, provider, api_key, id?}` | 新建或更新模型 profile |
 | `POST` | `/api/models/delete` | `{id}` | 删除 profile；若删除的是活跃 profile 则清空 `active_profile_id` |
 | `POST` | `/api/models/activate` | `{id}` | 切换活跃 profile 并重建 AgentLoop；agent 忙时 `409` |

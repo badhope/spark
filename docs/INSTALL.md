@@ -86,7 +86,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1
 dist\spark\spark.exe web
 ```
 
-或直接下载 **GitHub Releases** 现成包：打个 tag（`git tag v0.9.0 && git push --tags`），
+或直接下载 **GitHub Releases** 现成包：打个 tag（`git tag v0.15.2 && git push --tags`），
 `Release` 工作流会自动构建 `spark-windows-x86_64.zip`（同时产出 Linux/macOS 压缩包）。
 
 ### Linux / macOS

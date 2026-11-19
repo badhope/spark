@@ -1,0 +1,57 @@
+"""HTTP surface for the idle agent-task queue."""
+from __future__ import annotations
+
+from spark.web._httpbase import HandlerBase
+from spark.web._routing import _route_state
+
+
+def _handle_queue(handler: HandlerBase, body: dict) -> None:
+    state = _route_state(handler)
+    queue = getattr(state, "queue", None)
+    if queue is None:
+        handler._json(503, {"error": "task queue unavailable"})
+        return
+    action = str(body.get("action") or "list").strip()
+
+    if action == "list":
+        handler._json(200, queue.status())
+        return
+
+    if action == "create":
+        prompt = str(body.get("prompt") or "").strip()
+        if not prompt:
+            handler._json(400, {"error": "prompt is required"})
+            return
+        try:
+            task = queue.enqueue(
+                prompt,
+                title=str(body.get("title") or ""),
+                workdir=str(body.get("workdir") or state.workdir),
+                priority=int(body.get("priority") or 0),
+            )
+        except (ValueError, TypeError) as exc:
+            handler._json(400, {"error": str(exc)})
+            return
+        handler._json(200, {"ok": True, "task": task})
+        return
+
+    if action in {"pause", "resume"}:
+        if action == "pause":
+            queue.pause()
+        else:
+            queue.resume()
+        handler._json(200, {"ok": True, "paused": queue.paused})
+        return
+
+    if action == "cancel":
+        task_id = str(body.get("id") or "").strip()
+        if not task_id:
+            handler._json(400, {"error": "id is required"})
+            return
+        if not queue.cancel(task_id):
+            handler._json(404, {"error": "unknown or already running task"})
+            return
+        handler._json(200, {"ok": True})
+        return
+
+    handler._json(400, {"error": "action must be list, create, pause, resume or cancel"})

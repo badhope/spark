@@ -17,8 +17,9 @@ const TAB_ID = "main"
  * 关闭弹窗只是断开前端附着（shell 保持后台常驻，重开自动恢复）；
  * 「结束会话」才真正 kill shell。
  */
-export const Terminal = memo(function Terminal() {
-  const open = useUiStore((s) => s.terminalOpen)
+export const Terminal = memo(function Terminal({ embedded = false }: { embedded?: boolean }) {
+  const storeOpen = useUiStore((s) => s.terminalOpen)
+  const open = embedded || storeOpen
   const close = useUiStore((s) => s.closeTerminal)
   const lang = useUiStore((s) => s.lang)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -130,6 +131,33 @@ export const Terminal = memo(function Terminal() {
   }, [open])
 
   if (!open) return null
+
+  if (embedded) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col bg-[#0d1117]">
+        <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
+          <IconTerminal size={13} className="text-accent" />
+          <span className="text-[12px] font-semibold text-ink">{t("terminal.title", lang)}</span>
+          {cwd && <span className="ml-1 hidden truncate font-mono text-[10px] text-ink3 sm:inline">{cwd}</span>}
+          {!ready && <Spinner size={11} className="ml-1 text-ink3" />}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto"
+            onClick={() => {
+              void ptyClose(TAB_ID).then(() => {
+                exitedRef.current = true
+                xtermRef.current?.writeln(`\r\n\x1b[90m${t("terminal.sessionEnded", lang)}\x1b[0m`)
+              })
+            }}
+          >
+            {t("terminal.closeSession", lang)}
+          </Button>
+        </div>
+        <div ref={containerRef} className="min-h-0 flex-1 p-2" />
+      </div>
+    )
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 backdrop-blur-[2px]" onClick={close}>

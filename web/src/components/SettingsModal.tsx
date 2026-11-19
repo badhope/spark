@@ -10,6 +10,8 @@ import KnowledgeSection from "./KnowledgeSection"
 import WikiSection from "./WikiSection"
 import AutomationsSection from "./AutomationsSection"
 import DebugSection from "./DebugSection"
+import { RemoteSection } from "./RemoteSection"
+import { QueueSection } from "./QueueSection"
 import { McpRegistryModal } from "./McpRegistryModal"
 import type { McpRegistryItem } from "../api"
 import { PALETTES, type Palette, type Theme } from "../theme"
@@ -60,6 +62,8 @@ type Tab =
   | "shortcuts"
   | "knowledge"
   | "wiki"
+  | "remote"
+  | "queue"
   | "project"
   | "automations"
   | "debug"
@@ -94,20 +98,33 @@ const PROVIDER_OPTIONS = [
 ] as const
 
 const TAB_GROUPS: {
+  key: string
   labelKey: TranslationKey
+  icon: React.ReactNode
   tabs: { key: Tab; labelKey: TranslationKey; icon: React.ReactNode }[]
 }[] = [
   {
-    labelKey: "settings.groupCore",
+    key: "model",
+    labelKey: "settings.page.model",
+    icon: <IconLayers size={15} />,
     tabs: [
       { key: "model", labelKey: "tab.model", icon: <IconLayers size={14} /> },
       { key: "agent", labelKey: "tab.agent", icon: <IconTerminal size={14} /> },
-      { key: "security", labelKey: "tab.security", icon: <IconKey size={14} /> },
-      { key: "display", labelKey: "tab.display", icon: <IconSun size={14} /> },
     ],
   },
   {
-    labelKey: "settings.groupWorkspace",
+    key: "appearance",
+    labelKey: "settings.page.appearance",
+    icon: <IconSun size={15} />,
+    tabs: [
+      { key: "display", labelKey: "tab.display", icon: <IconSun size={14} /> },
+      { key: "shortcuts", labelKey: "tab.shortcuts", icon: <IconCommand size={14} /> },
+    ],
+  },
+  {
+    key: "workspace",
+    labelKey: "settings.page.workspace",
+    icon: <IconFolder size={15} />,
     tabs: [
       { key: "project", labelKey: "tab.project", icon: <IconSettings size={14} /> },
       { key: "memory", labelKey: "tab.memory", icon: <IconBrain size={14} /> },
@@ -117,7 +134,9 @@ const TAB_GROUPS: {
     ],
   },
   {
-    labelKey: "settings.groupExtensions",
+    key: "extensions",
+    labelKey: "settings.page.extensions",
+    icon: <IconSpark size={15} />,
     tabs: [
       { key: "mcp", labelKey: "tab.mcp", icon: <IconGlobe size={14} /> },
       { key: "skills", labelKey: "tab.skills", icon: <IconSpark size={14} /> },
@@ -126,16 +145,18 @@ const TAB_GROUPS: {
     ],
   },
   {
-    labelKey: "settings.groupSystem",
+    key: "system",
+    labelKey: "settings.page.system",
+    icon: <IconSettings size={15} />,
     tabs: [
-      { key: "shortcuts", labelKey: "tab.shortcuts", icon: <IconCommand size={14} /> },
+      { key: "security", labelKey: "tab.security", icon: <IconKey size={14} /> },
+      { key: "remote", labelKey: "tab.remote", icon: <IconKey size={14} /> },
+      { key: "queue", labelKey: "tab.queue", icon: <IconClock size={14} /> },
       { key: "debug", labelKey: "tab.debug", icon: <IconBug size={14} /> },
       { key: "advanced", labelKey: "tab.advanced", icon: <IconStethoscope size={14} /> },
     ],
   },
 ]
-
-const TABS = TAB_GROUPS.flatMap((group) => group.tabs)
 
 interface Props {
   onClose: () => void
@@ -251,6 +272,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
   const setLang = useUiStore((s) => s.setLang)
   const requestedTab = useUiStore((s) => s.settingsTab)
   const [tab, setTab] = useState<Tab>((requestedTab as Tab) || "model")
+  const activeGroup = TAB_GROUPS.find((group) => group.tabs.some((item) => item.key === tab)) ?? TAB_GROUPS[0]
   const [cfg, setCfg] = useState<FullConfig | null>(null)
   const [mcpRows, setMcpRows] = useState<McpServer[]>([])
   const [agentsMd, setAgentsMd] = useState<{ filename: string; content: string; chars: number; max_fragment_chars: number } | null>(null)
@@ -812,31 +834,43 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
             </div>
             <div className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-1">
               {TAB_GROUPS.map((group) => (
-                <div key={group.labelKey} className="flex flex-col gap-1">
-                  <p className="px-3 pt-2 pb-0.5 text-[10px] font-bold tracking-wide text-ink3 uppercase">
-                    {t(group.labelKey, lang)}
-                  </p>
-                  {group.tabs.map((tb) => (
-                    <button
-                      key={tb.key}
-                      type="button"
-                      onClick={() => setTab(tb.key)}
-                      aria-current={tab === tb.key ? "page" : undefined}
-                      className={cls(
-                        "relative flex items-center gap-2.5 rounded-[9px] px-3 py-2 text-left text-[12.5px] font-medium transition-colors duration-150",
-                        tab === tb.key ? "bg-selected text-ink" : "text-ink2 hover:bg-hover hover:text-ink",
-                      )}
-                    >
-                      {/* 激活态用左侧细条标记，与侧栏会话项同一套语言；
-                          右侧孤立小圆点看起来像未读提示，容易误读。 */}
-                      {tab === tb.key && (
-                        <span aria-hidden className="absolute top-1/2 left-0 h-4 w-[2px] -translate-y-1/2 rounded-r bg-accent" />
-                      )}
-                      <span className={cls("shrink-0", tab === tb.key ? "text-accent" : "text-ink3")}>{tb.icon}</span>
-                      {t(tb.labelKey, lang)}
-                    </button>
-                  ))}
-                </div>
+                <button
+                  key={group.key}
+                  type="button"
+                  data-settings-page={group.key}
+                  onClick={() => setTab(group.tabs[0].key)}
+                  aria-current={activeGroup.key === group.key ? "page" : undefined}
+                  className={cls(
+                    "flex items-center gap-2.5 rounded-[9px] px-3 py-2 text-left text-[12.5px] font-semibold transition-colors duration-150",
+                    activeGroup.key === group.key ? "bg-selected text-ink" : "text-ink2 hover:bg-hover hover:text-ink",
+                  )}
+                >
+                  <span className={cls("shrink-0", activeGroup.key === group.key ? "text-accent" : "text-ink3")}>{group.icon}</span>
+                  {t(group.labelKey, lang)}
+                </button>
+              ))}
+              <div className="my-2 border-t border-line" />
+              <p className="px-3 pb-1 text-[10px] font-bold tracking-wide text-ink3 uppercase">
+                {t(activeGroup.labelKey, lang)}
+              </p>
+              {activeGroup.tabs.map((tb) => (
+                <button
+                  key={tb.key}
+                  type="button"
+                  data-settings-tab={tb.key}
+                  onClick={() => setTab(tb.key)}
+                  aria-current={tab === tb.key ? "page" : undefined}
+                  className={cls(
+                    "relative flex items-center gap-2.5 rounded-[9px] px-3 py-2 text-left text-[12.5px] font-medium transition-colors duration-150",
+                    tab === tb.key ? "bg-selected text-ink" : "text-ink2 hover:bg-hover hover:text-ink",
+                  )}
+                >
+                  {tab === tb.key && (
+                    <span aria-hidden className="absolute top-1/2 left-0 h-4 w-[2px] -translate-y-1/2 rounded-r bg-accent" />
+                  )}
+                  <span className={cls("shrink-0", tab === tb.key ? "text-accent" : "text-ink3")}>{tb.icon}</span>
+                  {t(tb.labelKey, lang)}
+                </button>
               ))}
             </div>
             <div className="px-3 pb-3 pt-1">
@@ -856,23 +890,44 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
               </IconButton>
             </div>
 
-            {/* 移动端：横向可滚动 tab。左导航在 <sm 时隐藏，没有这一条就只剩首个 tab 可达 */}
-            <div className="flex gap-1 overflow-x-auto border-b border-line px-2 py-1.5 sm:hidden">
-              {TABS.map((tb) => (
-                <button
-                  key={tb.key}
-                  type="button"
-                  onClick={() => setTab(tb.key)}
-                  aria-current={tab === tb.key ? "page" : undefined}
-                  className={cls(
-                    "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition-colors",
-                    tab === tb.key ? "bg-selected text-ink" : "text-ink2 hover:bg-hover",
-                  )}
-                >
-                  <span className={tab === tb.key ? "text-accent" : "text-ink3"}>{tb.icon}</span>
-                  {t(tb.labelKey, lang)}
-                </button>
-              ))}
+            {/* 移动端：一级 5 页 + 当前页细分 tab。左导航在 <sm 时隐藏 */}
+            <div className="flex flex-col gap-1 border-b border-line px-2 py-1.5 sm:hidden">
+              <div className="flex gap-1 overflow-x-auto">
+                {TAB_GROUPS.map((group) => (
+                  <button
+                    key={group.key}
+                    type="button"
+                    data-settings-page={group.key}
+                    onClick={() => setTab(group.tabs[0].key)}
+                    aria-current={activeGroup.key === group.key ? "page" : undefined}
+                    className={cls(
+                      "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition-colors",
+                      activeGroup.key === group.key ? "bg-selected text-ink" : "text-ink2 hover:bg-hover",
+                    )}
+                  >
+                    <span className={activeGroup.key === group.key ? "text-accent" : "text-ink3"}>{group.icon}</span>
+                    {t(group.labelKey, lang)}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-1 overflow-x-auto">
+                {activeGroup.tabs.map((tb) => (
+                  <button
+                    key={tb.key}
+                    type="button"
+                    data-settings-tab={tb.key}
+                    onClick={() => setTab(tb.key)}
+                    aria-current={tab === tb.key ? "page" : undefined}
+                    className={cls(
+                      "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition-colors",
+                      tab === tb.key ? "bg-selected text-ink" : "text-ink2 hover:bg-hover",
+                    )}
+                  >
+                    <span className={tab === tb.key ? "text-accent" : "text-ink3"}>{tb.icon}</span>
+                    {t(tb.labelKey, lang)}
+                  </button>
+                ))}
+              </div>
             </div>
 
         {/* 内容 */}
@@ -1924,6 +1979,8 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
 
           {tab === "automations" && <AutomationsSection />}
 
+          {tab === "remote" && <RemoteSection />}
+          {tab === "queue" && <QueueSection />}
           {tab === "debug" && <DebugSection />}
 
           {tab === "advanced" && (

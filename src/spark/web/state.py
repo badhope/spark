@@ -27,6 +27,7 @@ from spark.memory.store import MemoryStore
 from spark.models import ApprovalAction, ApprovalDecision
 from spark.providers.factory import create_provider
 from spark.sandbox import WorkdirSandbox
+from spark.task_queue import QueueOutcome, TaskQueue
 from spark.tools import bg as bg_tools
 from spark.tools.mcp_bridge import McpBridge
 from spark.tools.registry import ToolContext, ToolRegistry
@@ -308,6 +309,9 @@ class SparkWebState:
         self.settings_lock = threading.Lock()
         self.mcp_bridge: McpBridge | None = None
         self.control_token = secrets.token_urlsafe(32)
+        from spark.web.remote import DevicePairing
+
+        self.pairing = DevicePairing()
         #: Compatibility switch for pre-v1 SSE clients. Set
         #: ``SPARK_WEB_LEGACY=1`` to emit bare ``data:`` frames again while the
         #: rest of the server keeps the per-session runtime and replay API.
@@ -333,6 +337,13 @@ class SparkWebState:
         from spark.automations import AutomationScheduler
 
         self.automations = AutomationScheduler(self.store, on_due=self.run_due_automations)
+        # 空闲任务队列：只在没有任何 runtime 忙碌时跑一条，进程崩溃后恢复 queued。
+        self.queue = TaskQueue(
+            self.store,
+            runner=self._run_queued_task,
+            is_busy=self._queue_is_busy,
+            poll_sec=10.0,
+        )
         self.boot_mcp()
         self.rebuild_loop(reuse_latest=True)
         # Register before starting the thread: if start() ever raises, the
@@ -340,6 +351,7 @@ class SparkWebState:
         with _ACTIVE_STATES_LOCK:
             _ACTIVE_STATES.append(weakref.ref(self))
         self.automations.start()
+        self.queue.start()
 
     @property
     def current_runtime(self) -> SessionRuntime | None:
@@ -359,6 +371,21 @@ class SparkWebState:
             runtime.loop = value
         else:
             self._orphan_loop = value
+
+    def authorize_token(self, token: str) -> str | None:
+        """Return ``control``/``device`` for a valid token, else ``None``.
+
+        Loopback callers never reach this method (the guard short-circuits), so
+        it only protects non-local access.  Device tokens are scoped to the
+        remote Web UI and expire independently of the break-glass control token.
+        """
+        if not token:
+            return None
+        if self.control_token and secrets.compare_digest(token, self.control_token):
+            return "control"
+        if self.pairing.verify(token) is not None:
+            return "device"
+        return None
 
     @property
     def approver(self) -> WebApprover | None:
@@ -489,6 +516,10 @@ class SparkWebState:
             self.automations.stop()
         except Exception:  # pragma: no cover - teardown must not raise
             logger.debug("automation scheduler stop failed", exc_info=True)
+        try:
+            self.queue.stop()
+        except Exception:  # pragma: no cover - teardown must not raise
+            logger.debug("task queue stop failed", exc_info=True)
 
         bridge = self.mcp_bridge
         self.mcp_bridge = None
@@ -681,6 +712,55 @@ class SparkWebState:
         loop = loop or self.loop
         override = getattr(loop, "_approval_override", None) if loop is not None else None
         return str(override or self.cfg.agent.approval)
+
+    def _queue_is_busy(self) -> bool:
+        """A queued prompt must not compete with any live turn."""
+        if self._current_runtime is not None and self._current_runtime.busy:
+            return True
+        return any(runtime.busy for runtime in self._runtimes.values())
+
+    def _run_queued_task(self, task: dict) -> QueueOutcome:
+        """Execute one queue row in its own session, never the user's current one."""
+        prompt = str(task.get("prompt") or "").strip()
+        if not prompt:
+            return QueueOutcome(status="failed", error="empty prompt")
+        workdir = Path(str(task.get("workdir") or self.workdir))
+        if workdir.resolve() != Path(self.workdir).resolve():
+            return QueueOutcome(
+                status="blocked",
+                error=f"queue task workdir {workdir} != server workdir {self.workdir}",
+            )
+        session_id = self.store.create_session(
+            workdir,
+            self.cfg.provider.model,
+            title=str(task.get("title") or "[queue] task")[:120],
+        )
+        runtime = self.get_runtime(session_id)
+        if runtime is None:
+            return QueueOutcome(status="failed", error="runtime unavailable")
+        runtime.loop = self._build_loop(runtime)
+        if self._effective_approval(runtime.loop) == "full-auto":
+            runtime.approver = None
+        elif runtime.approver is None:
+            runtime.approver = WebApprover()
+        if not runtime.turn_lock.acquire(blocking=False):
+            return QueueOutcome(status="requeue", error="agent busy", session_id=session_id)
+        try:
+            events = list(runtime.loop.iter_turn_sync(prompt))
+        finally:
+            runtime.turn_lock.release()
+        text = ""
+        failed = False
+        for event in events:
+            kind = getattr(event, "type", "")
+            if kind == "turn_end":
+                text = (getattr(event, "text", "") or "")[:500]
+            elif kind == "turn_error":
+                failed = True
+                text = (getattr(event, "text", "") or "turn failed")[:500]
+        if failed:
+            return QueueOutcome(status="failed", error=text, session_id=session_id)
+        return QueueOutcome(status="ok", summary=text, session_id=session_id)
 
     def run_due_automations(self) -> list[dict]:
         """执行到期的定时任务；返回本轮结果摘要。
@@ -891,6 +971,7 @@ class SparkWebState:
                 "max_tool_rounds": self.cfg.agent.max_tool_rounds,
                 "max_repeat_calls": self.cfg.agent.max_repeat_calls,
                 "max_turn_tokens": self.cfg.agent.max_turn_tokens,
+                "max_session_cost_usd": self.cfg.agent.max_session_cost_usd,
                 "max_output_chars": self.cfg.agent.max_output_chars,
                 "effort": self.cfg.agent.effort,
                 "system_prompt": self.cfg.agent.system_prompt,

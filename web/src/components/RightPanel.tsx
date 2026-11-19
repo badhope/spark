@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useState } from "react"
 import { browseUrl, fetchFsRead, fetchFsTree, type FsEntry } from "../api"
-import { IconChevronRight, IconFile, IconFolder, IconGlobe, IconX } from "./icons"
+import { ChangesPanel } from "./ChangesPanel"
+import { IconChevronRight, IconFile, IconFileDiff, IconFolder, IconGlobe, IconSpark, IconTerminal, IconX } from "./icons"
 import { cls } from "./ui"
 import { t } from "../i18n"
 import { useSessionStore } from "../store/sessionStore"
 import { useUiStore } from "../store/uiStore"
 import hljs from "highlight.js/lib/common"
+
+const Terminal = lazy(() => import("./Terminal").then((m) => ({ default: m.Terminal })))
+const ExecutionGraph = lazy(() => import("./ExecutionGraph").then((m) => ({ default: m.ExecutionGraph })))
 
 /** 右侧常驻面板：文件树 / 文件预览 / 网页阅读三合一。
  *
@@ -15,9 +19,11 @@ export const RightPanel = () => {
   const open = useUiStore((s) => s.rightPanelOpen)
   const setOpen = useUiStore((s) => s.setRightPanelOpen)
   const lang = useUiStore((s) => s.lang)
+  const tab = useUiStore((s) => s.workbenchTab)
+  const setTab = useUiStore((s) => s.setWorkbenchTab)
   const workdir = useSessionStore((s) => s.status?.workdir ?? "")
 
-  const [tab, setTab] = useState<"files" | "preview" | "browse">("files")
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [stack, setStack] = useState<string[]>([])
   const [entries, setEntries] = useState<FsEntry[] | null>(null)
   const [busy, setBusy] = useState(false)
@@ -66,7 +72,8 @@ export const RightPanel = () => {
     const path = stack.length ? [...stack, name].join("/") : name
     setFileBusy(true)
     setFile(null)
-    setTab("preview")
+    setTab("files")
+    setPreviewOpen(true)
     try {
       const data = await fetchFsRead(path)
       if (data.error) setFile({ name, content: data.error })
@@ -105,15 +112,24 @@ export const RightPanel = () => {
   }
 
   return (
-    <aside className="flex w-[340px] shrink-0 flex-col border-l border-line bg-panel">
+    <aside
+      data-testid="workbench"
+      aria-label={t("rightPanel.title", lang)}
+      className={cls(
+        "flex max-w-[72vw] shrink-0 flex-col border-l border-line bg-panel",
+        tab === "run" || tab === "trace" ? "w-[min(72vw,540px)]" : "w-[340px]",
+      )}
+    >
       {/* 面板头：tab 切换 + 关闭 */}
       <div className="flex items-center gap-1 border-b border-line px-2 py-2">
         <div className="flex flex-1 items-center gap-1">
           {(
             [
-              ["files", "rightPanel.files", <IconFolder key="f" size={13} />],
-              ["preview", "rightPanel.preview", <IconFile key="p" size={13} />],
-              ["browse", "rightPanel.browse", <IconGlobe key="b" size={13} />],
+              ["files", "workbench.files", <IconFolder key="f" size={12} />],
+              ["changes", "workbench.changes", <IconFileDiff key="c" size={12} />],
+              ["run", "workbench.run", <IconTerminal key="r" size={12} />],
+              ["web", "workbench.web", <IconGlobe key="w" size={12} />],
+              ["trace", "workbench.trace", <IconSpark key="t" size={12} />],
             ] as const
           ).map(([key, label, icon]) => (
             <button
@@ -121,12 +137,13 @@ export const RightPanel = () => {
               type="button"
               onClick={() => setTab(key)}
               className={cls(
-                "flex items-center gap-1 rounded-[8px] px-2.5 py-1.5 text-[11.5px] font-medium transition-colors duration-150",
+                "flex items-center gap-0.5 rounded-[7px] px-1.5 py-1.5 text-[10.5px] font-medium transition-colors duration-150 sm:gap-1",
                 tab === key ? "bg-panel3 text-ink" : "text-ink3 hover:bg-hover hover:text-ink2",
               )}
+              title={t(label, lang)}
             >
               {icon}
-              {t(label, lang)}
+              <span className="hidden sm:inline">{t(label, lang)}</span>
             </button>
           ))}
         </div>
@@ -141,7 +158,7 @@ export const RightPanel = () => {
       </div>
 
       {/* 文件树 tab */}
-      {tab === "files" && (
+      {tab === "files" && !previewOpen && (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-2 border-b border-line px-3 py-2">
             <IconFolder size={11} className="shrink-0 text-ink3" />
@@ -209,10 +226,18 @@ export const RightPanel = () => {
         </div>
       )}
 
-      {/* 预览 tab */}
-      {tab === "preview" && (
+      {/* 预览（Files 内） */}
+      {tab === "files" && previewOpen && (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-2 border-b border-line px-3 py-1.5">
+            <button
+              type="button"
+              onClick={() => setPreviewOpen(false)}
+              title={t("workbench.files", lang)}
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink3 hover:bg-hover hover:text-ink"
+            >
+              <IconChevronRight size={12} className="rotate-180" />
+            </button>
             <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink">
               {file?.name ?? t("rightPanel.noFile", lang)}
             </span>
@@ -234,7 +259,7 @@ export const RightPanel = () => {
       )}
 
       {/* 网页阅读 tab */}
-      {tab === "browse" && (
+      {tab === "web" && (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-1.5 border-b border-line p-2">
             <input
@@ -272,8 +297,26 @@ export const RightPanel = () => {
           </div>
         </div>
       )}
+
+      {tab === "changes" && <ChangesPanel active />}
+
+      {tab === "run" && (
+        <Suspense fallback={<PanelLoading />}>
+          <Terminal embedded />
+        </Suspense>
+      )}
+
+      {tab === "trace" && (
+        <Suspense fallback={<PanelLoading />}>
+          <ExecutionGraph embedded />
+        </Suspense>
+      )}
     </aside>
   )
+}
+
+function PanelLoading() {
+  return <div className="flex flex-1 items-center justify-center p-4 text-[11px] text-ink3">…</div>
 }
 
 /** 行号 + 高亮的精简文件预览（与文件查看器一致） */
