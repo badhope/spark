@@ -315,3 +315,60 @@ async def test_rerun_single_node_resets_downstream() -> None:
     assert second.statuses["c"] == "pending"
     assert second.statuses["side"] == "completed"
     assert "b" not in second.outputs and "c" not in second.outputs
+
+
+@pytest.mark.asyncio
+async def test_budget_marks_pending_steps_exceeded() -> None:
+    from spark.workflow import RoleSpec, StepSpec, WorkflowSpec, run_workflow
+
+    spec = WorkflowSpec(
+        name="budget",
+        version=1,
+        description="",
+        roles={"r": RoleSpec(name="r")},
+        steps=(
+            StepSpec(id="a", role="r", prompt="a"),
+            StepSpec(id="b", role="r", prompt="b", needs=("a",)),
+        ),
+    )
+    spent = {"usd": 0.0}
+
+    async def runner(step, deps):
+        spent["usd"] += 0.6
+        return "ok"
+
+    run = await run_workflow(
+        spec,
+        runner,
+        cost_limit_usd=0.5,
+        cost_getter=lambda: spent["usd"],
+    )
+    assert run.statuses["a"] == "completed"
+    assert run.statuses["b"] == "budget-exceeded"
+    assert any(e["type"] == "run_budget_exceeded" for e in run.events)
+
+
+@pytest.mark.asyncio
+async def test_agent_adapter_reports_cost() -> None:
+    from types import SimpleNamespace
+
+    from spark.workflow import AgentWorkflowRunner, RoleSpec, StepSpec, WorkflowSpec
+
+    class FakeLoop:
+        async def spawn_subtask(self, prompt, **kwargs):
+            yield SimpleNamespace(
+                type="turn_end",
+                text="done",
+                data={"cost_usd": 0.0123, "input_tokens": 10},
+            )
+
+    spec = WorkflowSpec(
+        name="cost",
+        version=1,
+        description="",
+        roles={"r": RoleSpec(name="r")},
+        steps=(StepSpec(id="a", role="r", prompt="a"),),
+    )
+    runner = AgentWorkflowRunner(FakeLoop(), spec)
+    assert await runner(spec.steps[0], {}) == "done"
+    assert runner.total_cost_usd == 0.0123

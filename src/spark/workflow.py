@@ -303,6 +303,7 @@ class WorkflowRun:
     statuses: dict[str, str] = field(default_factory=dict)
     outputs: dict[str, str] = field(default_factory=dict)
     errors: dict[str, str] = field(default_factory=dict)
+    costs: dict[str, float] = field(default_factory=dict)
     events: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -321,6 +322,10 @@ class WorkflowRun:
     def paused(self) -> bool:
         return any(state == "paused" for state in self.statuses.values())
 
+    @property
+    def cost_usd(self) -> float:
+        return round(sum(self.costs.values()), 6)
+
     def graph(self) -> dict[str, Any]:
         return self.spec.graph(self.statuses)
 
@@ -332,6 +337,8 @@ class WorkflowRun:
             "statuses": dict(self.statuses),
             "outputs": dict(self.outputs),
             "errors": dict(self.errors),
+            "costs": dict(self.costs),
+            "cost_usd": self.cost_usd,
             "events": list(self.events),
             "graph": self.graph(),
         }
@@ -352,7 +359,10 @@ class WorkflowRun:
             step_id: str(raw_statuses.get(step_id, "pending"))
             for step_id in known
         }
-        allowed = {"pending", "running", "completed", "failed", "blocked", "cancelled", "paused"}
+        allowed = {
+            "pending", "running", "completed", "failed", "blocked",
+            "cancelled", "paused", "budget-exceeded",
+        }
         bad = [f"{name}={state}" for name, state in statuses.items() if state not in allowed]
         if bad:
             raise WorkflowError("未知状态: " + ", ".join(bad))
@@ -360,11 +370,18 @@ class WorkflowRun:
         errors = data.get("errors") or {}
         if not isinstance(outputs, dict) or not isinstance(errors, dict):
             raise WorkflowError("outputs/errors 必须是对象")
+        raw_costs = data.get("costs") or {}
+        if not isinstance(raw_costs, dict):
+            raise WorkflowError("costs 必须是对象")
         return cls(
             spec=spec,
             statuses=statuses,
             outputs={str(k): str(v) for k, v in outputs.items() if k in known},
             errors={str(k): str(v) for k, v in errors.items() if k in known},
+            costs={
+                str(k): float(v) for k, v in raw_costs.items()
+                if k in known and isinstance(v, (int, float))
+            },
             events=list(data.get("events") or []),
         )
 
@@ -380,6 +397,7 @@ def prepare_resume(run: WorkflowRun) -> WorkflowRun:
         spec=run.spec,
         statuses=statuses,
         outputs={name: run.outputs[name] for name in completed if name in run.outputs},
+        costs={name: run.costs[name] for name in completed if name in run.costs},
         events=list(run.events),
     )
 
@@ -400,15 +418,18 @@ def rerun_steps(run: WorkflowRun, step_ids: set[str]) -> WorkflowRun:
     statuses = dict(run.statuses)
     outputs = dict(run.outputs)
     errors = dict(run.errors)
+    costs = dict(run.costs)
     for step_id in affected:
         statuses[step_id] = "pending"
         outputs.pop(step_id, None)
         errors.pop(step_id, None)
+        costs.pop(step_id, None)
     return WorkflowRun(
         spec=run.spec,
         statuses=statuses,
         outputs=outputs,
         errors=errors,
+        costs=costs,
         events=list(run.events),
     )
 
@@ -422,7 +443,10 @@ async def run_workflow(
     cancel: Any = None,
     initial_outputs: dict[str, str] | None = None,
     initial_statuses: dict[str, str] | None = None,
+    initial_costs: dict[str, float] | None = None,
     stop_after: set[str] | None = None,
+    cost_limit_usd: float = 0.0,
+    cost_getter: Any = None,
     on_event: Any = None,
 ) -> WorkflowRun:
     """Execute a validated DAG with bounded concurrency and per-step retries.
@@ -440,6 +464,7 @@ async def run_workflow(
         spec=spec,
         statuses={step.id: initial.get(step.id, "pending") for step in spec.steps},
         outputs=dict(initial_outputs or {}),
+        costs=dict(initial_costs or {}),
     )
     pending = {
         step.id for step in spec.steps if run.statuses.get(step.id) != "completed"
@@ -518,6 +543,22 @@ async def run_workflow(
             ):
                 run.statuses[step.id] = "blocked"
                 pending.discard(step.id)
+        if cost_limit_usd > 0:
+            spent = (
+                float(cost_getter())
+                if callable(cost_getter)
+                else run.cost_usd
+            )
+            if spent >= float(cost_limit_usd):
+                for name in sorted(pending):
+                    run.statuses[name] = "budget-exceeded"
+                emit(
+                    "run_budget_exceeded",
+                    spec.steps[0],
+                    spent=round(spent, 6),
+                    limit=round(float(cost_limit_usd), 6),
+                )
+                break
         hit = [step for step in spec.steps if step.id in stop_after]
         if hit and pending and any(run.statuses.get(step.id) == "completed" for step in hit):
             for name in sorted(pending):
@@ -552,6 +593,11 @@ class AgentWorkflowRunner:
         self.spec = spec
         self.agents = agents or {}
         self.on_event = on_event
+        self.costs: dict[str, float] = {}
+
+    @property
+    def total_cost_usd(self) -> float:
+        return round(sum(self.costs.values()), 6)
 
     def __call__(self, step: StepSpec, deps: dict[str, str]) -> Any:
         return self._run(step, deps)
@@ -573,6 +619,11 @@ class AgentWorkflowRunner:
         async for event in self.loop.spawn_subtask(prompt, **kwargs):
             if event.type == "turn_end":
                 final = event.text or final
+                usage = getattr(event, "data", None)
+                if isinstance(usage, dict):
+                    cost = usage.get("cost_usd")
+                    if isinstance(cost, (int, float)):
+                        self.costs[step.id] = round(float(cost), 6)
             elif self.on_event is not None and event.type in {
                 "tool_start", "tool_end", "plan", "approval_needed"
             }:

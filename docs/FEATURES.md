@@ -19,7 +19,7 @@
 | 浏览器操作 | `tools/browser.py` | `browser_open/click/type/scroll/wait/screenshot/viewport`：Playwright 后台线程持有页面；只允许公网 http(s) 或工作目录内 `file://`；页面文本进 untrusted 围栏；截图落 `.spark/browser/` |
 | PR 审查上下文 | `pr.py` + `tools/pr_tools.py` | `pr_context` / `pr_view` / `pr_diff` / `pr_checks` / `pr_review`；GitHub / GitCode / Gitee REST，origin 自动解析，平台 token 可选；CLI `spark pr view/diff/checks/review`，`spark pr publish --confirm` 才写评论；review brief 给风险、测试缺口与 CI 清单；PR 文本进 untrusted 围栏 |
 | 接第三方能力 | `tools/mcp_bridge.py` | stdio / sse / streamable_http 三种传输；也可从内置 registry 一键添加，工具以 `mcp__<server>__<tool>` 出现 |
-| 多 Agent 工作流 | `workflow.py` + `spark workflow` | YAML roles/steps/DAG 校验、拓扑顺序、`workflow graph`；`WorkspaceLocks` 跨进程路径锁；`run_workflow` 有界并发、重试、失败阻断与取消；`AgentWorkflowRunner` + `spark workflow run` 已接 AgentLoop 子代理；状态 JSON、暂停续跑、单节点重跑、Web 执行图读取最近运行 |
+| 多 Agent 工作流 | `workflow.py` + `spark workflow` | YAML roles/steps/DAG 校验、拓扑顺序、`workflow graph`；`WorkspaceLocks` 跨进程路径锁；`run_workflow` 有界并发、重试、失败阻断与取消；`AgentWorkflowRunner` + `spark workflow run` 已接 AgentLoop 子代理；状态 JSON、暂停续跑、单节点重跑、Web 执行图读取最近运行；子代理 usage/cost 回传、`--max-cost-usd` 成本上限 |
 | 子代理并行 | `core/loop.py:spawn_subtasks_parallel` | 模型调用 `task`，最多 4 路并行 |
 | 声明式专家代理 | `agents.py` + `.claude/agents/*.md` | 放一个 md 文件即多一个可委派的专家 |
 | 项目技能 | `skills.py` + `.spark/skills/*.md` | 放文件即生效，模型按需 `load_skill`；设置→技能可增删改 |

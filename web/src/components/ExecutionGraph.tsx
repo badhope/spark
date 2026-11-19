@@ -155,7 +155,7 @@ export const ExecutionGraph = memo(function ExecutionGraph() {
         if (cancelled) return
         const status = (raw: string): ExecutionNode["status"] => {
           if (raw === "completed" || raw === "done") return "done"
-          if (raw === "failed" || raw === "blocked" || raw === "cancelled") return "error"
+          if (raw === "failed" || raw === "blocked" || raw === "cancelled" || raw === "budget-exceeded") return "error"
           if (raw === "running") return "running"
           return "pending"
         }

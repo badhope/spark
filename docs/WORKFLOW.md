@@ -6,6 +6,8 @@ W6 starts with a declaration layer that can be checked without calling a model.
 spark workflow validate examples/workflows/review.yaml
 spark workflow graph examples/workflows/review.yaml
 spark workflow run examples/workflows/review.yaml --max-parallel 2
+# 成本上限：命令行优先，未给时用 config.agent.max_session_cost_usd
+spark workflow run examples/workflows/review.yaml --max-cost-usd 2.00
 ```
 
 暂停、续跑和单节点重跑：
@@ -63,4 +65,7 @@ cross-process (`filelock`).
 - done: Web graph fallback reads `GET /api/workflow/state` from
   `.spark/workflow-runs/latest.json`; the existing Agent execution graph shows
   the latest workflow run when there is no live turn.
-- next: a real provider-backed end-to-end run and cost budgets.
+- done: per-step child usage/cost accounting; `--max-cost-usd` stops pending
+  nodes with `budget-exceeded` once the workflow total reaches the cap.
+- next: a real provider-backed end-to-end run, worktree isolation and full
+  stage-gate evidence.

@@ -519,6 +519,7 @@ async def _workflow_run_async(
     *,
     max_parallel: int,
     as_json: bool,
+    max_cost_usd: float = 0.0,
     resume: Path | None = None,
     state_out: Path | None = None,
     stop_after: set[str] | None = None,
@@ -587,7 +588,13 @@ async def _workflow_run_async(
             spec, runner, workdir=workdir, max_parallel=max_parallel,
             initial_outputs=initial.outputs if initial else None,
             initial_statuses=initial.statuses if initial else None,
-            stop_after=stop_after, on_event=emit,
+            initial_costs=initial.costs if initial else None,
+            stop_after=stop_after,
+            cost_limit_usd=(
+                max_cost_usd or float(getattr(cfg.agent, "max_session_cost_usd", 0) or 0)
+            ),
+            cost_getter=lambda: runner.total_cost_usd,
+            on_event=emit,
         )
         if state_out is not None:
             out_path = state_out if state_out.is_absolute() else workdir / state_out
@@ -2110,6 +2117,10 @@ def workflow_run_cmd(
     config: Path | None = typer.Option(None, "--config"),
     sandbox_mode: str | None = typer.Option(None, "--sandbox-mode"),
     max_parallel: int = typer.Option(2, "--max-parallel", min=1, max=8),
+    max_cost_usd: float = typer.Option(
+        0.0, "--max-cost-usd", min=0.0,
+        help="工作流总成本上限（USD，0 = 使用 config.agent.max_session_cost_usd）",
+    ),
     resume: Path | None = typer.Option(None, "--resume", help="从 state-out JSON 继续"),
     state_out: Path | None = typer.Option(
         Path(".spark/workflow-runs/latest.json"),
@@ -2137,6 +2148,7 @@ def workflow_run_cmd(
             _workflow_run_async(
                 path, workdir, cfg, store, session_id,
                 max_parallel=max_parallel, as_json=as_json,
+                max_cost_usd=max_cost_usd,
                 resume=resume, state_out=state_out,
                 stop_after=set(stop_after or ()), rerun=set(rerun or ()),
             )

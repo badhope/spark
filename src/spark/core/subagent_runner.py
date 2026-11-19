@@ -11,6 +11,14 @@ from spark.tools.registry import ToolRegistry
 logger = logging.getLogger(__name__)
 
 
+def _sub_usage(loop: Any) -> dict[str, Any] | None:
+    """Usage totals from a finished child turn, for workflow cost accounting."""
+    usage = getattr(loop, "_turn_usage_totals", None)
+    if not isinstance(usage, dict):
+        return None
+    return dict(usage)
+
+
 class SubagentRunnerMixin:
     async def spawn_subtask(
         self: Any,
@@ -83,9 +91,9 @@ class SubagentRunnerMixin:
                     final_text = event.text or ""
                 elif event.type == "turn_error":
                     final_text = f"subtask failed: {event.text}"
-                    yield TurnEvent(type="turn_end", text=final_text)
+                    yield TurnEvent(type="turn_end", text=final_text, data=_sub_usage(sub_loop))
                     return
-            yield TurnEvent(type="turn_end", text=final_text)
+            yield TurnEvent(type="turn_end", text=final_text, data=_sub_usage(sub_loop))
         finally:
             self._active_children.remove(sub_loop)
             sub_store.close()
