@@ -106,6 +106,34 @@ readonly_tools = []                  # 声明为只读的工具名（免审批�
 # timeout_sec = 30
 ```
 
+## `[plugins]` — 插件运行时
+
+安装插件本身不执行任何代码。只有同时满足两个条件，插件的 `hooks` 才会被加载：
+
+1. 插件名写入全局 `config.toml` 的 `[plugins].enabled`；
+2. manifest 声明 `hooks` 权限。
+
+```toml
+[plugins]
+enabled = ["demo"]
+```
+
+用 CLI 维护这一项（不会重写其他配置，也不会把环境变量里的密钥落盘）：
+
+```bash
+spark plugins enable demo --workdir .
+spark plugins disable demo
+```
+
+每个 hook 在独立子进程中运行，有超时、无 stdin 继承；环境变量只保留 `PATH` / `HOME` /
+`LANG` / 临时目录等基础项，不传入 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`SPARK_*`
+或其他云凭据。未声明 `shell` 权限时，hook 命令必须是插件目录内的可执行文件。
+项目级 `.spark.toml` 的 `[plugins]` 会被安全清洗丢弃——克隆仓库不能给自己授权插件。
+
+> 安全边界：`hooks` 权限等价于允许插件执行代码。当前隔离覆盖超时、stdin、环境变量和
+> 命令路径，但**不是文件系统/网络级沙箱**；权限声明也是声明式约束，不替代操作系统隔离。
+> 只安装可信来源的插件。
+
 ## `[[hooks]]` — 生命周期钩子
 
 ```toml
@@ -142,7 +170,7 @@ model = "deepseek-chat"
 
 ## 项目级配置（`.spark.toml`）
 
-放在工作目录的 `.spark.toml` 会与全局配置合并，但会经过安全清洗：provider、MCP、hooks 等可执行配置项不允许由项目文件注入（防提示注入提权）。细节见 `config.py` 的 `_sanitize_project_config`。
+放在工作目录的 `.spark.toml` 会与全局配置合并，但会经过安全清洗：provider、MCP、hooks、plugins 等可执行配置项不允许由项目文件注入（防提示注入提权）。细节见 `config.py` 的 `_sanitize_project_config`。
 
 > AI生成
 

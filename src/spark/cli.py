@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -1947,22 +1948,28 @@ def ide_install_cmd(
         typer.echo("  在 JetBrains AI Chat → 配置 ACP Agent 中选择 Spark")
 
 
-plugins_app = typer.Typer(help="工作区插件（清单/校验/本地安装/卸载）", no_args_is_help=True)
+plugins_app = typer.Typer(help="工作区插件（清单/校验/安装/卸载/启用/停用）", no_args_is_help=True)
 app.add_typer(plugins_app, name="plugins")
 
 
 @plugins_app.command("list", help="列出 .spark/plugins 下的插件与清单状态")
 def plugins_list_cmd(
     workdir: Path = typer.Option(Path("."), "--workdir"),
+    config: Path | None = typer.Option(None, "--config"),
     json_output: bool = typer.Option(False, "--json", help="输出 JSON"),
 ) -> None:
     from spark.plugins import record_to_dict, scan_plugins
 
     records = scan_plugins(workdir.resolve())
+    enabled = _enabled_plugin_names(config)
     if json_output:
         import json
 
-        typer.echo(json.dumps([record_to_dict(r) for r in records], ensure_ascii=False))
+        payload = [
+            {**record_to_dict(record), "enabled": record.name in enabled}
+            for record in records
+        ]
+        typer.echo(json.dumps(payload, ensure_ascii=False))
         return
     if not records:
         typer.echo("没有插件。")
@@ -1970,7 +1977,8 @@ def plugins_list_cmd(
     for record in records:
         version = record.manifest.version if record.manifest else "-"
         status = record.error or "ok"
-        typer.echo(f"{record.name}\t{version}\t{status}\t{record.path}")
+        active = "enabled" if record.name in enabled else "-"
+        typer.echo(f"{record.name}\t{version}\t{status}\t{active}\t{record.path}")
 
 
 @plugins_app.command("validate", help="校验一个插件目录或 manifest")
@@ -2021,6 +2029,105 @@ def plugins_remove_cmd(
         typer.echo(str(exc), err=True)
         raise typer.Exit(2) from exc
     typer.echo(f"✓ {name} -> {target}")
+
+
+def _enabled_plugin_names(config: Path | None = None) -> set[str]:
+    import tomlkit
+
+    from spark.config import default_home
+
+    path = config or (default_home() / "config.toml")
+    if not path.exists():
+        return set()
+    try:
+        doc = tomlkit.parse(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - listing must not fail on a broken config
+        return set()
+    plugins = doc.get("plugins")
+    if plugins is None or not hasattr(plugins, "get"):
+        return set()
+    names = plugins.get("enabled")
+    if not isinstance(names, list):
+        return set()
+    return {str(item) for item in names}
+
+
+def _set_plugin_enabled(name: str, enabled: bool, config: Path | None) -> Path:
+    """Update ``[plugins] enabled`` without loading/saving unrelated secrets."""
+    import tomlkit
+
+    from spark.config import default_home
+
+    path = config or (default_home() / "config.toml")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        try:
+            doc = tomlkit.parse(path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001 - keep the user's file intact
+            raise ConfigError(f"配置文件无法解析：{path}") from exc
+    else:
+        doc = tomlkit.document()
+    plugins = doc.get("plugins")
+    if plugins is None:
+        plugins = tomlkit.table()
+        doc["plugins"] = plugins
+    if not hasattr(plugins, "get"):
+        raise ConfigError("[plugins] 必须是表")
+    names = plugins.get("enabled")
+    if names is None:
+        names = tomlkit.array()
+        plugins["enabled"] = names
+    if not isinstance(names, list):
+        raise ConfigError("[plugins] enabled 必须是数组")
+    current = [str(item) for item in names]
+    if enabled:
+        if name not in current:
+            current.append(name)
+    elif name in current:
+        current.remove(name)
+    names.clear()
+    for item in current:
+        names.append(item)
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    if os.name != "nt":
+        try:
+            path.chmod(0o600)
+        except OSError:
+            pass
+    return path
+
+
+@plugins_app.command("enable", help="启用插件的 hook（写入全局 config.toml 的 plugins.enabled）")
+def plugins_enable_cmd(
+    name: str = typer.Argument(..., help="插件 name"),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    config: Path | None = typer.Option(None, "--config"),
+) -> None:
+    from spark.plugins import scan_plugins
+
+    if name not in {record.name for record in scan_plugins(workdir.resolve())}:
+        typer.echo(f"插件未安装：{name}（先运行 spark plugins install）", err=True)
+        raise typer.Exit(2)
+    try:
+        path = _set_plugin_enabled(name, True, config)
+    except ConfigError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"✓ 已启用 {name} -> {path}")
+    typer.echo("提示：插件需声明 hooks 权限，重启会话后生效。")
+
+
+@plugins_app.command("disable", help="停用插件 hook（从全局 config.toml 的 plugins.enabled 移除）")
+def plugins_disable_cmd(
+    name: str = typer.Argument(..., help="插件 name"),
+    config: Path | None = typer.Option(None, "--config"),
+) -> None:
+    try:
+        path = _set_plugin_enabled(name, False, config)
+    except ConfigError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"✓ 已停用 {name} -> {path}")
 
 
 config_app = typer.Typer(help="查看或修改配置", no_args_is_help=True)

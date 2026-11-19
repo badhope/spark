@@ -149,3 +149,17 @@ def test_provider_summary_mapping() -> None:
     assert out[0]["role"] == "user"
     assert "<conversation_summary>" in out[0]["content"]
     assert out[1] == {"role": "user", "content": "hi"}
+
+
+def test_tiktoken_offline_uses_heuristic(monkeypatch, tmp_path) -> None:
+    import tiktoken
+
+    from spark.core.tokens import _encoding_for
+
+    _encoding_for.cache_clear()
+    monkeypatch.setenv("TIKTOKEN_CACHE_DIR", str(tmp_path / "empty-cache"))
+    monkeypatch.setattr(
+        tiktoken, "get_encoding", lambda name: (_ for _ in ()).throw(AssertionError(name))
+    )
+    assert _encoding_for("gpt-4o") is None
+    _encoding_for.cache_clear()

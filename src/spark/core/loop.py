@@ -121,6 +121,22 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
         self.hooks = HookRegistry.from_config(
             [hook.model_dump() for hook in getattr(cfg, "hooks", [])], workdir
         )
+        # Plugins are opt-in. Installation alone is inert; only names in
+        # cfg.plugins.enabled with the "hooks" permission get a subprocess.
+        self.plugin_hook_issues: list[str] = []
+        plugin_names = list(
+            getattr(getattr(cfg, "plugins", None), "enabled", []) or []
+        )
+        if plugin_names:
+            try:
+                from spark.plugins import build_plugin_hooks
+
+                bindings, issues = build_plugin_hooks(plugin_names, workdir)
+                for binding in bindings:
+                    self.hooks.register(binding.event, binding.hook)
+                self.plugin_hook_issues = issues
+            except Exception as exc:  # noqa: BLE001 - a plugin must not kill the loop
+                self.plugin_hook_issues = [f"plugin runtime: {exc}"]
         # Lazy: spark.core.compact pulls litellm + llama_index (~1.7 s of import
         # time) and is only needed when a turn actually has to compact.
         self._compactor: Any = None

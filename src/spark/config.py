@@ -239,6 +239,12 @@ class ModelProfile(BaseModel):
     small_model: str = ""
 
 
+class PluginsConfig(BaseModel):
+    """Explicit plugin opt-in. Installation alone never executes code."""
+
+    enabled: list[str] = Field(default_factory=list)
+
+
 class HookConfig(BaseModel):
     event: str = "pre_tool"
     command: str = ""
@@ -355,6 +361,7 @@ class SparkConfig(BaseSettings):
     mcp_servers: list[McpServerConfig] = Field(default_factory=list)
     model_profiles: list[ModelProfile] = Field(default_factory=list)
     hooks: list[HookConfig] = Field(default_factory=list)
+    plugins: PluginsConfig = Field(default_factory=PluginsConfig)
     permission_rules: list[PermissionRule] = Field(default_factory=list)
     replay: ReplayConfig = Field(default_factory=ReplayConfig)
     updater: UpdaterConfig = Field(default_factory=UpdaterConfig)
@@ -573,6 +580,9 @@ def _sanitize_project_config(raw: dict[str, Any]) -> dict[str, Any]:
     clean.pop("mcp_servers", None)
     clean.pop("mcp", None)
     clean.pop("hooks", None)
+    # A cloned repository must not opt itself into plugin hooks; enabling a
+    # plugin is a user-level decision, not project-level input.
+    clean.pop("plugins", None)
     clean.pop("model_profiles", None)
     clean.pop("permission_rules", None)
     provider = clean.get("provider")
@@ -998,6 +1008,12 @@ def _model_profiles_aot(cfg: SparkConfig) -> tomlkit.items.AoT | None:
     return prof_aot
 
 
+def _plugins_table(cfg: SparkConfig) -> tomlkit.items.Table:
+    table = tomlkit.table()
+    table.add("enabled", list(cfg.plugins.enabled))
+    return table
+
+
 def _hooks_aot(cfg: SparkConfig) -> tomlkit.items.AoT | None:
     if not cfg.hooks:
         return None
@@ -1077,6 +1093,8 @@ def save_config(cfg: SparkConfig, path: Path | None = None) -> Path:
     hooks = _hooks_aot(cfg)
     if hooks is not None:
         doc.add("hooks", hooks)
+    # [plugins]
+    doc.add("plugins", _plugins_table(cfg))
     # [[permission_rules]]
     rules = _permission_rules_aot(cfg)
     if rules is not None:

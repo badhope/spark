@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,7 +32,7 @@ from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from spark.errors import PluginError
-from spark.hooks import SHELL_METACHARACTERS, HookRegistry
+from spark.hooks import SHELL_METACHARACTERS, HookRegistry, ShellHook
 
 MANIFEST_NAME = "spark-plugin.json"
 LEGACY_MANIFEST_NAME = "plugin.json"
@@ -188,6 +189,38 @@ class PluginManifest(BaseModel):
         return list(dict.fromkeys(value))
 
 
+#: A plugin subprocess gets a deliberately tiny environment. It must never see
+#: provider API keys, SPARK_* overrides, cloud credentials or the user's shell
+#: startup files. PATH is needed for shebangs (``/usr/bin/env python3``).
+SAFE_ENV_KEYS = (
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "SystemRoot",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+)
+
+
+@dataclass(frozen=True)
+class PluginHookBinding:
+    event: str
+    plugin: str
+    hook: ShellHook
+
+
 @dataclass(frozen=True)
 class PluginRecord:
     name: str
@@ -213,6 +246,92 @@ def record_to_dict(record: PluginRecord) -> dict[str, Any]:
         "legacy": record.legacy,
         "error": record.error,
     }
+
+
+def sanitized_env() -> dict[str, str]:
+    """Return only benign process variables for plugin subprocesses."""
+    return {key: os.environ[key] for key in SAFE_ENV_KEYS if key in os.environ}
+
+
+def _plugin_command(
+    record: PluginRecord,
+    hook: PluginHook,
+    permissions: list[str],
+    issues: list[str],
+) -> str | None:
+    if "shell" in permissions:
+        return hook.command
+    raw = hook.command.strip().replace("\\", "/")
+    if raw.startswith("/") or raw.startswith("../") or "/../" in raw:
+        issues.append(
+            f"plugin {record.name}: hook 命令必须位于插件目录内（或声明 shell 权限）: {hook.command}"
+        )
+        return None
+    target = (record.path / raw).resolve()
+    try:
+        target.relative_to(record.path.resolve())
+    except ValueError:
+        issues.append(f"plugin {record.name}: hook 命令逃出插件目录: {hook.command}")
+        return None
+    if not target.is_file():
+        issues.append(f"plugin {record.name}: hook 命令不存在: {hook.command}")
+        return None
+    if os.name != "nt" and not os.access(target, os.X_OK):
+        issues.append(
+            f"plugin {record.name}: hook 命令不可执行（chmod +x）: {hook.command}"
+        )
+        return None
+    return str(target)
+
+
+def build_plugin_hooks(
+    enabled: Sequence[str], workdir: Path
+) -> tuple[list[PluginHookBinding], list[str]]:
+    """Build executable hook bindings for explicitly enabled plugins.
+
+    Deny-by-default: a plugin must be named in ``plugins.enabled`` *and* declare
+    the ``hooks`` permission. Every hook then runs in its own subprocess with a
+    timeout, no stdin inheritance and a sanitised environment. Issues are
+    returned instead of raised so one bad plugin cannot stop the agent loop.
+    """
+    selected = {str(name).strip() for name in enabled if str(name).strip()}
+    records = {record.name: record for record in scan_plugins(workdir)}
+    bindings: list[PluginHookBinding] = []
+    issues: list[str] = []
+    for name in sorted(selected):
+        record = records.get(name)
+        if record is None:
+            issues.append(f"plugin {name}: 未安装或清单不匹配")
+            continue
+        if record.manifest is None or record.error:
+            issues.append(f"plugin {name}: {record.error or 'manifest 无效，已跳过'}")
+            continue
+        if record.legacy:
+            issues.append(f"plugin {name}: 旧 plugin.json 已跳过，请迁移到 {MANIFEST_NAME}")
+            continue
+        permissions = record.manifest.permissions
+        if "hooks" not in permissions:
+            issues.append(f"plugin {name}: 未声明 hooks 权限，已拒绝加载 hook")
+            continue
+        for hook in record.manifest.hooks:
+            command = _plugin_command(record, hook, permissions, issues)
+            if command is None:
+                continue
+            bindings.append(
+                PluginHookBinding(
+                    event=hook.event,
+                    plugin=name,
+                    hook=ShellHook(
+                        name=f"plugin:{name}:{hook.name or hook.event}",
+                        command=[command, *hook.args],
+                        cwd=record.path,
+                        timeout=hook.timeout_sec,
+                        on_deny=hook.on_deny,
+                        env=sanitized_env(),
+                    ),
+                )
+            )
+    return bindings, issues
 
 
 def _utc_stamp() -> str:

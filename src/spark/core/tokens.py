@@ -7,7 +7,10 @@ CJK heuristic is only used when neither tokenizer is importable.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import tempfile
 from functools import lru_cache
 
 from spark.models import ChatMessage
@@ -27,22 +30,62 @@ def _heuristic_estimate(text: str) -> int:
     return cjk + (other + 3) // 4
 
 
+#: tiktoken downloads its BPE table on first use. ``requests`` has no timeout
+#: there, so an offline machine can hang for minutes on a token estimate. We
+#: only construct an encoding whose blob is already cached; otherwise the
+#: CJK/ASCII heuristic is used. LiteLLM still owns exact counts for known
+#: models, so this only affects the offline fallback path.
+_TIKTOKEN_URLS = {
+    "o200k_base": "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken",
+    "cl100k_base": "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken",
+    "p50k_base": "https://openaipublic.blob.core.windows.net/encodings/p50k_base.tiktoken",
+    "p50k_edit": "https://openaipublic.blob.core.windows.net/encodings/p50k_edit.tiktoken",
+    "r50k_base": "https://openaipublic.blob.core.windows.net/encodings/r50k_base.tiktoken",
+    "gpt2": "https://openaipublic.blob.core.windows.net/encodings/r50k_base.tiktoken",
+}
+
+
+def _tiktoken_cache_dir() -> str:
+    return (
+        os.environ.get("TIKTOKEN_CACHE_DIR")
+        or os.environ.get("DATA_GYM_CACHE_DIR")
+        or os.path.join(tempfile.gettempdir(), "data-gym-cache")
+    )
+
+
+def _tiktoken_blob_cached(name: str) -> bool:
+    url = _TIKTOKEN_URLS.get(name)
+    if not url:
+        return False
+    cache_dir = _tiktoken_cache_dir()
+    if not cache_dir:
+        return False
+    cache_key = hashlib.sha1(url.encode(), usedforsecurity=False).hexdigest()
+    return os.path.isfile(os.path.join(cache_dir, cache_key))
+
+
 @lru_cache(maxsize=16)
 def _encoding_for(model: str | None):
-    """Return a cached tiktoken encoding, or None when tiktoken is unavailable."""
+    """Return a cached tiktoken encoding, or None when unavailable/offline."""
     try:
         import tiktoken
     except Exception:  # pragma: no cover - optional dependency
         return None
+    name = "o200k_base"
     if model:
         try:
-            return tiktoken.encoding_for_model(model)
+            name = tiktoken.encoding_name_for_model(model)
         except Exception:
             # Unknown vendor/model names are normal here (deepseek-chat,
             # qwen3-coder, ...); fall through to the general encoding.
-            pass
+            name = "o200k_base"
+    if not _tiktoken_blob_cached(name):
+        if name == "o200k_base" and _tiktoken_blob_cached("cl100k_base"):
+            name = "cl100k_base"
+        else:
+            return None
     try:
-        return tiktoken.get_encoding("o200k_base")
+        return tiktoken.get_encoding(name)
     except Exception:  # pragma: no cover - corrupt install
         return None
 

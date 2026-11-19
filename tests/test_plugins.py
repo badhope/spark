@@ -173,3 +173,190 @@ def test_cli_plugin_lifecycle(tmp_path: Path) -> None:
     removed = runner.invoke(app, ["plugins", "remove", "demo", "--workdir", str(workdir)])
     assert removed.exit_code == 0
     assert not (workdir / ".spark" / "plugins" / "demo").exists()
+
+
+# --- W4-b: permission gate and subprocess hook execution -------------------
+
+
+def test_build_hooks_requires_explicit_enable(tmp_path: Path) -> None:
+    from spark.plugins import build_plugin_hooks
+
+    source = _write_plugin(tmp_path, hooks=[{"event": "pre_tool", "command": "run.py"}])
+    workdir = tmp_path / "work"
+    install_local(source, workdir)
+    bindings, issues = build_plugin_hooks([], workdir)
+    assert bindings == []
+    assert issues == []
+    assert build_plugin_hooks(["missing"], workdir)[1]
+
+
+def test_build_hooks_rejects_missing_hooks_permission(tmp_path: Path) -> None:
+    from spark.plugins import build_plugin_hooks
+
+    source = _write_plugin(
+        tmp_path,
+        permissions=["files:read"],
+        hooks=[{"event": "pre_tool", "command": "run.py"}],
+    )
+    workdir = tmp_path / "work"
+    install_local(source, workdir)
+    bindings, issues = build_plugin_hooks(["demo"], workdir)
+    assert bindings == []
+    assert any("hooks 权限" in issue for issue in issues)
+
+
+def test_build_hooks_rejects_escape_command(tmp_path: Path) -> None:
+    from spark.plugins import build_plugin_hooks
+
+    source = _write_plugin(
+        tmp_path,
+        permissions=["hooks"],
+        hooks=[{"event": "pre_tool", "command": "../outside.sh"}],
+    )
+    workdir = tmp_path / "work"
+    install_local(source, workdir)
+    bindings, issues = build_plugin_hooks(["demo"], workdir)
+    assert bindings == []
+    assert any("逃出" in issue or "位于插件目录" in issue for issue in issues)
+
+
+def test_plugin_hook_runs_with_sanitized_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from spark.hooks import HookRegistry
+    from spark.plugins import build_plugin_hooks
+
+    source = _write_plugin(
+        tmp_path,
+        permissions=["hooks"],
+        hooks=[{"event": "pre_tool", "command": "hook.py"}],
+    )
+    (source / "hook.py").write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, sys\n"
+        "for key in ('OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'TEST_SECRET', 'SPARK_HOME'):\n"
+        "    if os.environ.get(key):\n"
+        "        print('leaked: ' + key)\n"
+        "        sys.exit(1)\n"
+        "sys.exit(0)\n"
+    )
+    (source / "hook.py").chmod(0o755)
+    workdir = tmp_path / "work"
+    install_local(source, workdir)
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+    monkeypatch.setenv("TEST_SECRET", "secret")
+    bindings, issues = build_plugin_hooks(["demo"], workdir)
+    assert issues == []
+    assert len(bindings) == 1
+    registry = HookRegistry()
+    registry.register(bindings[0].event, bindings[0].hook)
+    decision = registry.notify("pre_tool", {"tool": "read_file"})
+    assert decision.allow, decision.reason
+
+
+def test_sanitized_env_excludes_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    from spark.plugins import sanitized_env
+
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+    monkeypatch.setenv("PATH", "/usr/bin")
+    env = sanitized_env()
+    assert "OPENAI_API_KEY" not in env
+    assert env["PATH"] == "/usr/bin"
+
+
+def test_project_config_cannot_enable_plugins() -> None:
+    from spark.config import _sanitize_project_config
+
+    clean = _sanitize_project_config(
+        {"plugins": {"enabled": ["evil"]}, "hooks": [{"event": "pre_tool"}]}
+    )
+    assert "plugins" not in clean
+    assert "hooks" not in clean
+
+
+def test_plugins_config_roundtrip(tmp_path: Path) -> None:
+    from spark.config import SparkConfig, load_config, save_config
+
+    cfg = SparkConfig()
+    cfg.plugins.enabled = ["demo"]
+    path = tmp_path / "config.toml"
+    save_config(cfg, path)
+    text = path.read_text()
+    assert "[plugins]" in text
+    loaded = load_config(config_path=path, workdir=tmp_path)
+    assert loaded.plugins.enabled == ["demo"]
+
+
+def test_plugin_hook_crash_becomes_deny(tmp_path: Path) -> None:
+    from spark.hooks import HookRegistry
+    from spark.plugins import build_plugin_hooks
+
+    source = _write_plugin(
+        tmp_path,
+        permissions=["hooks"],
+        hooks=[{"event": "pre_tool", "command": "crash.sh"}],
+    )
+    (source / "crash.sh").write_text("#!/bin/sh\nexit 7\n")
+    (source / "crash.sh").chmod(0o755)
+    workdir = tmp_path / "work"
+    install_local(source, workdir)
+    bindings, issues = build_plugin_hooks(["demo"], workdir)
+    assert issues == []
+    registry = HookRegistry()
+    registry.register(bindings[0].event, bindings[0].hook)
+    decision = registry.notify("pre_tool", {"tool": "read_file"})
+    assert not decision.allow
+    assert "plugin:demo" in decision.reason
+
+
+def test_plugin_enable_preserves_other_config(tmp_path: Path) -> None:
+    import tomlkit
+
+    from spark.cli import _set_plugin_enabled
+
+    path = tmp_path / "config.toml"
+    path.write_text('[provider]\nname = "mock"\n\n[plugins]\nenabled = ["old"]\n')
+    _set_plugin_enabled("demo", True, path)
+    doc = tomlkit.parse(path.read_text())
+    assert doc["provider"]["name"] == "mock"
+    assert doc["plugins"]["enabled"] == ["old", "demo"]
+    _set_plugin_enabled("old", False, path)
+    assert doc["plugins"]["enabled"] == ["old", "demo"]  # this doc is a snapshot
+    reloaded = tomlkit.parse(path.read_text())
+    assert reloaded["plugins"]["enabled"] == ["demo"]
+
+
+def test_agent_loop_registers_enabled_plugin_hook(tmp_path: Path) -> None:
+    from spark.config import SparkConfig
+    from spark.core.loop import AgentLoop
+    from spark.sandbox import WorkdirSandbox
+    from spark.store import SessionStore
+    from spark.tools.registry import ToolContext, ToolRegistry
+
+    source = _write_plugin(
+        tmp_path,
+        permissions=["hooks"],
+        hooks=[{"event": "pre_tool", "command": "hook.sh"}],
+    )
+    (source / "hook.sh").write_text("#!/bin/sh\nexit 0\n")
+    (source / "hook.sh").chmod(0o755)
+    workdir = tmp_path / "work"
+    install_local(source, workdir)
+    cfg = SparkConfig()
+    cfg.provider.name = "mock"
+    cfg.plugins.enabled = ["demo"]
+    ctx = ToolContext(sandbox=WorkdirSandbox(workdir), config=cfg)
+    store = SessionStore(tmp_path / "w4b.db")
+    sid = store.create_session(workdir, "mock")
+    loop = AgentLoop(
+        workdir=workdir,
+        cfg=cfg,
+        provider=None,
+        registry=ToolRegistry(ctx),
+        store=store,
+        session_id=sid,
+    )
+    names = [hook.name for hook in loop.hooks._hooks["pre_tool"]]
+    assert "plugin:demo:pre_tool" in names
+    assert loop.plugin_hook_issues == []
+    store.close()

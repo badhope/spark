@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -34,12 +35,16 @@ class ShellHook:
         cwd: Path,
         timeout: int = 15,
         on_deny: str = "block",
+        env: Mapping[str, str] | None = None,
     ) -> None:
         self.name = name
         self.command = command
         self.cwd = cwd
         self.timeout = timeout
         self.on_deny = on_deny
+        # ``None`` keeps the historical inherit-parent behaviour for user
+        # hooks. Plugin hooks pass a sanitised environment explicitly.
+        self.env = dict(env) if env is not None else None
 
     def run(self, payload: dict[str, Any]) -> HookDecision:
         try:
@@ -48,6 +53,7 @@ class ShellHook:
                 cwd=self.cwd,
                 input_text=json.dumps(payload, ensure_ascii=False),
                 timeout=self.timeout,
+                env=self.env,
                 shell=False,
             )
         except OSError as exc:

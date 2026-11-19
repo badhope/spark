@@ -37,7 +37,7 @@
 | M30 | 评测与可观测 | `evals/`、`otel.py` | eval runner / OTel span | `test_evals*`、`test_otel*` | badhope | 演进中（覆盖不足） |
 | M31 | 发布 / 文档 / 品牌 | `updater.py`、`deploy/`、`docs/`、`brand/`、`.github/` | 包 / 升级 / CI / 品牌 | CI、打包冒烟 | badhope | 演进中 |
 | M32 | 代码智能 / LSP | `src/spark/lsp/`（client / servers / manager / workspace / impact / tools） | LSP definition/references/hover/symbols/diagnostics/rename/code action；`affected_tests` | `tests/test_lsp_tools.py`（12 项，含 fake stdio server、dry-run/落盘、跨文件、降级、沙箱、六语言探测） | badhope | 稳定 |
-| M33 | 插件运行时 | `plugins.py`、`spark plugins` | manifest 校验/发现/本地安装/卸载；只读 Web 列表；暂不执行插件代码 | `tests/test_plugins.py`（17 项） | badhope | 演进中（W4-a 完成；执行/市场未接） |
+| M33 | 插件运行时 | `plugins.py`、`spark plugins` | manifest 校验/发现/本地安装/卸载；`[plugins].enabled` + `hooks` 权限门；hook 独立子进程（超时/无 stdin/环境变量清洗）；只读 Web 列表 | `tests/test_plugins.py`（27 项） | badhope | 演进中（W4-a/W4-b 完成；tools/commands/市场未接） |
 
 ## 契约规则
 
