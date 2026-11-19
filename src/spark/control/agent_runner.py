@@ -123,7 +123,7 @@ class ControlAgentRunner:
             "control_agent_run session=%s status=%s events=%d chars=%d",
             sid,
             status,
-            len(events),
+            event_count,
             len(text),
         )
         return ControlRunResult(
