@@ -8,6 +8,8 @@ spark workflow graph examples/workflows/review.yaml
 spark workflow run examples/workflows/review.yaml --max-parallel 2
 # 成本上限：命令行优先，未给时用 config.agent.max_session_cost_usd
 spark workflow run examples/workflows/review.yaml --max-cost-usd 2.00
+# 整次运行放进独立 Git worktree，主树零触碰；结束后打印分支合并指引
+spark workflow run examples/workflows/review.yaml --isolate-worktree
 ```
 
 暂停、续跑和单节点重跑：
@@ -67,5 +69,7 @@ cross-process (`filelock`).
   the latest workflow run when there is no live turn.
 - done: per-step child usage/cost accounting; `--max-cost-usd` stops pending
   nodes with `budget-exceeded` once the workflow total reaches the cap.
-- next: a real provider-backed end-to-end run, worktree isolation and full
-  stage-gate evidence.
+- done: `--isolate-worktree` creates a per-run `task/<slug>` branch and Git
+  worktree via `git_memory.task_begin`; all steps and locks run there, and
+  `task_finish` returns the merge hint without auto-merging the main tree.
+- next: a real provider-backed end-to-end run and full stage-gate evidence.

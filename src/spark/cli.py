@@ -520,6 +520,7 @@ async def _workflow_run_async(
     max_parallel: int,
     as_json: bool,
     max_cost_usd: float = 0.0,
+    isolate_worktree: bool = False,
     resume: Path | None = None,
     state_out: Path | None = None,
     stop_after: set[str] | None = None,
@@ -541,7 +542,21 @@ async def _workflow_run_async(
     )
 
     prov = create_provider(cfg)
-    sandbox = WorkdirSandbox(workdir, cfg)
+    exec_workdir = workdir
+    isolation: dict[str, object] | None = None
+    branch = ""
+    if isolate_worktree:
+        from spark.git_memory import TaskBeginArgs, task_begin
+
+        main_sandbox = WorkdirSandbox(workdir, cfg)
+        branch = "workflow-" + path.stem + "-" + __import__("time").strftime("%Y%m%d-%H%M%S")
+        started = task_begin(main_sandbox, TaskBeginArgs(task=branch, path="."))
+        if not started.ok:
+            raise ConfigError(f"无法创建隔离 worktree: {started.payload}")
+        exec_workdir = Path(str(started.payload["worktree_path"]))
+        branch = str(started.payload.get("branch") or branch)
+        isolation = {"branch": branch, "worktree": str(exec_workdir)}
+    sandbox = WorkdirSandbox(exec_workdir, cfg)
     tool_ctx = ToolContext(sandbox=sandbox, config=cfg)
     registry = ToolRegistry(tool_ctx)
     bridge = await _boot_mcp(cfg, registry)
@@ -550,7 +565,7 @@ async def _workflow_run_async(
     bridge.set_sampling_handler(prov)
     goal_tools.attach_bridges(store, lambda: session_id)
     loop = _agent_loop()(
-        workdir=workdir,
+        workdir=exec_workdir,
         cfg=cfg,
         provider=prov,
         registry=registry,
@@ -558,7 +573,7 @@ async def _workflow_run_async(
         session_id=session_id,
         approver=None,
     )
-    agents = {agent.name: agent for agent in discover_declared_agents(workdir)}
+    agents = {agent.name: agent for agent in discover_declared_agents(exec_workdir)}
 
     def emit(payload: dict) -> None:
         if as_json:
@@ -585,7 +600,7 @@ async def _workflow_run_async(
                 initial = rerun_steps(initial, set(rerun))
         runner = AgentWorkflowRunner(loop, spec, agents=agents, on_event=None)
         run = await run_workflow(
-            spec, runner, workdir=workdir, max_parallel=max_parallel,
+            spec, runner, workdir=exec_workdir, max_parallel=max_parallel,
             initial_outputs=initial.outputs if initial else None,
             initial_statuses=initial.statuses if initial else None,
             initial_costs=initial.costs if initial else None,
@@ -603,14 +618,30 @@ async def _workflow_run_async(
                 _json.dumps(run.to_state(), ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+        if isolation is not None:
+            from spark.git_memory import TaskFinishArgs, task_finish
+
+            finished = task_finish(
+                WorkdirSandbox(workdir, cfg),
+                TaskFinishArgs(
+                    worktree=str(isolation["worktree"]),
+                    branch=str(isolation["branch"]),
+                    success=True,
+                ),
+            )
+            isolation["merge_hint"] = finished.payload.get("merge_hint", "")
         if as_json:
             typer.echo(_json.dumps({
                 "type": "workflow_end", "ok": run.ok, "paused": run.paused,
                 "statuses": run.statuses, "errors": run.errors,
+                "isolation": isolation,
             }, ensure_ascii=False))
         else:
             state = "ok" if run.ok else ("paused" if run.paused else "failed")
             typer.echo(f"workflow {spec.name}: {state}")
+            if isolation is not None:
+                typer.echo(f"worktree: {isolation['worktree']} (branch {isolation['branch']})")
+                typer.echo(str(isolation.get("merge_hint") or ""))
             for step in spec.steps:
                 line = f"  {step.id}: {run.statuses.get(step.id, 'pending')}"
                 if step.id in run.errors:
@@ -2121,6 +2152,10 @@ def workflow_run_cmd(
         0.0, "--max-cost-usd", min=0.0,
         help="工作流总成本上限（USD，0 = 使用 config.agent.max_session_cost_usd）",
     ),
+    isolate_worktree: bool = typer.Option(
+        False, "--isolate-worktree",
+        help="在独立 Git worktree/任务分支中运行，主树零触碰",
+    ),
     resume: Path | None = typer.Option(None, "--resume", help="从 state-out JSON 继续"),
     state_out: Path | None = typer.Option(
         Path(".spark/workflow-runs/latest.json"),
@@ -2148,7 +2183,7 @@ def workflow_run_cmd(
             _workflow_run_async(
                 path, workdir, cfg, store, session_id,
                 max_parallel=max_parallel, as_json=as_json,
-                max_cost_usd=max_cost_usd,
+                max_cost_usd=max_cost_usd, isolate_worktree=isolate_worktree,
                 resume=resume, state_out=state_out,
                 stop_after=set(stop_after or ()), rerun=set(rerun or ()),
             )
