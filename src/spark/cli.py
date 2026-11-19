@@ -2045,6 +2045,51 @@ def plugins_search_cmd(
         typer.echo(f"{entry.name}\t{entry.version}\t{entry.description}\t{entry.url}")
 
 
+@plugins_app.command("updates", help="检查已安装插件在市场中是否有新版本")
+def plugins_updates_cmd(
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    registry: str = typer.Option("", "--registry", help="市场索引 URL 或本地 JSON"),
+    json_output: bool = typer.Option(False, "--json", help="输出 JSON"),
+) -> None:
+    import json
+
+    from spark.plugins import check_updates
+
+    try:
+        updates = check_updates(workdir.resolve(), registry or None)
+    except PluginError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    if json_output:
+        typer.echo(
+            json.dumps(
+                [item.__dict__ for item in updates], ensure_ascii=False
+            )
+        )
+        return
+    if not updates:
+        typer.echo("所有已安装插件都是最新版本。")
+        return
+    for item in updates:
+        typer.echo(f"{item.name}\t{item.installed} -> {item.available}\t{item.url}")
+
+
+@plugins_app.command("upgrade", help="从市场索引升级指定插件")
+def plugins_upgrade_cmd(
+    name: str = typer.Argument(..., help="插件 name"),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    registry: str = typer.Option("", "--registry", help="市场索引 URL 或本地 JSON"),
+) -> None:
+    from spark.plugins import upgrade_from_registry
+
+    try:
+        record = upgrade_from_registry(name, workdir.resolve(), source=registry or None)
+    except PluginError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"✓ {record.name} {record.manifest.version if record.manifest else ''} -> {record.path}")
+
+
 @plugins_app.command("install-registry", help="按市场索引中的名称安装插件")
 def plugins_install_registry_cmd(
     name: str = typer.Argument(..., help="插件 name"),

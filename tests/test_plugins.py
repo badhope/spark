@@ -595,3 +595,31 @@ def test_registry_rejects_bad_entries(tmp_path: Path) -> None:
     )
     with pytest.raises(PluginError, match="校验失败"):
         load_registry(index)
+
+
+def test_registry_update_detection(tmp_path: Path) -> None:
+    from spark.plugins import PluginError, check_updates, upgrade_from_registry
+
+    workdir = tmp_path / "work"
+    install_local(_write_plugin(tmp_path, version="0.1.0"), workdir)
+    index = tmp_path / "registry.json"
+    index.write_text(
+        json.dumps(
+            {
+                "plugins": [
+                    {
+                        "name": "demo",
+                        "version": "0.2.0",
+                        "description": "demo",
+                        "url": "https://example.com/demo.git",
+                    }
+                ]
+            }
+        )
+    )
+    updates = check_updates(workdir, index)
+    assert len(updates) == 1
+    assert updates[0].installed == "0.1.0"
+    assert updates[0].available == "0.2.0"
+    with pytest.raises(PluginError, match="未安装或"):
+        upgrade_from_registry("missing", workdir, source=index)

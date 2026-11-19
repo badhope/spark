@@ -9,7 +9,7 @@
 | W1 | 代码智能 LSP/重构 | W0 的 fs API | definition/references/hover/symbols/diagnostics/rename/code action/affected_tests；无服务器降级；LSP 编辑走沙箱与审批 |
 | W2 | 模型与成本 | W0 的 config API | 5 家原生预设、routing 有调用方、成本预算 |
 | W3 | IDE 深度 | W0 OpenAPI + W1 | VS Code 0.15.2、diff 审批、会话同步（已交付）；Zed/JetBrains 2025.3+/Neovim CodeCompanion ACP 接入（配置层完成；真实 IDE 冒烟待环境） |
-| W4 | 插件/技能生态 | W0.5 工具契约 | W4-a manifest/本地安装、W4-b hook 权限门/子进程隔离、W4-c 工具/git 安装/commands/市场索引（已交付）；官方包、升级策略待完成 |
+| W4 | 插件/技能生态 | W0.5 工具契约 | W4-a manifest/本地安装、W4-b hook 权限门/子进程隔离、W4-c 工具/git 安装/commands/市场索引（已交付）；官方包待完成 |
 | W5 | 浏览器 + PR | W0.5 审批/沙箱 | 浏览器工具、PR 工作流 |
 | W6 | 多 Agent 编排 | W0.5 拆 loop | 子 Agent、Workflow、并发上限 |
 | W7 | 远程/云/队列 | W0 会话 runtime | 中继、PWA/IM、可选云 runner |

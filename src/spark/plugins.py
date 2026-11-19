@@ -874,6 +874,68 @@ def search_registry(
     ]
 
 
+@dataclass(frozen=True)
+class PluginUpdate:
+    name: str
+    installed: str
+    available: str
+    url: str
+
+
+def check_updates(
+    workdir: Path, source: str | Path | None = None
+) -> list[PluginUpdate]:
+    """Compare installed plugin versions with the registry index."""
+    registry = load_registry(source)
+    installed = {
+        record.name: record.manifest.version
+        for record in scan_plugins(workdir)
+        if record.manifest is not None
+    }
+    out: list[PluginUpdate] = []
+    for entry in registry.plugins:
+        current = installed.get(entry.name)
+        if current is None:
+            continue
+        try:
+            newer = Version(entry.version) > Version(current)
+        except InvalidVersion:
+            continue
+        if newer:
+            out.append(
+                PluginUpdate(
+                    name=entry.name,
+                    installed=current,
+                    available=entry.version,
+                    url=entry.url,
+                )
+            )
+    return out
+
+
+def upgrade_from_registry(
+    name: str,
+    workdir: Path,
+    *,
+    source: str | Path | None = None,
+) -> PluginRecord:
+    """Install a newer registry version; refuses when already current."""
+    updates = [item for item in check_updates(workdir, source) if item.name == name]
+    if not updates:
+        current = next(
+            (
+                record.manifest.version
+                for record in scan_plugins(workdir)
+                if record.name == name and record.manifest is not None
+            ),
+            "",
+        )
+        if current:
+            raise PluginError(f"插件 {name} 已是最新版本 {current}")
+        raise PluginError(f"插件 {name} 未安装或有更新的索引不可用")
+    return install_from_registry(name, workdir, source=source, force=True)
+
+
 def install_from_registry(
     name: str,
     workdir: Path,
