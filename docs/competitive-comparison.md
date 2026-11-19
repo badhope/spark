@@ -157,7 +157,7 @@
 | 快捷键重绑 | ❌ | codex `/keymap` 交互重绑；ZCode 自定义键位 |
 | 状态栏定制 | ✅ `agent.status_items` 有序项（模型/接口/密钥/审批/访问/目录/会话） | codex `tui.status_line` 有序项；ZCode 命令中心 |
 | 通知/远程 | ❌ | ZCode 手机 Remote Control + 飞书/微信 Bot；Qoder Mobile |
-| IDE 集成 | ❌ | opencode 自动装 VS Code 扩展 + ACP（Zed/JetBrains/neovim）；codex `/ide`；Qoder 本尊是 IDE |
+| IDE 集成 | ✅ VS Code 原生面板（0.15.2：选区/流式/内联 diff/诊断/跳转）+ Zed ACP 一键接入 | opencode 自动装 VS Code 扩展 + ACP（Zed/JetBrains/neovim）；codex `/ide`；Qoder 本尊是 IDE |
 | Git PR 工作流 | ❌ | opencode `pr <num>` + GitHub Action（评论触发）；codex Cloud PR review |
 | 遥测 | ⚠️ otel.py（仅 provider span） | codex 全量 OTLP（log/trace/metrics + 审计导出） |
 | 多语言 UI | ⚠️ i18n 词典齐全但仅少量组件接入（见待办） | ZCode/Qoder 多语言完整 |
@@ -199,7 +199,7 @@
 
 **P2（高成本 / 需要产品决策）**
 - ~~定时 Automations~~（已实现：automations.py + 设置→定时任务）
-- IDE/ACP 集成（opencode 的 ACP 协议有开源实现可参考）
+- JetBrains / Neovim 的一键接入（Zed 已用 ACP 打通；VS Code 已是原生面板）
 - 插件市场（先做"本地目录 + git URL 安装"最小版）
 - 多 agent 专业编排（Experts/Workflows 级）
 

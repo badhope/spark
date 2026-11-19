@@ -82,6 +82,8 @@ def test_lsp_navigation_and_diagnostics(tmp_path: Path) -> None:
         assert diagnostics["ok"] is True
         assert diagnostics["payload"]["source"] == "lsp"
         assert diagnostics["payload"]["diagnostics"][0]["code"] == "FAKE002"
+        # IDE clients need a real file anchor, not an empty string.
+        assert diagnostics["payload"]["diagnostics"][0]["file"].endswith("main.py")
 
         # A write in the same turn reuses the already-approved live client and
         # attaches diagnostics, so the agent gets a red/green signal without starting

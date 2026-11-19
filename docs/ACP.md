@@ -6,7 +6,13 @@ Spark 自己不写任何编辑器插件。
 
 ## 在 Zed 中接入
 
-编辑 `~/.config/zed/settings.json`：
+一键写入（已有 `settings.json` 会先备份，未知键保留）：
+
+```bash
+spark ide install zed --workdir /path/to/your/project
+```
+
+也可以手动编辑 `~/.config/zed/settings.json`：
 
 ```json
 {

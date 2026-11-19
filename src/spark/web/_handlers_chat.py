@@ -457,7 +457,11 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
     if not prompt and not body.get("images"):
         handler._json(400, {"error": "prompt required"})
         return
-    runtime = state.current_runtime
+    requested_session = str(body.get("session_id") or "").strip()
+    runtime = state.runtime_for(requested_session) if requested_session else state.current_runtime
+    if requested_session and runtime is None:
+        handler._json(404, {"error": "unknown session"})
+        return
     if runtime is None or runtime.loop is None:
         handler._json(500, {"error": "agent not ready"})
         return

@@ -33,6 +33,8 @@
 | 写后格式化 | `tools/formatting.py` | `agent.format_on_write = true`；只调用项目已有的 ruff / prettier，失败不阻断写入 |
 | 符号定位 | `tools/symbols.py` | `find_symbol` 工具：tree-sitter 找定义 + 文本扫引用，免审批只读；无 LSP 时的降级路径 |
 | 代码智能（LSP） | `src/spark/lsp/` | 9 个工具：definition/references/hover/symbols/diagnostics/rename/code action/affected_tests；LSP 优先，无服务器显式降级；rename 默认 dry-run，落盘走沙箱+审批 |
+| VS Code 深度集成 | `vscode-spark/` | 编辑器内聊天面板、选区上下文、SSE 流式、内联 diff 审批、诊断回显、`file:line` 跳转、任务状态；VSIX 与 package.json/pyproject 三向版本锁 |
+| IDE 一键接入 | `ide.py` + `spark ide install zed` | 写入 Zed ACP custom server；已有 settings.json 先备份、未知键保留、坏 JSON 拒绝覆盖 |
 | 自动审查 | `core/review.py` | `agent.auto_review`：写/执行前用独立模型审一次，block 即拒绝；默认关 |
 | 断网执行 | `tools/shell.py` | `agent.network_access = false`：bwrap 下跑空网络命名空间；不可用时如实告警 |
 | 配色主题 | `web/src/theme.ts` + `index.css` | 5 套强调色（Ember/Ocean/Forest/Violet/Mono），与明暗正交 |
@@ -49,6 +51,7 @@ spark desktop             # 原生窗口（pywebview）
 spark enterprise          # 企业控制面 /api/v1 与 /office 工作台
 spark exec "任务"          # 一次性执行，适合脚本/CI
 spark acp                 # 作为 ACP agent 供 Zed 等编辑器拉起
+spark ide install zed     # 一键把 Spark 写进 Zed 的 ACP 配置
 spark mcp-serve           # 把内置工具暴露给别的 MCP 客户端
 spark a2a-serve           # A2A 协议服务（Agent Card + message/send + 流式）
 spark --version           # 版本号（与 pyproject / PyPI 同源）
@@ -65,6 +68,7 @@ spark --version           # 版本号（与 pyproject / PyPI 同源）
 | 企业控制面 | 真实 PostgreSQL + Keycloak | OIDC 鉴权、Casbin 授权、会议/报告/审计、全格式导出 |
 | MCP | 官方 Python SDK 客户端 | 37 个工具，`list_dir` 真实执行 |
 | ACP | 官方 SDK `spawn_stdio_connection` | `initialize` 返回 agentInfo，`session/new` 返回会话与六档审批 |
+| VS Code | Extension Host + 真实 `spark web` | 面板 SSE、选区上下文、`vscode.diff` 审批、Problems 诊断、file:line 跳转；0.15.2 VSIX 与源码同版 |
 | A2A | 真实 HTTP | Agent Card、`message/send`、`message/stream` 四帧协议 |
 
 

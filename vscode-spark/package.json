@@ -1,7 +1,7 @@
 {
   "name": "spark-agent",
   "displayName": "Spark Agent",
-  "description": "Spark — local-first AI coding agent. Launch the Web UI or a TUI session for your workspace from VS Code.",
+  "description": "Spark — API-first AI coding agent. Chat, review multi-file diffs and jump to diagnostics without leaving VS Code.",
   "version": "0.15.2",
   "publisher": "badhope",
   "license": "MIT",
@@ -15,20 +15,50 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/badhope/spark"
+    "url": "https://gitcode.com/badhope/spark"
   },
   "activationEvents": [],
   "main": "./extension.js",
   "contributes": {
     "commands": [
       {
+        "command": "spark.chat.open",
+        "title": "Spark: 打开聊天面板",
+        "category": "Spark"
+      },
+      {
+        "command": "spark.chat.new",
+        "title": "Spark: 新建会话",
+        "category": "Spark"
+      },
+      {
+        "command": "spark.chat.askSelection",
+        "title": "Spark: 对选中代码提问",
+        "category": "Spark"
+      },
+      {
+        "command": "spark.chat.explainSelection",
+        "title": "Spark: 解释选中代码",
+        "category": "Spark"
+      },
+      {
+        "command": "spark.chat.fixSelection",
+        "title": "Spark: 修复选中代码",
+        "category": "Spark"
+      },
+      {
         "command": "spark.openWeb",
-        "title": "Spark: Open Web UI",
+        "title": "Spark: 打开 Web UI",
         "category": "Spark"
       },
       {
         "command": "spark.openTui",
-        "title": "Spark: New TUI Session",
+        "title": "Spark: 新建 TUI 会话",
+        "category": "Spark"
+      },
+      {
+        "command": "spark.diagnostics.open",
+        "title": "Spark: 查看 Problems",
         "category": "Spark"
       },
       {
@@ -37,24 +67,62 @@
         "category": "Spark"
       }
     ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "spark.chat.askSelection",
+          "when": "editorHasSelection",
+          "group": "navigation@20"
+        },
+        {
+          "command": "spark.chat.fixSelection",
+          "when": "editorHasSelection",
+          "group": "navigation@21"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "spark.chat.askSelection",
+        "key": "ctrl+alt+shift+s",
+        "mac": "cmd+alt+shift+s",
+        "when": "editorHasSelection"
+      }
+    ],
     "configuration": {
       "title": "Spark",
       "properties": {
         "spark.executable": {
           "type": "string",
           "default": "spark",
-          "description": "Path to the spark executable (packaged build or `pip install spark-agent` on PATH)."
+          "description": "spark 可执行文件路径（打包版 EXE，或 pip install spark-agent 后的 spark）。"
         },
         "spark.approval": {
           "type": "string",
           "enum": ["suggest", "auto-edit", "full-auto", "plan-only", "approve-plan", "manual"],
           "default": "suggest",
-          "description": "Approval mode for sessions started from VS Code."
+          "description": "从 VS Code 启动的会话审批档位。"
+        },
+        "spark.serverUrl": {
+          "type": "string",
+          "default": "",
+          "description": "复用已在运行的 Spark Web 地址（例如 http://127.0.0.1:8000）；留空则由扩展自动拉起。"
+        },
+        "spark.token": {
+          "type": "string",
+          "default": "",
+          "description": "连接非回环 Spark Web 时的控制令牌（X-Spark-Token）。仅保存在本机设置。"
+        },
+        "spark.autoOpenDiff": {
+          "type": "boolean",
+          "default": true,
+          "description": "审批请求带 diff 时自动打开内联 diff 预览。"
         }
       }
     }
   },
   "scripts": {
+    "test": "node --test test/*.test.js",
     "package": "vsce package"
   }
 }

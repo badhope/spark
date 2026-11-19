@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src 'nonce-{{nonce}}'; img-src {{cspSource}} data:;" />
+<link rel="stylesheet" href="{{styleUri}}" />
+<title>Spark</title>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" id="conn-dot"></span>
+      <span class="brand-name">Spark</span>
+      <span class="muted" id="session-label">connecting…</span>
+    </div>
+    <div class="top-actions">
+      <span class="chip" id="cost-chip" title="本次会话成本">—</span>
+      <button class="icon-btn" id="new-session" title="新建会话">＋</button>
+      <button class="icon-btn" id="cancel-turn" title="停止当前回合" disabled>■</button>
+    </div>
+  </header>
+
+  <main id="messages" aria-live="polite">
+    <section class="empty" id="empty-state">
+      <h2>在编辑器里完成一次完整改动</h2>
+      <p>选中代码后右键使用 <b>Spark: Ask about selection</b>，或直接在下方输入需求。</p>
+      <ul>
+        <li>多文件修改会在编辑器内逐个 diff 审批</li>
+        <li>诊断与测试结果回显到当前回合</li>
+        <li>点击工具结果里的路径直接跳到 <code>file:line</code></li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="composer">
+    <div class="context-strip" id="context-strip" hidden>
+      <span id="context-label"></span>
+      <button id="clear-context" class="link-btn">移除</button>
+    </div>
+    <textarea id="prompt" rows="3" placeholder="描述要改什么… (Enter 发送，Shift+Enter 换行)" autocomplete="off"></textarea>
+    <div class="composer-row">
+      <span class="hint" id="hint">审批：suggest</span>
+      <button id="send" class="primary">发送</button>
+    </div>
+  </footer>
+
+  <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+</body>
+</html>

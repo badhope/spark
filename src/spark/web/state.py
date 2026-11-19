@@ -589,6 +589,34 @@ class SparkWebState:
         except Exception:
             logger.debug("hook notify failed: %s", event, exc_info=True)
 
+    def _prepare_runtime(self, runtime: SessionRuntime) -> None:
+        """Build a loop for one runtime without touching the current pointer.
+
+        Used by ``rebuild_loop`` (which then selects it) and by the isolated
+        session API used by IDE clients (which must not steal the Web UI's
+        current session while the user is chatting in both surfaces).
+        """
+        # The approver is per-session: a background stream must keep its own
+        # approval rendezvous after the user switches away. Full-auto removes
+        # it for this runtime only.
+        if self.cfg.agent.approval == "full-auto":
+            runtime.approver = None
+        elif runtime.approver is None:
+            runtime.approver = WebApprover()
+        runtime.loop = self._build_loop(runtime)
+
+    def ensure_runtime(self, session_id: str) -> SessionRuntime | None:
+        """Return a runtime with a live loop, creating it without switching."""
+        sid = str(session_id or "").strip()
+        if not sid:
+            return None
+        runtime = self.get_runtime(sid)
+        if runtime is None:
+            return None
+        if runtime.loop is None:
+            self._prepare_runtime(runtime)
+        return runtime
+
     def rebuild_loop(
         self, session_id: str | None = None, reuse_latest: bool = False
     ) -> None:
@@ -611,15 +639,7 @@ class SparkWebState:
         if runtime is None:  # pragma: no cover - get_runtime(create=True) always returns
             return
 
-        # The approver is per-session: a background stream must keep its own
-        # approval rendezvous after the user switches away. Full-auto removes
-        # it for this runtime only.
-        if self.cfg.agent.approval == "full-auto":
-            runtime.approver = None
-        elif runtime.approver is None:
-            runtime.approver = WebApprover()
-
-        runtime.loop = self._build_loop(runtime)
+        self._prepare_runtime(runtime)
         self._current_runtime = runtime
         self.session_id = session_id
         if previous_session and previous_session != session_id:
@@ -653,12 +673,12 @@ class SparkWebState:
             checkpointer=self._ensure_checkpointer(),
         )
 
-    def _effective_approval(self) -> str:
+    def _effective_approval(self, loop=None) -> str:
         """当前真正生效的审批模式（审批档案可覆盖基线）。
 
         与 :meth:`AgentLoop._approval_mode` 同一语义；loop 未就绪时回落到配置基线。
         """
-        loop = self.loop
+        loop = loop or self.loop
         override = getattr(loop, "_approval_override", None) if loop is not None else None
         return str(override or self.cfg.agent.approval)
 
@@ -729,30 +749,33 @@ class SparkWebState:
                     acquired = False
         return results
 
-    def status(self) -> dict:
+    def status(self, session_id: str | None = None) -> dict:
         # 凭据可来自配置或环境变量（SPARK_* / DEEPSEEK_API_KEY 等）：只读配置字段
         # 会把"环境变量供 key"的部署误显示成未配置。
         key = env_api_key(self.cfg) or self.cfg.provider.api_key or ""
+        sid = str(session_id or self.session_id or "")
+        runtime = self.runtime_for(sid) if session_id else self._current_runtime
+        loop = runtime.loop if runtime is not None else self.loop
         usage = {
             "used": 0,
             "limit": self.cfg.context.max_context_tokens,
             "percent": 0.0,
         }
         plan: list[dict] = []
-        if self.loop is not None:
+        if loop is not None:
             try:
-                usage = self.loop._usage()
+                usage = loop._usage()
             except Exception:
                 # usage 查询失败时降级为 0
                 logger.debug("查询 loop usage 失败", exc_info=True)
-            plan = list(self.loop.registry.plan)
+            plan = list(loop.registry.plan)
         session_tokens = self.store.session_token_usage(
-            self.session_id, model=self.cfg.provider.model
+            sid, model=self.cfg.provider.model
         )
         session_cost_usd = session_tokens.get("cost_usd")
         cost_limit = float(getattr(self.cfg.agent, "max_session_cost_usd", 0) or 0)
         return {
-            "session_id": self.session_id,
+            "session_id": sid,
             "session_tokens": session_tokens,
             "session_cost": {
                 "spent_usd": session_cost_usd,
@@ -762,7 +785,7 @@ class SparkWebState:
                     if cost_limit and isinstance(session_cost_usd, (int, float))
                     else None
                 ),
-                "by_model": self.store.session_usage_by_model(self.session_id),
+                "by_model": self.store.session_usage_by_model(sid),
             },
             "routing": self.cfg.routing_decision,
             "workdir": str(self.workdir),
@@ -781,7 +804,7 @@ class SparkWebState:
             # 生效值，不是基线值：激活的审批档案会覆盖 agent.approval
             # （见 AgentLoop._approval_mode）。此前这里读基线，档案生效时
             # UI 会显示错误的审批模式。
-            "approval": self._effective_approval(),
+            "approval": self._effective_approval(loop),
             "approval_base": self.cfg.agent.approval,
             "base_url": self.cfg.provider.base_url,
             "api_key_masked": mask_secret(key),
@@ -790,10 +813,10 @@ class SparkWebState:
             "mcp_errors": list(self.mcp_bridge.errors) if self.mcp_bridge else [],
             "context": usage,
             "plan": plan,
-            **self._demo_flags(key),
+            **self._demo_flags(key, loop),
         }
 
-    def _demo_flags(self, key: str) -> dict:
+    def _demo_flags(self, key: str, loop=None) -> dict:
         """Say out loud when the configured provider silently fell back to mock.
 
         ``create_provider`` degrades to ``MockProvider`` when an openai_compat
@@ -802,7 +825,8 @@ class SparkWebState:
         loop's actual provider instance, not from config, so it cannot drift.
         """
         provider_name = str(self.cfg.provider.name)
-        live = self.loop.provider if self.loop is not None else None
+        loop = loop or self.loop
+        live = loop.provider if loop is not None else None
         is_mock = live is not None and live.__class__.__name__ == "MockProvider"
         if provider_name == "mock":
             return {"demo_mode": True, "demo_reason": "当前使用 Mock 演示模型"}

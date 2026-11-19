@@ -137,6 +137,23 @@ jobs:
             exit 1
           fi
 
+  vscode-extension:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Extension pure unit tests
+        working-directory: vscode-spark
+        run: node --test test/*.test.js
+      - name: Extension version lockstep + VSIX manifest
+        run: python scripts/verify_vscode.py --require-vsix
+
   windows-checkout:
     timeout-minutes: 10
     # Guards the failure mode found in review: a Windows-reserved filename in the
@@ -185,6 +202,8 @@ jobs:
               sys.exit("spark.__version__ no longer falls back to pyproject.toml")
           print("version", version)
           PY
+      - name: VS Code extension version sources are in sync
+        run: python scripts/verify_vscode.py --require-vsix
       - name: Installer assets exist in the release workflow
         run: |
           python - <<'PY'

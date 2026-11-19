@@ -8,7 +8,7 @@
 | W0.5 | 工程基线 + 双内核收口 | W0 的 OpenAPI/SSE 契约 | 门禁全绿、loop <800、control 走 AgentLoop、性能基线 |
 | W1 | 代码智能 LSP/重构 | W0 的 fs API | definition/references/hover/symbols/diagnostics/rename/code action/affected_tests；无服务器降级；LSP 编辑走沙箱与审批 |
 | W2 | 模型与成本 | W0 的 config API | 5 家原生预设、routing 有调用方、成本预算 |
-| W3 | IDE 深度 | W0 OpenAPI + W1 | VS Code 0.15.2、diff 审批、会话同步 |
+| W3 | IDE 深度 | W0 OpenAPI + W1 | VS Code 0.15.2、diff 审批、会话同步（已交付）；Zed ACP 一键接入；JetBrains/Neovim 待完成 |
 | W4 | 插件/技能生态 | W0.5 工具契约 | 插件运行时、技能导入、官方包 |
 | W5 | 浏览器 + PR | W0.5 审批/沙箱 | 浏览器工具、PR 工作流 |
 | W6 | 多 Agent 编排 | W0.5 拆 loop | 子 Agent、Workflow、并发上限 |

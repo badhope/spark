@@ -242,7 +242,9 @@ def _document_symbols(root: Path, items: Any) -> list[dict[str, Any]]:
 _DIAG_SEVERITY = {1: "error", 2: "warning", 3: "information", 4: "hint"}
 
 
-def _diagnostic_list(root: Path, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _diagnostic_list(
+    root: Path, items: list[dict[str, Any]], file_path: str = ""
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for item in items:
         range_obj = item.get("range") or {}
@@ -251,7 +253,7 @@ def _diagnostic_list(root: Path, items: list[dict[str, Any]]) -> list[dict[str, 
         raw_severity = item.get("severity")
         out.append(
             {
-                "file": "",
+                "file": file_path,
                 "line": int(start.get("line", 0)) + 1,
                 "col": int(start.get("character", 0)) + 1,
                 "end_line": int(end.get("line", 0)) + 1,
@@ -536,8 +538,10 @@ def lsp_symbols(ctx: Any, manager: LSPManager | None, args: LSPSymbolsArgs) -> T
         return _fail(str(exc), degraded=True)
 
 
-def _diagnostics_payload(root: Path, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    clean = _diagnostic_list(root, items)
+def _diagnostics_payload(
+    root: Path, items: list[dict[str, Any]], file_path: str = ""
+) -> list[dict[str, Any]]:
+    clean = _diagnostic_list(root, items, file_path=file_path)
     return clean
 
 
@@ -566,7 +570,11 @@ def lsp_diagnostics(
         return _fail(str(exc), degraded=True)
     return _result(
         {
-            "diagnostics": _diagnostics_payload(ctx.sandbox.root, items),
+            "diagnostics": _diagnostics_payload(
+                ctx.sandbox.root,
+                items,
+                file_path=str(path.relative_to(ctx.sandbox.root)),
+            ),
             "count": len(items),
             "source": "lsp",
             "server": client.name,

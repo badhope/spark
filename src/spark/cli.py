@@ -1910,6 +1910,39 @@ def mcp_remove_cmd(
     typer.echo(f"已移除 {name} → {written}")
 
 
+ide_app = typer.Typer(help="IDE 一键接入（ACP / VS Code）", no_args_is_help=True)
+app.add_typer(ide_app, name="ide")
+
+
+@ide_app.command("install", help="把 Spark 写入指定 IDE 的 ACP 配置（当前支持 Zed）")
+def ide_install_cmd(
+    target: str = typer.Argument(..., help="zed"),
+    workdir: Path = typer.Option(Path("."), "--workdir", help="ACP 会话默认工作目录"),
+    settings: Path | None = typer.Option(None, "--settings", help="自定义 settings.json 路径"),
+    command: str = typer.Option("spark", "--command", help="编辑器拉起的可执行文件"),
+    force: bool = typer.Option(False, "--force", help="JSON 损坏时备份后用最小配置覆盖"),
+) -> None:
+    """Write/merge an ACP server entry without clobbering unrelated settings."""
+    from spark.ide import install
+
+    try:
+        result = install(
+            target,
+            workdir.resolve(),
+            settings_path=settings,
+            command=command,
+            force=force,
+        )
+    except ConfigError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"✓ {result.target}: {result.path}")
+    if result.backup:
+        typer.echo(f"  备份: {result.backup}")
+    if not result.changed:
+        typer.echo("  已是目标配置，无需修改")
+
+
 config_app = typer.Typer(help="查看或修改配置", no_args_is_help=True)
 app.add_typer(config_app, name="config")
 

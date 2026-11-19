@@ -156,12 +156,12 @@ Python 包本身用 `pip uninstall spark-agent`，scoop 安装的用
 
 ### VS Code 扩展
 
-仓库自带扩展（`vscode-spark/`），三条命令把工作区接入 Spark：
-**Open Web UI**（自动起服务、解析端口、复用实例）、**New TUI Session**、
-**Ask about selection**（选中代码带上下文提问）。本地 VSIX 安装：
+仓库自带扩展（`vscode-spark/`）：编辑器内聊天面板、选区上下文、
+内联 diff 审批、诊断回显与 `file:line` 跳转；同时保留 **Open Web UI**、
+**New TUI Session** 两个全功能入口。本地 VSIX 安装：
 
 ```bash
-code --install-extension vscode-spark/spark-agent-0.12.0.vsix
+code --install-extension vscode-spark/spark-agent-0.15.2.vsix
 ```
 
 前提：已安装 Spark（打包版或 `pip install spark-agent`）；审批模式在

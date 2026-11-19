@@ -79,7 +79,7 @@ spark enterprise --host 127.0.0.1 --port 18800
 `spark exec` streams one JSON object per line and ends with
 `{"type":"final","text":"…"}`, so it pipes straight into `jq`.
 
-## Eight surfaces
+## Nine surfaces
 
 | Form | Command | Use case |
 |---|---|---|
@@ -88,7 +88,8 @@ spark enterprise --host 127.0.0.1 --port 18800
 | Desktop | `spark desktop` | Native pywebview window, loopback only |
 | TUI | `spark` | Pure terminal / SSH |
 | CLI | `spark exec "task" --json` | Automation, CI, piping |
-| IDE (ACP) | `spark acp` | Zed and other ACP clients — [docs/ACP.md](docs/ACP.md) |
+| VS Code | `vscode-spark/spark-agent-0.15.2.vsix` | Native chat panel, selection context, inline diff approval, diagnostics — [vscode-spark/README.md](vscode-spark/README.md) |
+| IDE (ACP) | `spark acp` · `spark ide install zed` | Zed and other ACP clients — [docs/ACP.md](docs/ACP.md) |
 | MCP server | `spark mcp-serve` | Expose built-in tools to other MCP clients |
 | A2A server | `spark a2a-serve` | Agent-to-agent delegation — [docs/A2A.md](docs/A2A.md) |
 

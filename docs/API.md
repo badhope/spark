@@ -23,7 +23,7 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/status` | 会话 / 沙箱模式 / 审批模式 / 上下文用量 / 计划列表 / 环境信息 |
+| `GET` | `/api/status?session_id=` | 会话 / 沙箱模式 / 审批模式 / 上下文用量 / 计划列表 / 环境信息；带 `session_id` 可查后台/IDE 会话而不切换当前指针 |
 | `GET` | `/api/config` | 设置视图（部分敏感值打码，并非全部配置）：provider、agent、context（含 `agents_md` / `repo_map_max_chars` / `knowledge_*`）、memory（含 `embedding_*` / `rerank_model`）、mcp_servers、hooks（含 `on_deny`）、replay、updater，以及 `permission_rules` / `approval_profiles` / `active_approval_profile_id` |
 | `GET` | `/api/models` | 模型 profile 列表（api_key 打码，含 `active` 标记） |
 | `GET` | `/api/agents_md` | 读取工作目录内 AGENTS.md 的内容与状态 |
@@ -36,7 +36,7 @@
 
 | 方法 | 路径 | 请求体 | 说明 |
 | --- | --- | --- | --- |
-| `POST` | `/api/chat/stream` | `{prompt, images?}` | SSE 流式对话。事件：`text_delta` / `reasoning_delta` / `tool_start` / `tool_end` / `approval_needed`（含 diff）/ `compaction` / `context` / `plan` / `turn_end` / `turn_error` / `done`；心跳 `: ping` |
+| `POST` | `/api/chat/stream` | `{prompt, images?, session_id?}` | SSE 流式对话；带 `session_id` 时定向到该 runtime（IDE/多客户端不抢 Web 当前会话）。事件：`text_delta` / `reasoning_delta` / `tool_start` / `tool_end` / `approval_needed`（含 diff）/ `compaction` / `context` / `plan` / `turn_end` / `turn_error` / `done`；心跳 `: ping` |
 | `POST` | `/api/chat` | `{prompt}` | 非流式对话，返回完整事件数组（调试用） |
 | `POST` | `/api/cancel` | — | 取消当前回合与待审批 |
 | `POST` | `/api/approval` | `{decision}` | 审批决定：`allow` / `allow_always` / `deny` |
@@ -45,7 +45,7 @@
 | `POST` | `/api/models/activate` | `{id}` | 切换活跃 profile 并重建 AgentLoop；agent 忙时 `409` |
 | `POST` | `/api/agents_md` | `{content}` | 写工作目录内的 AGENTS.md（文件名受白名单校验） |
 | `POST` | `/api/memory` | `{action}` | `add`（content/type/importance）/ `delete`（id）/ `optimize` |
-| `POST` | `/api/sessions/new` | — | 新建会话 |
+| `POST` | `/api/sessions/new` | `{isolated?: true, title?}` | 新建会话；`isolated=true` 创建 runtime 但不移动 Web 当前指针，返回 `session_id` |
 | `POST` | `/api/sessions/delete` | `{session_id}` | 删除会话；删当前会话时自动切换 |
 | `POST` | `/api/sessions/switch` | `{session_id}` | 切换会话并返回消息历史 |
 | `POST` | `/api/checkpoints/rollback` | `{checkpoint_id}` | 回滚到检查点（恢复工作区文件 + 对话历史） |

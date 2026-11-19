@@ -401,7 +401,12 @@ def build_handler_class(html: str):
                 self._html(path)
                 return
             if path == "/api/status":
-                self._json(200, state.status())
+                qs = parse_qs(urlparse(self.path).query)
+                sid = (qs.get("session_id", [""])[0] or "").strip()
+                if sid and state.runtime_for(sid) is None:
+                    self._json(404, {"error": "unknown session"})
+                    return
+                self._json(200, state.status(sid or None))
                 return
             if path == "/api/diagnostics":
                 _handle_diagnostics(self, {})

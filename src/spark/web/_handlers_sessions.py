@@ -64,6 +64,22 @@ def _handle_approval(handler: HandlerBase, body: dict) -> None:
 
 def _handle_sessions_new(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)
+    if bool(body.get("isolated")):
+        # IDE clients need a private session without stealing the current
+        # pointer from the browser Web UI. Build the runtime in the registry
+        # only; subsequent /api/chat/stream calls pass this session_id.
+        sid = state.store.create_session(
+            state.workdir, state.cfg.provider.model, title=str(body.get("title") or "IDE 会话")
+        )
+        runtime = state.ensure_runtime(sid)
+        if runtime is None:  # pragma: no cover - get_runtime(create=True) always returns
+            handler._json(500, {"error": "cannot create isolated session"})
+            return
+        handler._json(
+            200,
+            {"ok": True, "session_id": sid, "status": state.status(sid)},
+        )
+        return
     # Creating a new session only moves the current pointer. If the outgoing
     # session is still streaming, its runtime stays in the registry and keeps
     # running; do not wait for its turn lock here.
