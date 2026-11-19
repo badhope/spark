@@ -30,7 +30,8 @@ def _handle_chat(handler: HandlerBase, body: dict) -> None:
     if not prompt:
         handler._json(400, {"error": "prompt required"})
         return
-    if state.loop is None:
+    runtime = state.current_runtime
+    if runtime is None or runtime.loop is None:
         handler._json(500, {"error": "agent not ready"})
         return
     slash = parse_slash(prompt)
@@ -52,12 +53,11 @@ def _handle_chat(handler: HandlerBase, body: dict) -> None:
             handler._json(200, {"events": sink.events})
             return
     try:
-        with state.turn_lock:
-            # Drive the turn on the shared runtime loop: the durable turn
-            # checkpointer's SQLite connection is bound to that loop, so a
-            # per-request asyncio.run() would fail with "Future attached to a
-            # different loop" as soon as crash recovery is enabled.
-            events = list(state.loop.iter_turn_sync(prompt))
+        with runtime.turn_lock:
+            # Drive the turn on the captured runtime loop: switching sessions
+            # only moves the current pointer, and a per-request asyncio.run()
+            # would break the durable checkpointer's loop affinity.
+            events = list(runtime.loop.iter_turn_sync(prompt))
     except Exception as exc:  # aqg: top-level boundary
         handler._json(500, {"error": str(exc)})
         return
