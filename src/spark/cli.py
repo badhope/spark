@@ -1951,6 +1951,52 @@ plugins_app = typer.Typer(help="工作区插件（清单/校验/安装/卸载/�
 app.add_typer(plugins_app, name="plugins")
 
 
+workflow_app = typer.Typer(help="多 Agent YAML 工作流：校验 DAG / 输出执行图")
+app.add_typer(workflow_app, name="workflow")
+
+
+@workflow_app.command("validate", help="校验工作流角色、步骤和依赖环")
+def workflow_validate_cmd(
+    path: Path = typer.Argument(..., help="YAML 工作流文件"),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    check_agents: bool = typer.Option(False, "--check-agents", help="校验 role.agent 是否存在于 .claude/agents"),
+) -> None:
+    from spark.workflow import load_workflow
+
+    agents = None
+    if check_agents:
+        from spark.agents import discover_declared_agents
+
+        agents = {agent.name for agent in discover_declared_agents(workdir.resolve())}
+    try:
+        spec = load_workflow(path, workdir=workdir, available_agents=agents)
+    except SparkError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"✓ {spec.name} v{spec.version}: {len(spec.roles)} roles, {len(spec.steps)} steps")
+    typer.echo("order: " + " -> ".join(spec.order()))
+
+
+@workflow_app.command("graph", help="输出工作流执行图 JSON")
+def workflow_graph_cmd(
+    path: Path = typer.Argument(...),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    pretty: bool = typer.Option(True, "--pretty/--compact"),
+) -> None:
+    import json
+
+    from spark.workflow import load_workflow
+
+    try:
+        spec = load_workflow(path, workdir=workdir)
+    except SparkError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(json.dumps(spec.graph(), ensure_ascii=False, indent=2 if pretty else None))
+
+
+
+
 pr_app = typer.Typer(help="Pull Request 上下文（GitHub/GitCode/Gitee；除 publish 外只读）")
 app.add_typer(pr_app, name="pr")
 

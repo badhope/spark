@@ -32,7 +32,7 @@
 
 ## M3（第 22–27 周）
 
-- [ ] W6：子 Agent/Workflow；并发上限；成本上限
+- [ ] W6：子 Agent/Workflow；并发上限；成本上限（W6-a YAML DAG/路径锁已落；Lead/Experts/Verifier 执行器待接）
 - [ ] W7：中继、PWA/IM、可选云 runner
 - [ ] 远程执行仍走 policy + sandbox + approval
 

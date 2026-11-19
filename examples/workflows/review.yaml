@@ -1,0 +1,38 @@
+name: review-change
+version: 1
+description: Lead + backend + tests + reviewer workflow for a small change.
+roles:
+  lead:
+    agent: lead
+    description: 规划、拆分并验收
+  backend:
+    agent: backend
+    description: 只改实现
+    tools: read_file, apply_patch, run_tests
+  tests:
+    agent: tests
+    description: 只补测试
+    tools: read_file, apply_patch, run_tests
+  reviewer:
+    agent: reviewer
+    description: 独立验收，不改文件
+    tools: read_file, grep, git_diff
+steps:
+  - id: plan
+    role: lead
+    prompt: 拆解改动、列出验收标准和风险，输出 plan.md。
+    writes: [.spark/plan.md]
+  - id: implement
+    role: backend
+    needs: [plan]
+    prompt: 按 plan.md 只改实现，保持现有测试通过。
+    writes: [src/]
+  - id: add-tests
+    role: tests
+    needs: [plan]
+    prompt: 为新增行为补测试，覆盖失败路径。
+    writes: [tests/]
+  - id: review
+    role: reviewer
+    needs: [implement, add-tests]
+    prompt: 独立审查 diff，报告 P0/P1 问题；不要修改文件。

@@ -39,6 +39,7 @@ dependencies = [
     "pydantic>=2.7,<3.0",
     "pydantic-settings>=2.0,<3.0",
     "packaging>=23,<27",
+    "filelock>=3.13,<5",
     "textual>=0.80,<1.0",
     "tomlkit>=0.13,<1.0",
     "tree-sitter>=0.25,<0.27",
