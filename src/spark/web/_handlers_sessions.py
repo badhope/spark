@@ -475,13 +475,19 @@ def _handle_session_import(handler: HandlerBase, body: dict) -> None:
 def _handle_question_answer(handler: HandlerBase, body: dict) -> None:
     """Deliver the user's answer to a pending ``ask_user`` question."""
     state = _route_state(handler)
-    bridge = getattr(state, "question_bridge", None)
+    requested = bool(str(body.get("session_id") or "").strip())
+    session_id = str(body.get("session_id") or state.session_id or "").strip()
+    runtime = state.runtime_for(session_id) if session_id else None
+    if requested and runtime is None:
+        handler._json(404, {"error": "unknown session"})
+        return
+    bridge = runtime.question_bridge if runtime is not None else state.question_bridge
     if bridge is None or not bridge.pending:
         handler._json(409, {"error": "no pending question"})
         return
     answer = str(body.get("answer") or "")
     bridge.answer(answer)
-    handler._json(200, {"ok": True})
+    handler._json(200, {"ok": True, "session_id": session_id or None})
 
 
 def _handle_checkpoints_rollback(handler: HandlerBase, body: dict) -> None:

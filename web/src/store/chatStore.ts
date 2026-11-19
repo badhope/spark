@@ -1,7 +1,8 @@
 import { create } from "zustand"
 import type { ChatEvent, GoalState, PlanStep } from "../types"
-import { streamChat, fetchHistory, deleteMessage as deleteMessageApi, truncateFromMessage as truncateFromMessageApi, runInlineShell } from "../api"
+import { streamChat, fetchHistory, fetchSessionPending, deleteMessage as deleteMessageApi, truncateFromMessage as truncateFromMessageApi, runInlineShell } from "../api"
 import { useSessionStore } from "./sessionStore"
+import { useSessionRuntimeStore } from "./sessionRuntime"
 import { useUiStore } from "./uiStore"
 import { t } from "../i18n"
 
@@ -245,6 +246,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         draft = ""
       }
       set({ items, loading: false, input: draft })
+      useSessionRuntimeStore.getState().ensure(h.session_id)
+      try {
+        const pending = await fetchSessionPending(h.session_id)
+        useSessionRuntimeStore.getState().hydratePending(h.session_id, pending)
+      } catch {
+        /* pending is best-effort; history already rendered */
+      }
       useSessionStore.getState().syncPlanFromItems(items)
     } catch {
       set({ loading: false })
@@ -256,9 +264,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { input, streaming, abortController } = get()
     const prompt = input.trim()
     if ((!prompt && images.length === 0) || streaming) return
+    const turnSessionId = useSessionStore.getState().status?.session_id ?? ""
+    if (!turnSessionId) return
 
     if (abortController) abortController.abort()
     const ac = new AbortController()
+    useSessionRuntimeStore.getState().begin(turnSessionId, ac)
     set({ input: "", streaming: true, abortController: ac })
     const assistantId = uid()
     set((s) => ({
@@ -281,8 +292,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ turnGraph: { nodes: [...graphNodes], edges: [] } })
     const pushGraph = () => set({ turnGraph: { nodes: [...graphNodes], edges: [...graphEdges] } })
 
-    /** 修改当前助手消息；无则 no-op */
+    /** 修改当前助手消息；无则 no-op。后台会话的事件不能写进当前会话视图。 */
     function patchLast(fn: (it: ChatMsg) => ChatMsg) {
+      if (useSessionStore.getState().status?.session_id !== turnSessionId) return
       set((s) => {
         const idx = s.items.findIndex((m) => m.id === assistantId)
         if (idx < 0) return s
@@ -338,6 +350,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     const onEvent = (ev: ChatEvent) => {
+      // Envelope routing: the runtime for the originating session consumes
+      // phase/pending/seq even when another session is currently visible.
+      useSessionRuntimeStore.getState().applyEvent(turnSessionId, ev)
+      const isVisible = useSessionStore.getState().status?.session_id === turnSessionId
+      // Background streams update their runtime only; never paint into the
+      // currently visible conversation or its status/plan.
+      if (!isVisible) return
       switch (ev.type) {
         case "text_delta":
           buf.text += ev.text
@@ -349,10 +368,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
           break
         case "question": {
           flush()
-          useSessionStore.getState().setQuestion({
-            question: ev.data?.question ?? "",
-            options: ev.data?.options ?? [],
-          })
+          if (isVisible) {
+            useSessionStore.getState().setQuestion({
+              question: ev.data?.question ?? "",
+              options: ev.data?.options ?? [],
+            })
+          }
           break
         }
         case "subtask_progress": {
@@ -508,7 +529,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           break
         }
         case "approval_needed":
-          useSessionStore.getState().setApproval({ info: ev.approval, tool: ev.tool })
+          if (isVisible) {
+            useSessionStore.getState().setApproval({ info: ev.approval, tool: ev.tool })
+          }
           break
         case "compaction": {
           if (ev.data?.usage) {
@@ -657,6 +680,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       flush()
       const isAbort = e instanceof DOMException && e.name === "AbortError"
       if (!isAbort) {
+        useSessionRuntimeStore.getState().fail(turnSessionId, msg)
         set({
           lastFailedPrompt: { prompt, images },
         })
@@ -672,13 +696,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // leave the bubble blinking "generating" forever because only turn_end /
       // done cleared the flag.
       patchLast((it) => (it.streaming ? { ...it, streaming: false } : it))
+      const runtime = useSessionRuntimeStore.getState().runtimes[turnSessionId]
+      if (runtime?.phase !== "error") {
+        useSessionRuntimeStore.getState().finish(turnSessionId)
+      }
       // Guard against a superseded turn: if the user already started a new one,
       // this late-completing stream must not clear the new turn's controller or
       // streaming flag (that made Stop disappear and allowed a third concurrent
       // send).
       if (get().abortController === ac) {
         set({ streaming: false, abortController: null })
-        useSessionStore.getState().setApproval(null)
+        if (useSessionStore.getState().status?.session_id === turnSessionId) {
+          useSessionStore.getState().setApproval(null)
+        }
       }
       await useSessionStore.getState().refreshSessions()
       // Attach database ids to the messages just produced. Without this the
@@ -686,30 +716,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // sent in this page load, until a manual refresh. Only ids are copied:
       // replacing the list would throw away reasoning/tool segments, which the
       // server does not persist.
-      try {
-        const h = await fetchHistory()
-        if (!get().streaming) {
-          const ids = h.messages
-            .filter((m) => (m.role === "user" || m.role === "assistant") && m.id)
-            .map((m) => ({ role: m.role, id: m.id as number }))
-          set((s) => {
-            let cursor = 0
-            let changed = false
-            const items = s.items.map((it) => {
-              if (it.role !== "user" && it.role !== "assistant") return it
-              while (cursor < ids.length && ids[cursor].role !== it.role) cursor += 1
-              if (cursor >= ids.length) return it
-              const id = ids[cursor].id
-              cursor += 1
-              if (it.dbId === id) return it
-              changed = true
-              return { ...it, dbId: id }
+      if (useSessionStore.getState().status?.session_id === turnSessionId) {
+        try {
+          const h = await fetchHistory()
+          if (!get().streaming) {
+            const ids = h.messages
+              .filter((m) => (m.role === "user" || m.role === "assistant") && m.id)
+              .map((m) => ({ role: m.role, id: m.id as number }))
+            set((s) => {
+              let cursor = 0
+              let changed = false
+              const items = s.items.map((it) => {
+                if (it.role !== "user" && it.role !== "assistant") return it
+                while (cursor < ids.length && ids[cursor].role !== it.role) cursor += 1
+                if (cursor >= ids.length) return it
+                const id = ids[cursor].id
+                cursor += 1
+                if (it.dbId === id) return it
+                changed = true
+                return { ...it, dbId: id }
+              })
+              return changed ? { items } : s
             })
-            return changed ? { items } : s
-          })
+          }
+        } catch {
+          /* ids are a convenience; the next explicit action re-reads history */
         }
-      } catch {
-        /* ids are a convenience; the next explicit action re-reads history */
       }
     }
   },

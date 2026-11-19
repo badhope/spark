@@ -6,6 +6,7 @@ import { cls, IconButton } from "./ui"
 import { BrandMark } from "./BrandMark"
 import { useUiStore } from "../store/uiStore"
 import { useSessionStore } from "../store/sessionStore"
+import { useSessionRuntimeStore } from "../store/sessionRuntime"
 import { t, type Lang, type TranslationKey } from "../i18n"
 
 function ThemeGlyph({ theme }: { theme: "light" | "dark" | "system" }) {
@@ -172,6 +173,7 @@ export const Sidebar = memo(function Sidebar() {
   const theme = useUiStore((s) => s.theme)
   const lang = useUiStore((s) => s.lang)
   const showKeywords = useSessionStore((s) => s.status?.display?.show_keywords ?? true)
+  const runtimes = useSessionRuntimeStore((s) => s.runtimes)
 
   const [query, setQuery] = useState("")
   // 服务端全文检索结果（FTS5）。本地过滤只覆盖标题/keywords/model，
@@ -333,6 +335,15 @@ export const Sidebar = memo(function Sidebar() {
               <ul className="flex flex-col gap-0.5">
                 {g.items.map((s) => {
                   const active = s.id === currentId
+                  const phase = runtimes[s.id]?.phase ?? "idle"
+                  const runtimeKey: TranslationKey | null =
+                    phase === "streaming"
+                      ? "sidebar.generating"
+                      : phase === "waiting_approval"
+                        ? "sidebar.waitingApproval"
+                        : phase === "waiting_question"
+                          ? "sidebar.waitingQuestion"
+                          : null
                   return (
                     <li key={s.id} className="group relative">
                       {renamingId === s.id ? (
@@ -385,6 +396,24 @@ export const Sidebar = memo(function Sidebar() {
                         <span className="block truncate text-[12.5px] font-medium">
                           {s.title && s.title !== "untitled" ? s.title : t("common.newChat", lang)}
                         </span>
+                        {runtimeKey && (
+                          <span
+                            className={cls(
+                              "mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9.5px] font-medium",
+                              phase === "streaming"
+                                ? "bg-accent/10 text-accent"
+                                : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                            )}
+                          >
+                            <span
+                              className={cls(
+                                "h-1.5 w-1.5 rounded-full",
+                                phase === "streaming" ? "animate-pulse bg-accent" : "bg-amber-500",
+                              )}
+                            />
+                            {t(runtimeKey, lang)}
+                          </span>
+                        )}
                         {showKeywords && s.keywords && (
                           <span className="mt-1 flex flex-wrap gap-1">
                             {s.keywords

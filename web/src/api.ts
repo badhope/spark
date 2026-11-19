@@ -1,5 +1,7 @@
 import type {
   ChatEvent,
+  SessionEventsPage,
+  SessionPending,
   Status,
   ProbeResult,
   SessionRow,
@@ -209,6 +211,23 @@ export async function fetchHistory(): Promise<{ session_id: string; messages: Hi
   return readJson(await fetchWithTimeout("/api/history"))
 }
 
+export async function fetchSessionPending(sessionId: string): Promise<SessionPending> {
+  return readJson(
+    await fetchWithTimeout(`/api/sessions/${encodeURIComponent(sessionId)}/pending`),
+  )
+}
+
+export async function fetchSessionEvents(
+  sessionId: string,
+  afterSeq = 0,
+): Promise<SessionEventsPage> {
+  return readJson(
+    await fetchWithTimeout(
+      `/api/sessions/${encodeURIComponent(sessionId)}/events?after_seq=${Math.max(0, afterSeq)}`,
+    ),
+  )
+}
+
 export async function newSession(): Promise<Status> {
   const data = await readJson<{ status: Status }>(
     await fetchWithTimeout("/api/sessions/new", { method: "POST" }),
@@ -228,8 +247,14 @@ export async function switchSession(
   )
 }
 
-export async function cancelTurn(): Promise<void> {
-  await readJson(await fetchWithTimeout("/api/cancel", { method: "POST" }))
+export async function cancelTurn(sessionId?: string): Promise<void> {
+  await readJson(
+    await fetchWithTimeout("/api/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sessionId ? { session_id: sessionId } : {}),
+    }),
+  )
 }
 
 export async function deleteSession(sessionId: string): Promise<{ ok: boolean; status?: Status }> {
@@ -304,22 +329,25 @@ export async function runSelfHeal(): Promise<{
   return readJson(await fetchWithTimeout("/api/selfheal", { method: "POST" }))
 }
 
-export async function answerQuestion(answer: string): Promise<void> {
+export async function answerQuestion(answer: string, sessionId?: string): Promise<void> {
   await readJson(
     await fetchWithTimeout("/api/question/answer", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answer }),
+      body: JSON.stringify(sessionId ? { answer, session_id: sessionId } : { answer }),
     }),
   )
 }
 
-export async function respondApproval(decision: "allow" | "allow_always" | "deny"): Promise<void> {
+export async function respondApproval(
+  decision: "allow" | "allow_always" | "deny",
+  sessionId?: string,
+): Promise<void> {
   await readJson(
     await fetchWithTimeout("/api/approval", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision }),
+      body: JSON.stringify(sessionId ? { decision, session_id: sessionId } : { decision }),
     }),
   )
 }

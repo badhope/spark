@@ -1,3 +1,31 @@
+export interface PendingApproval {
+  summary: string
+  diff?: string | null
+  tool: string
+  arguments: Record<string, unknown>
+  tool_call_id: string
+}
+
+export interface PendingQuestion {
+  question: string
+  options: string[]
+}
+
+/** GET /api/sessions/{id}/pending：刷新/切会话后恢复挂起交互。 */
+export interface SessionPending {
+  session_id: string
+  approval: PendingApproval | null
+  question: PendingQuestion | null
+}
+
+/** GET /api/sessions/{id}/events：SSE 断线补事件。 */
+export interface SessionEventsPage {
+  session_id: string
+  events: ChatEvent[]
+  reset_required: boolean
+  last_seq: number
+}
+
 export interface Status {
   session_id: string
   workdir: string
@@ -222,7 +250,17 @@ export interface ToolCall {
   arguments: unknown
 }
 
-export type ChatEvent =
+export interface ChatEnvelope {
+  /** Protocol version; 1 for the current backend. */
+  v?: number
+  session_id?: string
+  turn_id?: string
+  /** Monotonic within one turn/stream; also used as the SSE `id:`. */
+  seq?: number
+}
+
+export type ChatEvent = ChatEnvelope &
+  (
   | { type: "text_delta"; text: string }
   | { type: "reasoning_delta"; text: string }
   | { type: "tool_start"; tool: ToolCall; data?: { subtask_index?: number } }
@@ -242,6 +280,7 @@ export type ChatEvent =
   | { type: "turn_end"; text?: string }
   | { type: "turn_error"; text?: string }
   | { type: "done" }
+  )
 
 /** Goal 长程模式的目标状态（/goal 设立，goal_update 工具回报） */
 export interface GoalState {

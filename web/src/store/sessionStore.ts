@@ -1,7 +1,8 @@
 import { create } from "zustand"
 import type { ApprovalInfo, PlanStep, SessionRow, Status, ToolCall } from "../types"
-import { listSessions, newSession, switchSession, deleteSession, cancelTurn, respondApproval, forkSession, answerQuestion } from "../api"
+import { listSessions, newSession, switchSession, deleteSession, cancelTurn, respondApproval, forkSession, answerQuestion, fetchSessionPending } from "../api"
 import { useChatStore, historyToItems, setDraftSession, type ChatMsg } from "./chatStore"
+import { useSessionRuntimeStore } from "./sessionRuntime"
 import { useUiStore } from "./uiStore"
 
 export interface ApprovalState {
@@ -39,6 +40,55 @@ interface SessionState {
 
 export const useSessionStore = create<SessionState>((set, get) => {
   let approvalBusyRef = false
+
+  /** Rebuild pending approval/question UI from the backend after switch/refresh. */
+  async function hydratePending(sessionId: string) {
+    try {
+      const pending = await fetchSessionPending(sessionId)
+      useSessionRuntimeStore.getState().hydratePending(sessionId, pending)
+      if (get().status?.session_id !== sessionId) return
+      if (pending.approval) {
+        const p = pending.approval
+        set({
+          approval: {
+            info: {
+              summary: p.summary,
+              diff: p.diff ?? null,
+              id: p.tool_call_id,
+              tool: p.tool,
+              arguments: p.arguments,
+            },
+            tool: { id: p.tool_call_id, name: p.tool, arguments: p.arguments },
+          },
+          question: null,
+        })
+      } else {
+        set({ approval: null })
+      }
+      set({ question: pending.question ? { question: pending.question.question, options: pending.question.options } : null })
+    } catch {
+      /* pending is best-effort; switching/history already succeeded */
+    }
+  }
+
+  /**
+   * The visible turn is the visible session's turn, not a global "streaming"
+   * flag. Switching to a background session must not leave its Stop button
+   * hidden, and switching to an idle session must not leave it disabled.
+   */
+  function syncVisibleStreaming(sessionId: string) {
+    const rt = useSessionRuntimeStore.getState().runtimes[sessionId]
+    const active =
+      !!rt &&
+      (rt.phase === "streaming" ||
+        rt.phase === "waiting_approval" ||
+        rt.phase === "waiting_question")
+    useChatStore.setState({
+      streaming: active,
+      abortController: active ? rt.abortController : null,
+    })
+  }
+
   return {
     status: null,
     sessions: [],
@@ -49,14 +99,17 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     setStatus: (s) => {
       setDraftSession(s?.session_id ?? "")
+      if (s?.session_id) useSessionRuntimeStore.getState().ensure(s.session_id)
       set({ status: s })
     },
     patchStatus: (patch) => set((s) => ({ status: s.status ? { ...s.status, ...patch } : s.status })),
     setApproval: (a) => set({ approval: a }),
     setQuestion: (q) => set({ question: q }),
     handleAnswer: async (answer) => {
+      const sid = get().status?.session_id
       try {
-        await answerQuestion(answer)
+        await answerQuestion(answer, sid)
+        if (sid) useSessionRuntimeStore.getState().setPendingQuestion(sid, null)
         set({ question: null })
       } catch {
         useUiStore.getState().pushToast("toast.answerFailed", "error")
@@ -89,7 +142,9 @@ export const useSessionStore = create<SessionState>((set, get) => {
     handleNewSession: async () => {
       try {
         const st = await newSession()
-        set({ status: st, plan: st.plan || [] })
+        useSessionRuntimeStore.getState().ensure(st.session_id)
+        set({ status: st, plan: st.plan || [], approval: null, question: null })
+        syncVisibleStreaming(st.session_id)
         const chat = useChatStore.getState()
         chat.setItems([])
         chat.setInput(localStorage.getItem(`spark.draft:${st.session_id}`) ?? "")
@@ -107,11 +162,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
       try {
         const data = await switchSession(id)
         set({ status: data.status, plan: data.status.plan || [] })
+        syncVisibleStreaming(id)
         const items = historyToItems(data.messages)
         const chat = useChatStore.getState()
         chat.setItems(items)
         // Pick up this session's own draft (empty for a session never typed in).
         chat.setInput(localStorage.getItem(`spark.draft:${id}`) ?? "")
+        await hydratePending(id)
         await get().refreshSessions()
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
@@ -125,11 +182,17 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (!currentStatus) return
       try {
         const data = await deleteSession(id)
+        useSessionRuntimeStore.getState().remove(id)
         if (data.status) set({ status: data.status })
         if (id === currentStatus.session_id) {
           const chat = useChatStore.getState()
           chat.setItems([])
           set({ plan: data.status?.plan || [] })
+          if (data.status?.session_id) {
+            useSessionRuntimeStore.getState().ensure(data.status.session_id)
+            syncVisibleStreaming(data.status.session_id)
+            await hydratePending(data.status.session_id)
+          }
         }
         await get().refreshSessions()
       } catch (e) {
@@ -142,9 +205,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
     handleFork: async (id) => {
       try {
         const data = await forkSession(id ?? get().status?.session_id)
+        useSessionRuntimeStore.getState().ensure(data.status.session_id)
         set({ status: data.status, plan: data.status.plan || [] })
+        syncVisibleStreaming(data.status.session_id)
         const items = historyToItems(data.messages)
         useChatStore.getState().setItems(items)
+        set({ approval: null, question: null })
         useUiStore.getState().pushToast("toast.forkDone", "success")
         await get().refreshSessions()
       } catch {
@@ -154,12 +220,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     handleCancel: async () => {
       // Abort the local SSE request first so the UI stops immediately, then ask
-      // the server to stop the turn. The header button used to post
-      // /api/cancel only, leaving the stream open until the server closed it —
-      // two "stop" affordances with different behaviour.
+      // the server to stop the turn. The runtime is addressed by session id so
+      // a background conversation can be stopped without switching to it first.
+      const sid = get().status?.session_id
+      if (sid) useSessionRuntimeStore.getState().abort(sid)
       useChatStore.getState().cancel()
       try {
-        await cancelTurn()
+        await cancelTurn(sid)
       } catch {
         useUiStore.getState().pushToast("toast.cancelFailed", "error")
       }
@@ -169,8 +236,10 @@ export const useSessionStore = create<SessionState>((set, get) => {
       if (approvalBusyRef) return
       approvalBusyRef = true
       set({ approvalBusy: true })
+      const sid = get().status?.session_id
       try {
-        await respondApproval(decision)
+        await respondApproval(decision, sid)
+        if (sid) useSessionRuntimeStore.getState().setPendingApproval(sid, null)
         set({ approval: null })
       } catch {
         useUiStore.getState().pushToast("toast.approvalFailed", "error")

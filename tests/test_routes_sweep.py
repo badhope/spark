@@ -323,6 +323,37 @@ def test_post_question_answer_without_pending(web) -> None:
     assert "pending" in body["error"]
 
 
+def test_post_question_answer_routes_to_session_runtime(web) -> None:
+    base, state, _ = web
+    runtime = state.current_runtime
+    assert runtime is not None
+    bridge = runtime.question_bridge
+    bridge.pending = True
+    bridge._question = "which file?"
+    bridge._options = ["a.py", "b.py"]
+    status, body = _request(
+        base,
+        "/api/question/answer",
+        {"answer": "a.py", "session_id": runtime.session_id},
+    )
+    assert status == 200
+    assert body["ok"] is True
+    assert body["session_id"] == runtime.session_id
+    assert bridge._answer == "a.py"
+    assert bridge.pending is True  # answer() awaits the agent side to clear it
+
+
+def test_post_question_answer_unknown_session_is_404(web) -> None:
+    base, _, _ = web
+    status, body = _request(
+        base,
+        "/api/question/answer",
+        {"answer": "x", "session_id": "missing"},
+    )
+    assert status == 404
+    assert body["error"] == "unknown session"
+
+
 def test_post_selfheal_reports_actions(web) -> None:
     base, _, _ = web
     status, body = _request(base, "/api/selfheal", {})
