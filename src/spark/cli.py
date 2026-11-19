@@ -510,6 +510,79 @@ async def _exec_async(
         store.close()
 
 
+async def _workflow_run_async(
+    path: Path,
+    workdir: Path,
+    cfg: SparkConfig,
+    store: SessionStore,
+    session_id: str,
+    *,
+    max_parallel: int,
+    as_json: bool,
+) -> bool:
+    import json as _json
+
+    from spark.agents import discover_declared_agents
+    from spark.providers.factory import create_provider
+    from spark.tools import goal as goal_tools
+    from spark.tools.registry import ToolContext, ToolRegistry
+    from spark.workflow import AgentWorkflowRunner, load_workflow, run_workflow
+
+    prov = create_provider(cfg)
+    sandbox = WorkdirSandbox(workdir, cfg)
+    tool_ctx = ToolContext(sandbox=sandbox, config=cfg)
+    registry = ToolRegistry(tool_ctx)
+    bridge = await _boot_mcp(cfg, registry)
+    tool_ctx.mcp_call = bridge.call
+    tool_ctx.mcp_bridge = bridge
+    bridge.set_sampling_handler(prov)
+    goal_tools.attach_bridges(store, lambda: session_id)
+    loop = _agent_loop()(
+        workdir=workdir,
+        cfg=cfg,
+        provider=prov,
+        registry=registry,
+        store=store,
+        session_id=session_id,
+        approver=None,
+    )
+    agents = {agent.name: agent for agent in discover_declared_agents(workdir)}
+
+    def emit(payload: dict) -> None:
+        if as_json:
+            typer.echo(_json.dumps(payload, ensure_ascii=False))
+        else:
+            step = payload.get("step", "")
+            kind = payload.get("type", "")
+            if kind == "step_started":
+                typer.echo(f"→ {step}", err=True)
+            elif kind in {"step_completed", "step_failed"}:
+                typer.echo(f"{'✓' if kind == 'step_completed' else '✗'} {step}" + (f": {payload.get('error', '')}" if payload.get("error") else ""), err=True)
+
+    try:
+        spec = load_workflow(path, workdir=workdir)
+        runner = AgentWorkflowRunner(loop, spec, agents=agents, on_event=None)
+        run = await run_workflow(
+            spec, runner, workdir=workdir, max_parallel=max_parallel, on_event=emit
+        )
+        if as_json:
+            typer.echo(_json.dumps({
+                "type": "workflow_end", "ok": run.ok,
+                "statuses": run.statuses, "errors": run.errors,
+            }, ensure_ascii=False))
+        else:
+            typer.echo(f"workflow {spec.name}: {'ok' if run.ok else 'failed'}")
+            for step in spec.steps:
+                line = f"  {step.id}: {run.statuses.get(step.id, 'pending')}"
+                if step.id in run.errors:
+                    line += f" ({run.errors[step.id]})"
+                typer.echo(line)
+        return run.ok
+    finally:
+        await bridge.close()
+        store.close()
+
+
 @app.command("route", help="预览模型路由决策（不发起模型请求）")
 def route_cmd(
     workdir: Path = typer.Option(Path("."), "--workdir"),
@@ -1993,6 +2066,42 @@ def workflow_graph_cmd(
         typer.echo(str(exc), err=True)
         raise typer.Exit(2) from exc
     typer.echo(json.dumps(spec.graph(), ensure_ascii=False, indent=2 if pretty else None))
+
+
+@workflow_app.command("run", help="按 DAG 并发执行 YAML 工作流")
+def workflow_run_cmd(
+    path: Path = typer.Argument(..., help="YAML 工作流文件"),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    approval: str | None = typer.Option(None, "--approval"),
+    model: str | None = typer.Option(None, "--model"),
+    provider: str | None = typer.Option(None, "--provider"),
+    config: Path | None = typer.Option(None, "--config"),
+    sandbox_mode: str | None = typer.Option(None, "--sandbox-mode"),
+    max_parallel: int = typer.Option(2, "--max-parallel", min=1, max=8),
+    as_json: bool = typer.Option(False, "--json", help="输出 NDJSON 工作流事件"),
+) -> None:
+    try:
+        workdir = workdir.resolve()
+        cfg = _common_cfg(
+            workdir, config, approval, model, provider, sandbox_mode=sandbox_mode
+        )
+        if cfg.agent.approval == "suggest":
+            raise ConfigError(
+                "spark workflow run cannot collect approvals; use --approval auto-edit or full-auto"
+            )
+        store = _store()
+        session_id = store.create_session(workdir, cfg.provider.model, title=path.name)
+        ok = asyncio.run(
+            _workflow_run_async(
+                path, workdir, cfg, store, session_id,
+                max_parallel=max_parallel, as_json=as_json,
+            )
+        )
+    except SparkError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(exc.exit_code) from exc
+    if not ok:
+        raise typer.Exit(1)
 
 
 

@@ -329,6 +329,7 @@ async def run_workflow(
     max_parallel: int = 2,
     cancel: Any = None,
     initial_outputs: dict[str, str] | None = None,
+    on_event: Any = None,
 ) -> WorkflowRun:
     """Execute a validated DAG with bounded concurrency and per-step retries.
 
@@ -346,7 +347,10 @@ async def run_workflow(
     semaphore = asyncio.Semaphore(workers)
 
     def emit(kind: str, step: StepSpec, **extra: Any) -> None:
-        run.events.append({"type": kind, "step": step.id, **extra})
+        payload = {"type": kind, "step": step.id, **extra}
+        run.events.append(payload)
+        if on_event is not None:
+            on_event(payload)
 
     def cancelled() -> bool:
         if cancel is None:
@@ -413,3 +417,73 @@ async def run_workflow(
                 run.statuses[step.id] = "blocked"
                 pending.discard(step.id)
     return run
+
+
+# ---------------------------------------------------------------------------
+# AgentLoop adapter
+# ---------------------------------------------------------------------------
+
+
+class AgentWorkflowRunner:
+    """Adapter from workflow steps to ``AgentLoop.spawn_subtask``.
+
+    Each step gets its own child context (so parallel experts do not share
+    conversation state), the declared agent's prompt/tools/model when present,
+    and dependency outputs in its task prompt.
+    """
+
+    def __init__(
+        self,
+        loop: Any,
+        spec: WorkflowSpec,
+        *,
+        agents: dict[str, Any] | None = None,
+        on_event: Any = None,
+    ) -> None:
+        self.loop = loop
+        self.spec = spec
+        self.agents = agents or {}
+        self.on_event = on_event
+
+    def __call__(self, step: StepSpec, deps: dict[str, str]) -> Any:
+        return self._run(step, deps)
+
+    async def _run(self, step: StepSpec, deps: dict[str, str]) -> str:
+        role = self._role(step)
+        agent = self.agents.get(role.agent)
+        prompt = self._prompt(step, deps)
+        kwargs: dict[str, Any] = {}
+        if agent is not None:
+            kwargs["system_extra"] = getattr(agent, "body", "")
+            tools = list(getattr(agent, "tools", []) or [])
+            if tools:
+                kwargs["tools_allowlist"] = tools
+            model = getattr(agent, "model", "")
+            if model:
+                kwargs["model"] = model
+        final = ""
+        async for event in self.loop.spawn_subtask(prompt, **kwargs):
+            if event.type == "turn_end":
+                final = event.text or final
+            elif self.on_event is not None and event.type in {
+                "tool_start", "tool_end", "plan", "approval_needed"
+            }:
+                self.on_event(step.id, event)
+        return final
+
+    def _role(self, step: StepSpec) -> RoleSpec:
+        return self.spec.roles[step.role]
+
+    def _prompt(self, step: StepSpec, deps: dict[str, str]) -> str:
+        parts = [
+            f"你是工作流步骤 {step.id}，角色是 {step.role}。",
+            step.prompt,
+        ]
+        if deps:
+            parts.append("上游步骤的输出：")
+            for name, output in sorted(deps.items()):
+                parts.append(f"<{name}>\n{output[:4000]}\n</{name}>")
+        if step.writes:
+            parts.append("你只能写入这些路径： " + ", ".join(step.writes))
+        parts.append("完成后用简短文字总结改动、验证结果和剩余风险。")
+        return "\n\n".join(parts)

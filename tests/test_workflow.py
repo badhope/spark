@@ -178,3 +178,54 @@ async def test_runner_cancel_marks_pending_cancelled() -> None:
 
     run = await run_workflow(spec, runner, cancel=lambda: True)
     assert run.statuses["a"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_agent_adapter_builds_prompt_and_uses_role_agent() -> None:
+    from types import SimpleNamespace
+
+    from spark.workflow import AgentWorkflowRunner, RoleSpec, StepSpec, WorkflowSpec
+
+    class FakeLoop:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, dict]] = []
+
+        async def spawn_subtask(self, prompt, **kwargs):
+            self.calls.append((prompt, kwargs))
+            yield SimpleNamespace(type="tool_start", text="")
+            yield SimpleNamespace(type="turn_end", text="done:" + kwargs.get("model", ""))
+
+    spec = WorkflowSpec(
+        name="adapter",
+        version=1,
+        description="",
+        roles={
+            "lead": RoleSpec(name="lead", agent="lead"),
+            "expert": RoleSpec(name="expert", agent="expert"),
+        },
+        steps=(
+            StepSpec(id="plan", role="lead", prompt="plan it"),
+            StepSpec(
+                id="impl",
+                role="expert",
+                prompt="implement it",
+                needs=("plan",),
+                writes=("src/",),
+            ),
+        ),
+    )
+    loop = FakeLoop()
+    events: list[tuple[str, str]] = []
+    runner = AgentWorkflowRunner(
+        loop,
+        spec,
+        agents={"expert": SimpleNamespace(body="expert rules", tools=["read_file"], model="cheap")},
+        on_event=lambda step_id, event: events.append((step_id, event.type)),
+    )
+    assert await runner(spec.steps[0], {}) == "done:"
+    assert await runner(spec.steps[1], {"plan": "PLAN-OUTPUT"}) == "done:cheap"
+    prompt, kwargs = loop.calls[1]
+    assert "PLAN-OUTPUT" in prompt and "src/" in prompt
+    assert kwargs["system_extra"] == "expert rules"
+    assert kwargs["tools_allowlist"] == ["read_file"]
+    assert kwargs["model"] == "cheap"
