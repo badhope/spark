@@ -4,18 +4,18 @@
 
 | 角色 | 负责范围 | 默认 owner |
 |---|---|---|
-| Core Owner | config / proc / policy / loop / graph / context / checkpoints / agents / automations | TBD |
-| Provider Owner | providers / model_catalog / memory / 路由与成本 | TBD |
-| Tool Owner | tools / registry / edit / pty / knowledge | TBD |
-| Extension Owner | skills / plugins / hooks / mcp | TBD |
-| Surface Owner | cli / tui / web / acp / a2a / vscode / desktop | TBD |
-| Control Owner | control / authz / office | TBD |
-| Quality Owner | evals / CI / 覆盖率 / 契约测试 | TBD |
-| Release Owner | 打包 / updater / 通道 / 回滚 | TBD |
-| Security Owner | 威胁模型 / 密钥 / SBOM / 审计 / 脱敏 | TBD |
-| Docs Owner | docs / brand / i18n / 术语表 | TBD |
+| Core Owner | config / proc / policy / loop / graph / context / checkpoints / agents / automations | badhope |
+| Provider Owner | providers / model_catalog / memory / 路由与成本 | badhope |
+| Tool Owner | tools / registry / edit / pty / knowledge | badhope |
+| Extension Owner | skills / plugins / hooks / mcp | badhope |
+| Surface Owner | cli / tui / web / acp / a2a / vscode / desktop | badhope |
+| Control Owner | control / authz / office | badhope |
+| Quality Owner | evals / CI / 覆盖率 / 契约测试 | badhope |
+| Release Owner | 打包 / updater / 通道 / 回滚 | badhope |
+| Security Owner | 威胁模型 / 密钥 / SBOM / 审计 / 脱敏 | badhope |
+| Docs Owner | docs / brand / i18n / 术语表 | badhope |
 
-> 小团队可一人兼多个角色；每个模块仍只能有一个 accountable owner。TBD 必须在 M0 前填真实姓名/账号。
+> 当前为单人维护：`badhope` 兼任全部角色；每个模块仍只有一个 accountable owner（见 `module-ledger.md`）。
 
 ## 决策权
 

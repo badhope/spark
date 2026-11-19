@@ -7,6 +7,7 @@
 | 文件 | 用途 | 对应计划 |
 |---|---|---|
 | `roles-raci.md` | 角色、owner、决策权 | 11.1 / 11.7 |
+| `module-ledger.md` | 31 模块台账、契约、owner、状态 | 8.1 / 11.1 |
 | `wbs-dependencies.md` | WBS、依赖、关键路径、WIP | 11.2 / 11.4 / 11.10 |
 | `stage-gates.md` | M0–M4 阶段门证据清单 | 11.3 / 11.9 |
 | `templates/weekly-status.md` | 每周一页状态 | 11.6 |
