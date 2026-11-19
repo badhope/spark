@@ -321,6 +321,15 @@ def main(
         help="路由预算：low | medium | high",
     ),
 ) -> None:
+    if tier not in {"auto", "capability", "cost", "offline"}:
+        typer.echo(f"invalid --tier: {tier}", err=True)
+        raise typer.Exit(2)
+    if task not in {"code", "debug", "chat", "plan", "review", "edit", "compact", "title", "offline"}:
+        typer.echo(f"invalid --task: {task}", err=True)
+        raise typer.Exit(2)
+    if budget not in {"low", "medium", "high"}:
+        typer.echo(f"invalid --budget: {budget}", err=True)
+        raise typer.Exit(2)
     _RUNTIME_ROUTE.update({"tier": tier, "task": task, "budget": budget})
     if version_flag:
         typer.echo(version_line(_installed_version()))
@@ -505,9 +514,9 @@ async def _exec_async(
 def route_cmd(
     workdir: Path = typer.Option(Path("."), "--workdir"),
     config: Path | None = typer.Option(None, "--config"),
-    tier: str = typer.Option("auto", "--tier", help="auto | capability | cost | offline"),
-    task: str = typer.Option("code", "--task"),
-    budget: str = typer.Option("medium", "--budget"),
+    tier: str | None = typer.Option(None, "--tier", help="auto | capability | cost | offline"),
+    task: str | None = typer.Option(None, "--task"),
+    budget: str | None = typer.Option(None, "--budget"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Show which tier would be chosen and why, including degradation chain."""
@@ -519,9 +528,9 @@ def route_cmd(
         cfg = _common_cfg(workdir.resolve(), config, None, None, None)
         decision = route_for_cli(
             cfg,
-            tier_class=tier,
-            task_type=cast("TaskType", task),
-            budget=cast("Budget", budget),
+            tier_class=tier or _RUNTIME_ROUTE.get("tier", "auto"),
+            task_type=cast("TaskType", task or _RUNTIME_ROUTE.get("task", "code")),
+            budget=cast("Budget", budget or _RUNTIME_ROUTE.get("budget", "medium")),
         )
         payload = dict(describe_decision(decision))
         if as_json:
