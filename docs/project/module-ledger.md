@@ -7,7 +7,7 @@
 |---|---|---|---|---|---|---|
 | M01 | CLI 与入口 | `src/spark/cli.py`、`__main__.py`、`brand.py` | `spark <cmd>`、`--version` | `tests/test_cli_*`、`test_startup_imports.py` | badhope | 稳定 |
 | M02 | 配置与首次启动 | `config.py`、`onboard.py` | config.toml / 环境变量 / `spark onboard` | `test_config*`、`test_cli_onboarding.py` | badhope | 稳定 |
-| M03 | Agent Loop | `core/loop.py` | `AgentLoop.iter_turn_sync()` / 事件流 | `test_loop*`、`test_harness_upgrades.py` | badhope | 演进中（2035 行待拆） |
+| M03 | Agent Loop | `core/loop.py`、`core/context_window.py`、`core/turn_control.py`、`core/tool_runner.py`、`core/subagent_runner.py` | `AgentLoop.iter_turn_sync()` / 事件流 | `test_loop*`、`test_harness_upgrades.py`、`test_agent_runtime.py` | badhope | 演进中（已拆 4 mixin，loop 736 行；待 M0 收口） |
 | M04 | 上下文与 Token | `core/context.py`、`core/tokens.py` | 压缩阈值 / token 估算 | `test_context*`、`test_tokens*` | badhope | 稳定 |
 | M05 | 回合存储与检查点 | `core/turn_store.py`、`core/checkpoints.py` | turn/checkpoint 持久化 | `test_turn_store*`、`test_checkpoints*` | badhope | 稳定 |
 | M06 | Provider 层 | `providers/` | `BaseProvider.stream()` | `test_providers*`、`test_llm*` | badhope | 稳定 |
@@ -23,7 +23,7 @@
 | M16 | 记忆系统 | `memory/`、`git_memory.py` | memory_search / auto-extract | `test_memory*` | badhope | 稳定 |
 | M17 | 知识与 Wiki | `knowledge.py`、`wiki.py` | knowledge / wiki API | `test_knowledge*`、`test_web_wiki_api.py` | badhope | 稳定 |
 | M18 | Skills / Hooks / 插件 | `skills.py`、`hooks.py` | skill 扫描 / hook 生命周期 | `test_skills*`、`test_hooks*` | badhope | 演进中（插件执行面需隔离） |
-| M19 | 子 Agent | `agents.py`、`tools/task.py` | task / subtask 事件 | `test_agents*`、`test_subagents*` | badhope | 稳定 |
+| M19 | 子 Agent | `agents.py`、`tools/task.py`、`core/subagent_runner.py` | task / subtask 事件 | `test_agents*`、`test_subagents*`、`test_p1_04_declsubagent.py` | badhope | 稳定 |
 | M20 | Web 运行时 / SSE | `web/state.py`、`sse.py`、`session_stream.py` | SessionRuntime / SSE v1 / replay | `test_routes_sweep.py`、`test_web_sse.py` | badhope | 稳定 |
 | M21 | Web API / Handler | `web/routes.py`、`web/_handlers*.py` | `/api/*` JSON/SSE | `test_routes_sweep.py`、`test_e2e_server.py` | badhope | 稳定 |
 | M22 | Web UI | `web/src/` | 会话/审批/设置/工作台 | `test_ui_browser.py`、前端 `tsc`/`eslint` | badhope | 稳定 |

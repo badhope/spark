@@ -9,7 +9,8 @@
 - [x] `GET /api/sessions/{id}/pending`、`GET /api/sessions/{id}/events?after_seq=` 可用（`e40b6a3`）
 - [x] `GET /api/sessions/{id}/stream?after_seq=` 断线重放/续流（`0d197c2`）
 - [x] 流中切会话：旧流继续、审批/提问不跨会话；前端 per-session 缓存与徽标（`9448d3c`、`1e63da0`）
-- [ ] W0.5：`loop.py < 800`；`control` 走 AgentLoop；`tasks.session_id`/`artifacts.session_id`
+- [x] W0.5a：`loop.py` 从 2035 行拆到 736 行（`context_window` / `turn_control` / `tool_runner` / `subagent_runner` 四个 mixin），核心 79 项回归通过
+- [ ] W0.5b：`control` 走 AgentLoop；`tasks.session_id`/`artifacts.session_id`
 - [x] 31 模块台账 + owner + `docs/project/roles-raci.md` 真实 owner（`module-ledger.md`）
 - [x] `perf/baseline.json` 可对比（CLI p50 155.8ms / p95 170.9ms）
 - [ ] 旧 server 回退开关 `SPARK_WEB_LEGACY=1` 可用
