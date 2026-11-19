@@ -4,18 +4,19 @@
 
 ## M0（第 1–6 周）
 
-- [ ] `ruff` / `mypy` / `bandit` / `lint-imports` 全绿
-- [ ] W0：SSE envelope（v/session_id/turn_id/seq）+ SessionRuntimeRegistry
-- [ ] `GET /api/sessions/{id}/pending`、`GET /api/sessions/{id}/events?after_seq=` 可用
-- [ ] 流中切会话：旧流继续、审批/提问不跨会话
+- [x] `ruff` / `mypy` / `bandit` / `lint-imports` 全绿（`b650ecc`）
+- [x] W0：SSE envelope（v/session_id/turn_id/seq）+ SessionRuntimeRegistry（`e40b6a3`）
+- [x] `GET /api/sessions/{id}/pending`、`GET /api/sessions/{id}/events?after_seq=` 可用（`e40b6a3`）
+- [x] `GET /api/sessions/{id}/stream?after_seq=` 断线重放/续流（`0d197c2`）
+- [x] 流中切会话：旧流继续、审批/提问不跨会话；前端 per-session 缓存与徽标（`9448d3c`、`1e63da0`）
 - [ ] W0.5：`loop.py < 800`；`control` 走 AgentLoop；`tasks.session_id`/`artifacts.session_id`
 - [ ] 31 模块台账 + owner + `docs/project/roles-raci.md` 真实 owner
-- [ ] `perf/baseline.json` 可对比；首批预算 CI 能跑
+- [x] `perf/baseline.json` 可对比（CLI p50 155.8ms / p95 170.9ms）
 - [ ] 旧 server 回退开关 `SPARK_WEB_LEGACY=1` 可用
 
 ## M1（第 7–13 周）
 
-- [ ] W9a：前端 `sessionRuntime`；切会话 0 污染；后台会话“生成中”徽标
+- [x] W9a：前端 `sessionRuntime`；切会话 0 污染；后台会话“生成中/待审批/待回答”徽标（`9448d3c`、`1e63da0`）
 - [ ] W1：definition/references/hover/rename + 影响面
 - [ ] W2：Anthropic/OpenAI/Gemini 原生预设；routing 有调用方；成本面板
 - [ ] 前端首屏 gzip ≤220KB；Workbench 5 tab；设置 5 页
