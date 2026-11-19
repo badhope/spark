@@ -63,8 +63,10 @@ jobs:
         # `pty` is included deliberately: the terminal test drives a real
         # ptyprocess, and without the extra it would skip on Linux — leaving the
         # whole terminal surface untested on the platform that supports it.
+        # The control-plane tests import FastAPI at module scope, so the platform
+        # and enterprise extras must be present for collection to succeed.
         run: |
-          pip install -e ".[dev,pty]"
+          pip install -e ".[dev,pty,platform,enterprise]"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
