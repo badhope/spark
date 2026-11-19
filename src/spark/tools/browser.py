@@ -109,10 +109,31 @@ class _Worker:
     def __init__(self, workdir: Path) -> None:
         self.workdir = workdir
         self._startup_error: Exception | None = None
+        self.allow_network = True
         self._queue: queue.Queue[Callable[[], Any] | None] = queue.Queue()
         self._thread = threading.Thread(target=self._run, name="spark-browser", daemon=True)
         self._thread.start()
         self._closed = False
+
+    def _guard_request(self, route: Any) -> None:
+        """Re-check every request so a redirect/JS fetch cannot reach private hosts."""
+        url = route.request.url
+        parsed = urlparse(url)
+        if parsed.scheme in {"http", "https"}:
+            if not self.allow_network:
+                route.abort()
+                return
+            try:
+                validate_browser_url(url, self.workdir)
+            except BrowserError:
+                route.abort()
+                return
+        elif parsed.scheme == "file":
+            inside, error = _is_local_file(url, self.workdir)
+            if not inside or error:
+                route.abort()
+                return
+        route.continue_()
 
     @staticmethod
     def _launch(chromium: Any) -> Any:
@@ -143,7 +164,11 @@ class _Worker:
     def _run(self) -> None:
         from playwright.sync_api import sync_playwright
 
-        self._playwright = sync_playwright().start()
+        try:
+            self._playwright = sync_playwright().start()
+        except Exception as exc:  # noqa: BLE001 - report through call()
+            self._startup_error = exc
+            return
         try:
             self._browser = self._launch(self._playwright.chromium)
         except Exception as exc:  # noqa: BLE001 - report through call()
@@ -160,6 +185,7 @@ class _Worker:
             locale="zh-CN",
         )
         self._page = self._context.new_page()
+        self._page.route("**/*", self._guard_request)
         while True:
             item = self._queue.get()
             if item is None:
@@ -241,6 +267,7 @@ def browser_open(ctx: Any, args: BrowserArgs) -> ToolResult:
     except BrowserError as exc:
         return ToolResult(ok=False, payload={"error": str(exc)})
     worker = _get_worker(ctx.sandbox.root)
+    worker.allow_network = bool(getattr(ctx.config.agent, "network_access", True))
     try:
         result = worker.call(lambda page: (page.goto(args.url, wait_until="domcontentloaded"), _snapshot(page))[1])
     except Exception as exc:  # noqa: BLE001
