@@ -166,6 +166,8 @@ spark plugins disable demo
 ```bash
 spark plugins search demo --registry ./registry.json
 spark plugins install-registry demo --registry ./registry.json
+spark plugins install-bundle official --registry ./registry.json
+spark plugins install-official --registry ./registry.json
 spark plugins updates --registry ./registry.json
 spark plugins upgrade demo --registry ./registry.json
 ```

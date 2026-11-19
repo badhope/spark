@@ -807,10 +807,26 @@ class PluginRegistryEntry(BaseModel):
         return value
 
 
+class PluginBundle(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    description: str = ""
+    plugins: list[str] = Field(default_factory=list)
+
+    @field_validator("plugins")
+    @classmethod
+    def _plugins(cls, values: list[str]) -> list[str]:
+        for value in values:
+            if not NAME_RE.fullmatch(value):
+                raise ValueError(f"invalid plugin name in bundle: {value}")
+        return values
+
+
 class PluginRegistry(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     plugins: list[PluginRegistryEntry] = Field(default_factory=list)
+    bundles: dict[str, PluginBundle] = Field(default_factory=dict)
 
 
 def registry_source(source: str | Path | None = None) -> str:
@@ -880,6 +896,66 @@ class PluginUpdate:
     installed: str
     available: str
     url: str
+
+
+def resolve_bundle(
+    name: str, source: str | Path | None = None
+) -> tuple[PluginBundle, list[PluginRegistryEntry]]:
+    """Resolve a named bundle to its registry entries (no installation)."""
+    registry = load_registry(source)
+    bundle = registry.bundles.get(name)
+    if bundle is None:
+        available = ", ".join(sorted(registry.bundles)) or "（无）"
+        raise PluginError(f"插件包不存在: {name}；可用: {available}")
+    by_name = {entry.name: entry for entry in registry.plugins}
+    missing = [plugin for plugin in bundle.plugins if plugin not in by_name]
+    if missing:
+        raise PluginError(f"插件包 {name} 引用了不存在的插件: {', '.join(missing)}")
+    return bundle, [by_name[plugin] for plugin in bundle.plugins]
+
+
+def install_bundle(
+    name: str,
+    workdir: Path,
+    *,
+    source: str | Path | None = None,
+    force: bool = False,
+) -> list[PluginRecord]:
+    """Install every plugin in a bundle; each plugin stays independently removable.
+
+    Installation is best-effort across members: a broken member is reported but
+    does not prevent the others from installing. Each member goes through the
+    same manifest validation/atomic replace path as a single install.
+    """
+    registry = load_registry(source)
+    bundle = registry.bundles.get(name)
+    if bundle is None:
+        raise PluginError(f"插件包不存在: {name}")
+    by_name = {entry.name: entry for entry in registry.plugins}
+    installed: list[PluginRecord] = []
+    failures: list[str] = []
+    for plugin in bundle.plugins:
+        entry = by_name.get(plugin)
+        if entry is None:
+            failures.append(f"{plugin}: 索引缺失")
+            continue
+        try:
+            installed.append(
+                install_git(
+                    entry.url,
+                    workdir,
+                    ref=entry.ref,
+                    subdir=entry.subdir,
+                    force=force,
+                )
+            )
+        except PluginError as exc:
+            failures.append(f"{plugin}: {exc}")
+    if failures:
+        raise PluginError(
+            "插件包部分安装失败: " + "; ".join(failures)
+        )
+    return installed
 
 
 def check_updates(

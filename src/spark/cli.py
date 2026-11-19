@@ -2276,6 +2276,46 @@ def plugins_install_registry_cmd(
     typer.echo(f"✓ {record.name} -> {record.path}")
 
 
+@plugins_app.command("install-bundle", help="按市场索引中的插件包一次安装多个插件")
+def plugins_install_bundle_cmd(
+    name: str = typer.Argument(..., help="插件包 name"),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    registry: str = typer.Option("", "--registry", help="市场索引 URL 或本地 JSON"),
+    force: bool = typer.Option(False, "--force", help="已存在时备份旧版本再安装"),
+) -> None:
+    from spark.plugins import install_bundle
+
+    try:
+        records = install_bundle(
+            name, workdir.resolve(), source=registry or None, force=force
+        )
+    except PluginError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    for record in records:
+        typer.echo(f"✓ {record.name} -> {record.path}")
+
+
+@plugins_app.command("install-official", help="安装 official 插件包")
+def plugins_install_official_cmd(
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    registry: str = typer.Option("", "--registry", help="市场索引 URL 或本地 JSON"),
+    force: bool = typer.Option(False, "--force"),
+) -> None:
+    from spark.plugins import install_bundle
+
+    try:
+        records = install_bundle(
+            "official", workdir.resolve(), source=registry or None, force=force
+        )
+    except PluginError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    for record in records:
+        typer.echo(f"✓ {record.name} -> {record.path}")
+    typer.echo("插件包已安装；每个插件仍可单独 spark plugins disable <name>。")
+
+
 @plugins_app.command("install-git", help="从 git 仓库克隆并安装插件（仅 https/ssh 网络地址）")
 def plugins_install_git_cmd(
     url: str = typer.Argument(..., help="git 地址"),

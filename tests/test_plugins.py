@@ -623,3 +623,41 @@ def test_registry_update_detection(tmp_path: Path) -> None:
     assert updates[0].available == "0.2.0"
     with pytest.raises(PluginError, match="未安装或"):
         upgrade_from_registry("missing", workdir, source=index)
+
+
+def test_registry_bundle_resolution_and_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from spark import plugins as plugins_mod
+
+    index = tmp_path / "registry.json"
+    index.write_text(
+        json.dumps(
+            {
+                "plugins": [
+                    {"name": "one", "version": "0.1.0", "url": "https://example.com/one.git"},
+                    {"name": "two", "version": "0.1.0", "url": "https://example.com/two.git"},
+                ],
+                "bundles": {
+                    "official": {
+                        "description": "official set",
+                        "plugins": ["one", "two"],
+                    }
+                },
+            }
+        )
+    )
+    bundle, entries = plugins_mod.resolve_bundle("official", index)
+    assert bundle.description == "official set"
+    assert [entry.name for entry in entries] == ["one", "two"]
+    calls: list[str] = []
+
+    def fake_install(url, workdir, *, ref="", subdir="", force=False, timeout_sec=300):
+        calls.append(url)
+        name = url.rsplit("/", 1)[-1].removesuffix(".git")
+        return plugins_mod.PluginRecord(name=name, path=workdir / name)
+
+    monkeypatch.setattr(plugins_mod, "install_git", fake_install)
+    records = plugins_mod.install_bundle("official", tmp_path / "work", source=index)
+    assert [record.name for record in records] == ["one", "two"]
+    assert calls == ["https://example.com/one.git", "https://example.com/two.git"]
+    with pytest.raises(PluginError, match="不存在"):
+        plugins_mod.resolve_bundle("missing", index)

@@ -37,7 +37,7 @@
 | M30 | 评测与可观测 | `evals/`、`otel.py` | eval runner / OTel span | `test_evals*`、`test_otel*` | badhope | 演进中（覆盖不足） |
 | M31 | 发布 / 文档 / 品牌 | `updater.py`、`deploy/`、`docs/`、`brand/`、`.github/` | 包 / 升级 / CI / 品牌 | CI、打包冒烟 | badhope | 演进中 |
 | M32 | 代码智能 / LSP | `src/spark/lsp/`（client / servers / manager / workspace / impact / tools） | LSP definition/references/hover/symbols/diagnostics/rename/code action；`affected_tests` | `tests/test_lsp_tools.py`（12 项，含 fake stdio server、dry-run/落盘、跨文件、降级、沙箱、六语言探测） | badhope | 稳定 |
-| M33 | 插件运行时 | `plugins.py`、`spark plugins` | manifest 校验/发现/本地安装/卸载；`[plugins].enabled` + `hooks`/`tools` 权限门；hook 与 tool 独立子进程（超时/无 stdin/环境变量清洗）；工具命名空间注册进 ToolRegistry；只读 Web 列表、命令、市场索引、版本检查/升级 | `tests/test_plugins.py`（36 项） | badhope | 演进中（W4-a/W4-b/W4-c tools+git 安装+commands+市场索引+updates 完成；官方包待接） |
+| M33 | 插件运行时 | `plugins.py`、`spark plugins` | manifest 校验/发现/本地安装/卸载；`[plugins].enabled` + `hooks`/`tools` 权限门；hook 与 tool 独立子进程（超时/无 stdin/环境变量清洗）；工具命名空间注册进 ToolRegistry；只读 Web 列表、命令、市场索引、版本检查/升级 | `tests/test_plugins.py`（36 项） | badhope | 演进中（W4-a/W4-b/W4-c tools+git 安装+commands+市场索引+updates+official bundle 完成；官方插件内容待接） |
 | M34 | PR 上下文 | `pr.py`、`tools/pr_tools.py`、`docs/PR_REVIEW.md` | GitHub/GitCode/Gitee REST：PR 元数据/文件/diff/评论/CI；origin 解析；平台 token 可选；CLI `spark pr view/diff/checks/review/publish`；`publish --confirm` | `tests/test_pr.py`（7 项，mock transport） | badhope | 稳定（W5-b review 闭环） |
 | M35 | 浏览器工具 | `tools/browser.py` | `browser_open/click/type/scroll/wait/screenshot/viewport`；Playwright 后台线程；公网 http(s)/工作目录 `file://`；untrusted 文本 | `tests/test_browser.py`（3 项，真实 Playwright 本地页） | badhope | 稳定（W5-a 浏览器面） |
 
