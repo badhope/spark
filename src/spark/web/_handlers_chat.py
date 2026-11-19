@@ -507,16 +507,17 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
         # 600s 超时才能退出（loop.cancelled 只在 llm 回合检查）。
         runtime.question_bridge.cancel()
 
+    legacy = bool(getattr(state, "legacy_sse", False))
     stream = _SSESession(
         handler.wfile,
         connection=handler.connection,
         on_disconnect=cancel_turn,
         close_connection=close_stream,
         secrets=_sse_secrets(),
-        session_id=turn_session_id,
-        turn_id=turn_id,
-        start_seq=runtime.next_seq_start(),
-        on_event=runtime.record_event,
+        session_id="" if legacy else turn_session_id,
+        turn_id="" if legacy else turn_id,
+        start_seq=0 if legacy else runtime.next_seq_start(),
+        on_event=None if legacy else runtime.record_event,
     )
     stream.start()
 

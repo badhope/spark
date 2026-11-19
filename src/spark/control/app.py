@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from spark.adapters.legacy import LocalArtifactStore
 from spark.config import SparkConfig, load_config
+from spark.control.agent_runner import ControlAgentRunner
 from spark.control.ai import OfficeAssistant
 from spark.control.audio import MAX_AUDIO_BYTES, AudioTranscriber
 from spark.control.auth import AuthContext, get_auth
@@ -79,11 +80,14 @@ from spark.control.schemas import (
     ReportOut,
     TaskCreate,
     TaskOut,
+    TaskRunOut,
+    TaskRunRequest,
     TenantCreate,
     TenantOut,
     TranscriptOut,
 )
 from spark.control.settings import ControlSettings
+from spark.store import SessionStore
 
 
 def _get_session(request: Request):
@@ -336,11 +340,115 @@ def _build_router() -> Any:
             title=payload.title.strip(),
             payload=payload.payload,
             created_by=auth.subject,
+            session_id=payload.session_id,
         )
         session.add(task)
         _audit(session, auth, "task.create", task.title)
         session.commit()
         return task
+
+    @router.post("/tasks/{task_id}/run", response_model=TaskRunOut)
+    def run_task(
+        task_id: str,
+        payload: TaskRunRequest,
+        request: Request,
+        session: Annotated[Session, Depends(_get_session)],
+        auth: Annotated[AuthContext, Depends(_require("tasks", "write"))],
+    ) -> TaskRunOut:
+        """Execute a control task through the same AgentLoop as CLI/Web.
+
+        This is the double-kernel closure: control tasks no longer stop at the
+        one-shot model gateway. They get tools, approvals, the workspace sandbox
+        and turn checkpoints, and the resulting session id is stored on both the
+        task and every artifact.
+        """
+        task = _tenant_task(session, auth.tenant_id, task_id)
+        prompt = (
+            payload.prompt
+            or str((task.payload or {}).get("prompt") or "")
+            or task.title
+        ).strip()
+        if not prompt:
+            raise HTTPException(status_code=422, detail="prompt is empty")
+
+        settings: ControlSettings = request.app.state.settings
+        runner: ControlAgentRunner = request.app.state.agent_runner
+        root = Path(settings.agent_workdir).expanduser() / auth.tenant_id
+        try:
+            result = runner.run(
+                prompt,
+                title=task.title,
+                session_id=payload.session_id or task.session_id,
+                workdir=root / task.id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 - surface a controlled failure
+            task.status = "failed"
+            task.payload = {
+                **(task.payload or {}),
+                "agent_run": {"error": str(exc)[:500]},
+            }
+            _audit(
+                session,
+                auth,
+                "task.agent.run",
+                task.title,
+                task_id=task.id,
+                status="failed",
+                error=str(exc)[:200],
+            )
+            session.commit()
+            raise HTTPException(status_code=502, detail=f"agent run failed: {exc}") from exc
+
+        task.session_id = result.session_id
+        task.status = result.status
+        task.payload = {
+            **(task.payload or {}),
+            "agent_run": {
+                "session_id": result.session_id,
+                "event_count": result.event_count,
+                "error": result.error,
+                "text_preview": result.text[:500],
+            },
+        }
+
+        body = result.text or result.error or "agent produced no text"
+        data = body.encode("utf-8")
+        key = f"{auth.tenant_id}/{task.id}/agent-output.md"
+        artifact_store: LocalArtifactStore = request.app.state.artifacts
+        artifact_store.put(key, data)
+        artifact = Artifact(
+            tenant_id=auth.tenant_id,
+            task_id=task.id,
+            name="agent-output.md",
+            kind="agent_output",
+            uri=key,
+            sha256=hashlib.sha256(data).hexdigest(),
+            size=len(data),
+            session_id=result.session_id,
+        )
+        session.add(artifact)
+        _audit(
+            session,
+            auth,
+            "task.agent.run",
+            task.title,
+            task_id=task.id,
+            session_id=result.session_id,
+            status=result.status,
+            events=result.event_count,
+        )
+        session.commit()
+        return TaskRunOut(
+            task_id=task.id,
+            session_id=result.session_id,
+            status=result.status,
+            text=result.text,
+            event_count=result.event_count,
+            error=result.error,
+            artifacts=[ArtifactOut.model_validate(artifact)],
+        )
 
     @router.get("/tasks/{task_id}", response_model=TaskOut)
     def get_task(
@@ -357,7 +465,7 @@ def _build_router() -> Any:
         session: Annotated[Session, Depends(_get_session)],
         auth: Annotated[AuthContext, Depends(_require("artifacts", "write"))],
     ) -> Artifact:
-        _tenant_task(session, auth.tenant_id, task_id)
+        task = _tenant_task(session, auth.tenant_id, task_id)
         artifact = Artifact(
             tenant_id=auth.tenant_id,
             task_id=task_id,
@@ -366,6 +474,7 @@ def _build_router() -> Any:
             uri=payload.uri,
             sha256=payload.sha256,
             size=payload.size,
+            session_id=payload.session_id or task.session_id,
         )
         session.add(artifact)
         _audit(session, auth, "artifact.create", artifact.name, task_id=task_id)
@@ -1058,6 +1167,12 @@ def create_app(
         app.state.meetings = MeetingMinutesService()
         app.state.reports = ReportService()
         app.state.documents = DocumentIngestor()
+        app.state.agent_store = SessionStore(settings.agent_session_db)
+        app.state.agent_runner = ControlAgentRunner(
+            cfg,
+            app.state.agent_store,
+            workdir=Path(settings.agent_workdir),
+        )
         app.state.imap = ImapConnector(settings, app.state.documents)
         app.state.audio = AudioTranscriber(
             Path(settings.resolved_model_root).expanduser() / "asr",
@@ -1067,6 +1182,7 @@ def create_app(
         try:
             yield
         finally:
+            app.state.agent_store.close()
             db.close()
 
     app = FastAPI(

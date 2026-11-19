@@ -24,14 +24,14 @@
 | M17 | 知识与 Wiki | `knowledge.py`、`wiki.py` | knowledge / wiki API | `test_knowledge*`、`test_web_wiki_api.py` | badhope | 稳定 |
 | M18 | Skills / Hooks / 插件 | `skills.py`、`hooks.py` | skill 扫描 / hook 生命周期 | `test_skills*`、`test_hooks*` | badhope | 演进中（插件执行面需隔离） |
 | M19 | 子 Agent | `agents.py`、`tools/task.py`、`core/subagent_runner.py` | task / subtask 事件 | `test_agents*`、`test_subagents*`、`test_p1_04_declsubagent.py` | badhope | 稳定 |
-| M20 | Web 运行时 / SSE | `web/state.py`、`sse.py`、`session_stream.py` | SessionRuntime / SSE v1 / replay | `test_routes_sweep.py`、`test_web_sse.py` | badhope | 稳定 |
+| M20 | Web 运行时 / SSE | `web/state.py`、`sse.py`、`session_stream.py` | SessionRuntime / SSE v1 / replay / `SPARK_WEB_LEGACY` 裸帧兼容 | `test_routes_sweep.py`、`test_web_sse.py` | badhope | 稳定 |
 | M21 | Web API / Handler | `web/routes.py`、`web/_handlers*.py` | `/api/*` JSON/SSE | `test_routes_sweep.py`、`test_e2e_server.py` | badhope | 稳定 |
 | M22 | Web UI | `web/src/` | 会话/审批/设置/工作台 | `test_ui_browser.py`、前端 `tsc`/`eslint` | badhope | 稳定 |
 | M23 | TUI | `tui/` | 终端交互 | `test_tui*` | badhope | 稳定 |
 | M24 | 桌面壳 | `desktop.py`、`desktop_main.py` | 桌面启动 / 托盘 | `test_desktop_main.py` | badhope | 稳定 |
 | M25 | ACP / A2A | `acp_server.py`、`a2a_server.py` | ACP / A2A 协议 | `test_acp*`、`test_a2a*` | badhope | 稳定 |
 | M26 | VS Code 扩展 | `vscode-spark/` | VSIX / Web 启动 | 扩展构建与冒烟 | badhope | 缺口（版本落后） |
-| M27 | Control / Office | `control/` | control task / office API | `test_control_*` | badhope | 演进中（需走 AgentLoop） |
+| M27 | Control / Office | `control/app.py`、`control/agent_runner.py`、`control/models.py` | control task / office API / AgentLoop run | `test_control_plane.py`、`test_control_office.py` | badhope | 稳定（双内核已接） |
 | M28 | Authz / 审计 | `audit.py`、control authz | 权限 / 审计日志 | `test_authz*`、`test_audit*` | badhope | 稳定 |
 | M29 | 自动化 / Git 记忆 | `automations.py`、`git_memory.py` | cron/automation / git memory | `test_automations*`、`test_git_bg_persist.py` | badhope | 稳定 |
 | M30 | 评测与可观测 | `evals/`、`otel.py` | eval runner / OTel span | `test_evals*`、`test_otel*` | badhope | 演进中（覆盖不足） |

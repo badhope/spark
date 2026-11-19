@@ -16,6 +16,8 @@ def client(tmp_path: Path):
         database_url=f"sqlite:///{(tmp_path / 'control.db').as_posix()}",
         auth_mode="dev",
         allow_dev_auth=True,
+        agent_workdir=str(tmp_path / "agent-work"),
+        agent_session_db=str(tmp_path / "agent.db"),
     )
     app = create_app(settings)
     with TestClient(app) as test_client:
@@ -115,3 +117,34 @@ def test_task_cannot_cross_tenant(client: TestClient) -> None:
         headers=other,
     )
     assert response.status_code == 404
+
+
+def test_task_runs_through_agent_loop_and_links_session(
+    client: TestClient,
+) -> None:
+    project_id = client.post("/api/v1/projects", json={"name": "Agents"}).json()["id"]
+    task = client.post(
+        "/api/v1/tasks",
+        json={
+            "project_id": project_id,
+            "title": "Agent task",
+            "payload": {"prompt": "hello"},
+        },
+    ).json()
+
+    run = client.post(f"/api/v1/tasks/{task['id']}/run", json={})
+    assert run.status_code == 200, run.text
+    body = run.json()
+    assert body["session_id"]
+    assert body["status"] == "completed"
+    assert body["text"]
+    assert body["event_count"] > 0
+    assert body["artifacts"][0]["session_id"] == body["session_id"]
+
+    saved = client.get(f"/api/v1/tasks/{task['id']}").json()
+    assert saved["session_id"] == body["session_id"]
+    assert saved["status"] == "completed"
+
+    artifacts = client.get(f"/api/v1/tasks/{task['id']}/artifacts").json()
+    assert artifacts[0]["name"] == "agent-output.md"
+    assert artifacts[0]["session_id"] == body["session_id"]

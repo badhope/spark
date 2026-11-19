@@ -44,6 +44,7 @@ class TaskCreate(BaseModel):
     project_id: str = Field(min_length=1, max_length=32)
     title: str = Field(min_length=1, max_length=300)
     payload: dict[str, Any] = Field(default_factory=dict)
+    session_id: str = Field(default="", max_length=64)
 
 
 class TaskOut(BaseModel):
@@ -55,6 +56,7 @@ class TaskOut(BaseModel):
     status: str
     payload: dict[str, Any]
     created_by: str
+    session_id: str = ""
     created_at: datetime
     updated_at: datetime
 
@@ -65,6 +67,7 @@ class ArtifactCreate(BaseModel):
     uri: str = ""
     sha256: str = ""
     size: int = 0
+    session_id: str = Field(default="", max_length=64)
 
 
 class ArtifactOut(BaseModel):
@@ -77,7 +80,23 @@ class ArtifactOut(BaseModel):
     uri: str
     sha256: str
     size: int
+    session_id: str = ""
     created_at: datetime
+
+
+class TaskRunRequest(BaseModel):
+    prompt: str = ""
+    session_id: str = Field(default="", max_length=64)
+
+
+class TaskRunOut(BaseModel):
+    task_id: str
+    session_id: str
+    status: str
+    text: str
+    event_count: int
+    error: str = ""
+    artifacts: list[ArtifactOut] = Field(default_factory=list)
 
 
 class AuditOut(BaseModel):

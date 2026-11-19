@@ -47,6 +47,17 @@ class ControlSettings(BaseSettings):
     document_root: str = Field(
         default_factory=lambda: str(default_home() / "documents")
     )
+    #: Agent workspace root for control tasks. Each task gets its own
+    #: ``<root>/<tenant>/<task_id>`` directory so tools/checkpoints cannot leak
+    #: across tenants.
+    agent_workdir: str = Field(
+        default_factory=lambda: str(default_home() / "agent-work")
+    )
+    #: SessionStore used by control-task AgentLoop runs. Kept separate from the
+    #: web chat database so enterprise operators can back it up independently.
+    agent_session_db: str = Field(
+        default_factory=lambda: str(default_home() / "control-agent.db")
+    )
     #: Optional IMAP mailbox for pulling email threads into meeting minutes.
     #: Credentials stay in the environment; they are never returned by the API.
     imap_host: str = ""

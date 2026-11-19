@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import logging
+import os
 import secrets
 import threading
 import time
@@ -307,6 +308,14 @@ class SparkWebState:
         self.settings_lock = threading.Lock()
         self.mcp_bridge: McpBridge | None = None
         self.control_token = secrets.token_urlsafe(32)
+        #: Compatibility switch for pre-v1 SSE clients. Set
+        #: ``SPARK_WEB_LEGACY=1`` to emit bare ``data:`` frames again while the
+        #: rest of the server keeps the per-session runtime and replay API.
+        self.legacy_sse = os.environ.get("SPARK_WEB_LEGACY", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
         self.test_probe_semaphore = threading.BoundedSemaphore(2)
         self.memory_store = MemoryStore(
             importlib.import_module("spark.web.server").default_home()

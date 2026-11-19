@@ -15,6 +15,7 @@ from spark.web.server import (
     WebApprover,
     _cache_control,
     _SSESession,
+    build_web_server,
     serve_web,
     ui_dir_for,
 )
@@ -148,6 +149,19 @@ def test_sse_envelope_carries_session_turn_and_seq() -> None:
     assert all(frame["data"]["v"] == 1 for frame in frames)
     assert all(frame["data"]["session_id"] == "s-1" for frame in frames)
     assert all(frame["data"]["turn_id"] == "t-1" for frame in frames)
+
+
+def test_sse_legacy_mode_writes_bare_frames() -> None:
+    writer = RecordingWriter()
+    session = _SSESession(writer, flush_interval=0.02, heartbeat_interval=1.0)
+    session.start()
+    assert session.submit_payload({"type": "text_delta", "text": "legacy"})
+    assert session.finish()
+
+    frames = writer.frames()
+    assert frames[0]["id"] == ""
+    assert frames[0]["data"] == {"type": "text_delta", "text": "legacy"}
+    assert "v" not in frames[0]["data"]
 
 
 def test_sse_writer_emits_idle_heartbeat() -> None:
@@ -345,3 +359,24 @@ def test_peer_disconnect_is_suppressed_during_connect_grace(monkeypatch) -> None
     session._created_at -= 1.0
     assert session._peer_disconnected() is True
     assert conn.recv_calls == 1
+
+
+def test_legacy_sse_env_switch(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SPARK_WEB_LEGACY", "1")
+    cfg = SparkConfig()
+    cfg.provider.name = "mock"
+    cfg.provider.model = "mock-model"
+    store = SessionStore(tmp_path / "legacy.db")
+    server, state = build_web_server(
+        workdir=tmp_path,
+        cfg=cfg,
+        store=store,
+        host="127.0.0.1",
+        port=0,
+    )
+    try:
+        assert state.legacy_sse is True
+    finally:
+        server.server_close()
+        state.close()
+        store.close()

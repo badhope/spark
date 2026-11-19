@@ -131,6 +131,11 @@ class Task(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     created_by: Mapped[str] = mapped_column(String(320), default="", nullable=False)
+    #: Agent session that executed the task (``control-agent.db``). Empty until
+    #: the task is run through ``ControlAgentRunner``.
+    session_id: Mapped[str] = mapped_column(
+        String(64), default="", nullable=False, index=True
+    )
 
 
 class Artifact(TimestampMixin, Base):
@@ -148,6 +153,10 @@ class Artifact(TimestampMixin, Base):
     uri: Mapped[str] = mapped_column(Text, default="", nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), default="", nullable=False)
     size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: Producing agent session; copied from the task for direct artifact queries.
+    session_id: Mapped[str] = mapped_column(
+        String(64), default="", nullable=False, index=True
+    )
 
 
 class AuditEvent(Base):
