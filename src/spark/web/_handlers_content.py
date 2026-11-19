@@ -82,8 +82,9 @@ def _plugin_entries(workdir: Path) -> list[dict[str, Any]]:
     Installation stays in the CLI for now; the Web panel remains discovery-only
     so it cannot become a second unapproved code-execution path.
     """
-    from spark.plugins import find_manifest, scan_plugins
+    from spark.plugins import enabled_plugin_names, find_manifest, scan_plugins
 
+    enabled = enabled_plugin_names()
     out: list[dict[str, Any]] = []
     for record in scan_plugins(workdir):
         manifest = record.manifest
@@ -95,8 +96,13 @@ def _plugin_entries(workdir: Path) -> list[dict[str, Any]]:
                 "has_manifest": find_manifest(record.path) is not None,
                 "entry": manifest.entry if manifest else "",
                 "version": manifest.version if manifest else "",
+                "enabled": record.name in enabled,
                 "legacy": record.legacy,
                 "error": record.error,
+                "permissions": manifest.permissions if manifest else [],
+                "tools": len(manifest.tools) if manifest else 0,
+                "commands": len(manifest.commands) if manifest else 0,
+                "hooks": len(manifest.hooks) if manifest else 0,
             }
         )
     return out

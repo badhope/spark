@@ -981,6 +981,11 @@ export interface PluginItem {
   has_manifest: boolean
   entry: string
   version?: string
+  enabled?: boolean
+  permissions?: string[]
+  tools?: number
+  commands?: number
+  hooks?: number
   error?: string
   legacy?: boolean
 }

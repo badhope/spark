@@ -44,7 +44,7 @@ export default function PluginsSection() {
       <section className="flex flex-col gap-2 rounded-xl border border-line bg-panel p-4">
         <h3 className="text-sm font-semibold text-ink">{t("plugins.title", lang)}</h3>
         <p className="text-xs leading-relaxed text-ink3">{t("plugins.desc", lang)}</p>
-        <code className="rounded-lg bg-panel2 px-3 py-2 font-mono text-[11.5px] text-ink2">{dir}/&lt;name&gt;/plugin.json</code>
+        <code className="rounded-lg bg-panel2 px-3 py-2 font-mono text-[11.5px] text-ink2">{dir}/&lt;name&gt;/spark-plugin.json</code>
 
         {loading ? (
           <div className="flex items-center gap-2 py-5 text-xs text-ink3">
@@ -61,13 +61,24 @@ export default function PluginsSection() {
                     {p.name}
                     {p.version ? <span className="ml-1.5 font-mono text-[11px] font-normal text-ink3">v{p.version}</span> : null}
                   </span>
-                  <Badge tone={p.error ? "warn" : "ok"}>
+                  <Badge tone={p.error ? "warn" : p.enabled ? "ok" : "neutral"}>
                     <span title={p.error || undefined}>
-                      {p.error ? t("plugins.noManifest", lang) : t("plugins.hasManifest", lang)}
+                      {p.error
+                        ? t("plugins.noManifest", lang)
+                        : p.enabled
+                          ? t("plugins.enabled", lang)
+                          : t("plugins.disabled", lang)}
                     </span>
                   </Badge>
                 </div>
                 {p.description && <p className="text-[11.5px] leading-relaxed text-ink3">{p.description}</p>}
+                {(p.tools || p.commands || p.hooks) ? (
+                  <div className="flex flex-wrap gap-x-3 text-[10.5px] text-ink3">
+                    {p.tools ? <span>{t("plugins.tools", lang)}: {p.tools}</span> : null}
+                    {p.commands ? <span>{t("plugins.commands", lang)}: {p.commands}</span> : null}
+                    {p.hooks ? <span>{t("plugins.hooksCount", lang)}: {p.hooks}</span> : null}
+                  </div>
+                ) : null}
                 <span className="font-mono text-[10.5px] text-ink3">{p.path}</span>
               </div>
             ))}
