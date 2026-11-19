@@ -317,8 +317,99 @@ class WorkflowRun:
     def ok(self) -> bool:
         return all(state == "completed" for state in self.statuses.values())
 
+    @property
+    def paused(self) -> bool:
+        return any(state == "paused" for state in self.statuses.values())
+
     def graph(self) -> dict[str, Any]:
         return self.spec.graph(self.statuses)
+
+    def to_state(self) -> dict[str, Any]:
+        """Serializable run state, enough to resume in a later process."""
+        return {
+            "workflow": self.spec.name,
+            "version": self.spec.version,
+            "statuses": dict(self.statuses),
+            "outputs": dict(self.outputs),
+            "errors": dict(self.errors),
+            "events": list(self.events),
+        }
+
+    @classmethod
+    def from_state(cls, spec: WorkflowSpec, data: dict[str, Any]) -> "WorkflowRun":
+        if not isinstance(data, dict):
+            raise WorkflowError("运行状态必须是 JSON 对象")
+        if data.get("workflow") not in (None, spec.name):
+            raise WorkflowError(
+                f"状态属于 {data.get('workflow')!r}，不是 {spec.name!r}"
+            )
+        raw_statuses = data.get("statuses") or {}
+        if not isinstance(raw_statuses, dict):
+            raise WorkflowError("statuses 必须是对象")
+        known = {step.id for step in spec.steps}
+        statuses = {
+            step_id: str(raw_statuses.get(step_id, "pending"))
+            for step_id in known
+        }
+        allowed = {"pending", "running", "completed", "failed", "blocked", "cancelled", "paused"}
+        bad = [f"{name}={state}" for name, state in statuses.items() if state not in allowed]
+        if bad:
+            raise WorkflowError("未知状态: " + ", ".join(bad))
+        outputs = data.get("outputs") or {}
+        errors = data.get("errors") or {}
+        if not isinstance(outputs, dict) or not isinstance(errors, dict):
+            raise WorkflowError("outputs/errors 必须是对象")
+        return cls(
+            spec=spec,
+            statuses=statuses,
+            outputs={str(k): str(v) for k, v in outputs.items() if k in known},
+            errors={str(k): str(v) for k, v in errors.items() if k in known},
+            events=list(data.get("events") or []),
+        )
+
+
+def prepare_resume(run: WorkflowRun) -> WorkflowRun:
+    """Reset unfinished/failed nodes to pending, keeping completed outputs."""
+    completed = run.completed
+    statuses = {
+        step.id: ("completed" if step.id in completed else "pending")
+        for step in run.spec.steps
+    }
+    return WorkflowRun(
+        spec=run.spec,
+        statuses=statuses,
+        outputs={name: run.outputs[name] for name in completed if name in run.outputs},
+        events=list(run.events),
+    )
+
+
+def rerun_steps(run: WorkflowRun, step_ids: set[str]) -> WorkflowRun:
+    """Reset nodes and their transitive dependents so a single node can re-run."""
+    unknown = step_ids - {step.id for step in run.spec.steps}
+    if unknown:
+        raise WorkflowError("未知 step: " + ", ".join(sorted(unknown)))
+    affected = set(step_ids)
+    changed = True
+    while changed:
+        changed = False
+        for step in run.spec.steps:
+            if step.id not in affected and any(dep in affected for dep in step.needs):
+                affected.add(step.id)
+                changed = True
+    statuses = dict(run.statuses)
+    outputs = dict(run.outputs)
+    errors = dict(run.errors)
+    for step_id in affected:
+        statuses[step_id] = "pending"
+        outputs.pop(step_id, None)
+        errors.pop(step_id, None)
+    return WorkflowRun(
+        spec=run.spec,
+        statuses=statuses,
+        outputs=outputs,
+        errors=errors,
+        events=list(run.events),
+    )
 
 
 async def run_workflow(
@@ -329,6 +420,8 @@ async def run_workflow(
     max_parallel: int = 2,
     cancel: Any = None,
     initial_outputs: dict[str, str] | None = None,
+    initial_statuses: dict[str, str] | None = None,
+    stop_after: set[str] | None = None,
     on_event: Any = None,
 ) -> WorkflowRun:
     """Execute a validated DAG with bounded concurrency and per-step retries.
@@ -341,8 +434,16 @@ async def run_workflow(
     import inspect
 
     workers = max(1, min(int(max_parallel), 8))
-    run = WorkflowRun(spec=spec, outputs=dict(initial_outputs or {}))
-    pending = {step.id for step in spec.steps}
+    initial = dict(initial_statuses or {})
+    run = WorkflowRun(
+        spec=spec,
+        statuses={step.id: initial.get(step.id, "pending") for step in spec.steps},
+        outputs=dict(initial_outputs or {}),
+    )
+    pending = {
+        step.id for step in spec.steps if run.statuses.get(step.id) != "completed"
+    }
+    stop_after = set(stop_after or ())
     locks = WorkspaceLocks(workdir) if workdir is not None else None
     semaphore = asyncio.Semaphore(workers)
 
@@ -416,6 +517,12 @@ async def run_workflow(
             ):
                 run.statuses[step.id] = "blocked"
                 pending.discard(step.id)
+        hit = [step for step in spec.steps if step.id in stop_after]
+        if hit and pending and any(run.statuses.get(step.id) == "completed" for step in hit):
+            for name in sorted(pending):
+                run.statuses[name] = "paused"
+            emit("run_paused", hit[0], pending=len(pending))
+            break
     return run
 
 

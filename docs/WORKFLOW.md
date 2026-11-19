@@ -8,6 +8,17 @@ spark workflow graph examples/workflows/review.yaml
 spark workflow run examples/workflows/review.yaml --max-parallel 2
 ```
 
+暂停、续跑和单节点重跑：
+
+```bash
+# 在 implement 完成后暂停，状态写入 JSON
+spark workflow run examples/workflows/review.yaml --stop-after implement --state-out .spark/run.json
+# 从状态继续跑完
+spark workflow run examples/workflows/review.yaml --resume .spark/run.json
+# 续跑时重跑 review（其下游也会重置；本例 review 无下游）
+spark workflow run examples/workflows/review.yaml --resume .spark/run.json --rerun review
+```
+
 ## YAML shape
 
 ```yaml
@@ -47,5 +58,7 @@ cross-process (`filelock`).
   failure -> dependent blocked, cancellation and per-step write locks.
 - done: `AgentWorkflowRunner` wires each step to `AgentLoop.spawn_subtask`;
   `spark workflow run` executes the DAG with child contexts and role tools/model.
-- next: a real provider-backed end-to-end run, pause/resume/replay of individual
-  nodes and cost budgets.
+- done: state JSON (`--state-out`/`--resume`), pause (`--stop-after`) and
+  single-node replay (`--rerun`, downstream reset).
+- next: a real provider-backed end-to-end run, Web execution graph and cost
+  budgets.

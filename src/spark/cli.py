@@ -519,6 +519,10 @@ async def _workflow_run_async(
     *,
     max_parallel: int,
     as_json: bool,
+    resume: Path | None = None,
+    state_out: Path | None = None,
+    stop_after: set[str] | None = None,
+    rerun: set[str] | None = None,
 ) -> bool:
     import json as _json
 
@@ -526,7 +530,14 @@ async def _workflow_run_async(
     from spark.providers.factory import create_provider
     from spark.tools import goal as goal_tools
     from spark.tools.registry import ToolContext, ToolRegistry
-    from spark.workflow import AgentWorkflowRunner, load_workflow, run_workflow
+    from spark.workflow import (
+        AgentWorkflowRunner,
+        WorkflowRun,
+        load_workflow,
+        prepare_resume,
+        rerun_steps,
+        run_workflow,
+    )
 
     prov = create_provider(cfg)
     sandbox = WorkdirSandbox(workdir, cfg)
@@ -561,23 +572,44 @@ async def _workflow_run_async(
 
     try:
         spec = load_workflow(path, workdir=workdir)
+        initial = None
+        if resume is not None:
+            state_path = resume if resume.is_absolute() else workdir / resume
+            try:
+                state = _json.loads(state_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise ConfigError(f"无法读取运行状态 {state_path}: {exc}") from exc
+            initial = prepare_resume(WorkflowRun.from_state(spec, state))
+            if rerun:
+                initial = rerun_steps(initial, set(rerun))
         runner = AgentWorkflowRunner(loop, spec, agents=agents, on_event=None)
         run = await run_workflow(
-            spec, runner, workdir=workdir, max_parallel=max_parallel, on_event=emit
+            spec, runner, workdir=workdir, max_parallel=max_parallel,
+            initial_outputs=initial.outputs if initial else None,
+            initial_statuses=initial.statuses if initial else None,
+            stop_after=stop_after, on_event=emit,
         )
+        if state_out is not None:
+            out_path = state_out if state_out.is_absolute() else workdir / state_out
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(
+                _json.dumps(run.to_state(), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
         if as_json:
             typer.echo(_json.dumps({
-                "type": "workflow_end", "ok": run.ok,
+                "type": "workflow_end", "ok": run.ok, "paused": run.paused,
                 "statuses": run.statuses, "errors": run.errors,
             }, ensure_ascii=False))
         else:
-            typer.echo(f"workflow {spec.name}: {'ok' if run.ok else 'failed'}")
+            state = "ok" if run.ok else ("paused" if run.paused else "failed")
+            typer.echo(f"workflow {spec.name}: {state}")
             for step in spec.steps:
                 line = f"  {step.id}: {run.statuses.get(step.id, 'pending')}"
                 if step.id in run.errors:
                     line += f" ({run.errors[step.id]})"
                 typer.echo(line)
-        return run.ok
+        return run.ok or run.paused
     finally:
         await bridge.close()
         store.close()
@@ -2078,6 +2110,10 @@ def workflow_run_cmd(
     config: Path | None = typer.Option(None, "--config"),
     sandbox_mode: str | None = typer.Option(None, "--sandbox-mode"),
     max_parallel: int = typer.Option(2, "--max-parallel", min=1, max=8),
+    resume: Path | None = typer.Option(None, "--resume", help="从 state-out JSON 继续"),
+    state_out: Path | None = typer.Option(None, "--state-out", help="运行结束写状态 JSON"),
+    stop_after: list[str] = typer.Option(None, "--stop-after", help="指定步骤完成后暂停，可重复"),
+    rerun: list[str] = typer.Option(None, "--rerun", help="配合 --resume 单节点重跑，可重复"),
     as_json: bool = typer.Option(False, "--json", help="输出 NDJSON 工作流事件"),
 ) -> None:
     try:
@@ -2091,10 +2127,14 @@ def workflow_run_cmd(
             )
         store = _store()
         session_id = store.create_session(workdir, cfg.provider.model, title=path.name)
+        if rerun and resume is None:
+            raise ConfigError("--rerun 需要同时提供 --resume <state.json>")
         ok = asyncio.run(
             _workflow_run_async(
                 path, workdir, cfg, store, session_id,
                 max_parallel=max_parallel, as_json=as_json,
+                resume=resume, state_out=state_out,
+                stop_after=set(stop_after or ()), rerun=set(rerun or ()),
             )
         )
     except SparkError as exc:

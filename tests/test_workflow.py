@@ -229,3 +229,89 @@ async def test_agent_adapter_builds_prompt_and_uses_role_agent() -> None:
     assert kwargs["system_extra"] == "expert rules"
     assert kwargs["tools_allowlist"] == ["read_file"]
     assert kwargs["model"] == "cheap"
+
+
+@pytest.mark.asyncio
+async def test_pause_and_resume_state_roundtrip(tmp_path: Path) -> None:
+    from spark.workflow import (
+        RoleSpec,
+        StepSpec,
+        WorkflowRun,
+        WorkflowSpec,
+        prepare_resume,
+        run_workflow,
+    )
+
+    spec = WorkflowSpec(
+        name="pause",
+        version=1,
+        description="",
+        roles={"r": RoleSpec(name="r")},
+        steps=(
+            StepSpec(id="a", role="r", prompt="a"),
+            StepSpec(id="b", role="r", prompt="b", needs=("a",)),
+            StepSpec(id="c", role="r", prompt="c", needs=("b",)),
+        ),
+    )
+    calls: list[str] = []
+
+    async def runner(step, deps):
+        calls.append(step.id)
+        return "done-" + step.id
+
+    first = await run_workflow(spec, runner, stop_after={"a"})
+    assert first.statuses["a"] == "completed"
+    assert first.statuses["b"] == "paused"
+    assert first.paused
+
+    state = first.to_state()
+    restored = WorkflowRun.from_state(spec, state)
+    resumed = prepare_resume(restored)
+    assert resumed.statuses["a"] == "completed"
+    assert resumed.statuses["b"] == "pending"
+    assert resumed.outputs["a"] == "done-a"
+
+    second = await run_workflow(
+        spec,
+        runner,
+        initial_statuses=resumed.statuses,
+        initial_outputs=resumed.outputs,
+    )
+    assert second.ok
+    assert calls == ["a", "b", "c"]
+
+
+@pytest.mark.asyncio
+async def test_rerun_single_node_resets_downstream() -> None:
+    from spark.workflow import (
+        RoleSpec,
+        StepSpec,
+        WorkflowSpec,
+        rerun_steps,
+        run_workflow,
+    )
+
+    spec = WorkflowSpec(
+        name="rerun",
+        version=1,
+        description="",
+        roles={"r": RoleSpec(name="r")},
+        steps=(
+            StepSpec(id="a", role="r", prompt="a"),
+            StepSpec(id="b", role="r", prompt="b", needs=("a",)),
+            StepSpec(id="c", role="r", prompt="c", needs=("b",)),
+            StepSpec(id="side", role="r", prompt="side"),
+        ),
+    )
+
+    async def runner(step, deps):
+        return f"{step.id}-{len(deps)}"
+
+    first = await run_workflow(spec, runner)
+    assert first.ok
+    second = rerun_steps(first, {"b"})
+    assert second.statuses["a"] == "completed"
+    assert second.statuses["b"] == "pending"
+    assert second.statuses["c"] == "pending"
+    assert second.statuses["side"] == "completed"
+    assert "b" not in second.outputs and "c" not in second.outputs
