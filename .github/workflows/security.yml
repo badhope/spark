@@ -35,7 +35,14 @@ jobs:
       - name: Secret scan (gitleaks)
         run: pre-commit run gitleaks --all-files
       - name: Secret scan (trufflehog)
-        run: pre-commit run trufflehog --all-files
+        # Use the released binary instead of pre-commit's Go build. Building
+        # trufflehog from source inside the runner is vulnerable to transient
+        # Go module download failures (stream errors from proxy.golang.org),
+        # which look like a security failure but are not a finding.
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
+            | sh -s -- -b /usr/local/bin
+          trufflehog git file://. --only-verified --fail --no-update
 
   dependency-audit:
     runs-on: ubuntu-latest
