@@ -167,6 +167,22 @@ code --install-extension vscode-spark/spark-agent-0.15.2.vsix
 前提：已安装 Spark（打包版或 `pip install spark-agent`）；审批模式在
 扩展设置里选（默认 `suggest`）。
 
+### IDE（Zed / JetBrains / Neovim）
+
+VS Code 用仓库自带 VSIX；其余 IDE 走标准 ACP，不写专属插件：
+
+```bash
+spark ide install zed --workdir /path/to/project
+spark ide install jetbrains --workdir /path/to/project   # JetBrains 2025.3+
+spark ide install neovim --workdir /path/to/project      # CodeCompanion
+```
+
+- Zed 写入 `~/.config/zed/settings.json` 的 `agent.custom_servers`。
+- JetBrains 写入 `~/.jetbrains/acp.json` 的 `agent_servers`，重启 IDE 后在 AI Chat → 配置 ACP Agent 选 Spark。
+- Neovim 只写 `~/.config/nvim/lua/spark_acp.lua`，不会改 `init.lua`；需要在该配置中加入 `require("spark_acp").setup()`，并先安装 codecompanion.nvim。
+
+已有配置会先备份；未知键保留；坏 JSON / 非 Spark 生成的文件默认拒绝覆盖（`--force` 才会备份后覆盖）。
+
 ### 截图自动化（维护者）
 
 `python scripts/screenshots.py` 用本机 Edge/Chrome headless 重拍

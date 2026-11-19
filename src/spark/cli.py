@@ -1914,13 +1914,13 @@ ide_app = typer.Typer(help="IDE 一键接入（ACP / VS Code）", no_args_is_hel
 app.add_typer(ide_app, name="ide")
 
 
-@ide_app.command("install", help="把 Spark 写入指定 IDE 的 ACP 配置（当前支持 Zed）")
+@ide_app.command("install", help="把 Spark 写入指定 IDE 的 ACP 配置")
 def ide_install_cmd(
-    target: str = typer.Argument(..., help="zed"),
+    target: str = typer.Argument(..., help="zed | jetbrains | neovim"),
     workdir: Path = typer.Option(Path("."), "--workdir", help="ACP 会话默认工作目录"),
-    settings: Path | None = typer.Option(None, "--settings", help="自定义 settings.json 路径"),
+    settings: Path | None = typer.Option(None, "--settings", help="自定义配置路径"),
     command: str = typer.Option("spark", "--command", help="编辑器拉起的可执行文件"),
-    force: bool = typer.Option(False, "--force", help="JSON 损坏时备份后用最小配置覆盖"),
+    force: bool = typer.Option(False, "--force", help="配置损坏或非 Spark 生成时，备份后覆盖"),
 ) -> None:
     """Write/merge an ACP server entry without clobbering unrelated settings."""
     from spark.ide import install
@@ -1941,6 +1941,10 @@ def ide_install_cmd(
         typer.echo(f"  备份: {result.backup}")
     if not result.changed:
         typer.echo("  已是目标配置，无需修改")
+    if result.target == "neovim":
+        typer.echo(f"  在 Neovim init.lua 中加入：{result.snippet.get('usage')}")
+    elif result.target == "jetbrains":
+        typer.echo("  在 JetBrains AI Chat → 配置 ACP Agent 中选择 Spark")
 
 
 config_app = typer.Typer(help="查看或修改配置", no_args_is_help=True)
