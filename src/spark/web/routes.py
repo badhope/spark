@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from spark.web.session_stream import serve_session_events
 from spark.web._handlers import (  # noqa: F401  (re-export for backward-compat)
     _handle_agents_md,
     _handle_approval,
@@ -530,7 +531,7 @@ def build_handler_class(html: str):
             # 精确匹配之后，避免和 /api/sessions/search 抢路由。
             if path.startswith("/api/sessions/"):
                 parts = path[len("/api/sessions/") :].split("/")
-                if len(parts) == 2 and parts[1] in {"pending", "events"}:
+                if len(parts) == 2 and parts[1] in {"pending", "events", "stream"}:
                     session_id = unquote(parts[0])
                     row = state.store.get_session(session_id)
                     if not row or row.get("workdir") != str(state.workdir):
@@ -545,6 +546,9 @@ def build_handler_class(html: str):
                     except ValueError:
                         after_seq = 0
                     after_seq = max(0, after_seq)
+                    if parts[1] == "stream":
+                        serve_session_events(self, state, session_id, after_seq)
+                        return
                     self._json(200, state.events_for(session_id, after_seq))
                     return
             if path == "/api/sessions/search":

@@ -1,6 +1,6 @@
 import { create } from "zustand"
 import type { ChatEvent, GoalState, PlanStep } from "../types"
-import { streamChat, fetchHistory, fetchSessionPending, fetchSessionEvents, deleteMessage as deleteMessageApi, truncateFromMessage as truncateFromMessageApi, runInlineShell } from "../api"
+import { streamChat, fetchHistory, fetchSessionPending, followSessionEvents, deleteMessage as deleteMessageApi, truncateFromMessage as truncateFromMessageApi, runInlineShell } from "../api"
 import { useSessionStore } from "./sessionStore"
 import { useSessionRuntimeStore } from "./sessionRuntime"
 import { useUiStore } from "./uiStore"
@@ -81,10 +81,6 @@ export interface GraphEdge {
 export interface TurnGraph {
   nodes: GraphNode[]
   edges: GraphEdge[]
-}
-
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 function uid(): string {
@@ -703,29 +699,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
 
-    /** After a dropped SSE connection, replay the server's ring buffer. */
+    /** After a dropped POST stream, attach to the session's replay/tail SSE. */
     async function recoverTurn(sessionId: string, afterSeq: number): Promise<boolean> {
-      let seq = afterSeq
-      let failures = 0
-      const deadline = Date.now() + 120_000
-      while (Date.now() < deadline && !ac.signal.aborted) {
-        try {
-          const page = await fetchSessionEvents(sessionId, seq)
-          if (page.reset_required) return false
-          for (const ev of page.events) {
-            if (typeof ev.seq !== "number" || ev.seq > seq) onEvent(ev)
-          }
-          seq = Math.max(seq, page.last_seq)
-          failures = 0
-          const phase = useSessionRuntimeStore.getState().runtimes[sessionId]?.phase
-          if (phase === "idle" || phase === "error") return true
-        } catch {
-          failures += 1
-          if (failures >= 5) return false
-        }
-        await sleep(250)
+      try {
+        await followSessionEvents(sessionId, afterSeq, onEvent, ac.signal)
+        const phase = useSessionRuntimeStore.getState().runtimes[sessionId]?.phase
+        return phase === "idle" || phase === "error"
+      } catch {
+        return false
       }
-      return false
     }
 
     try {

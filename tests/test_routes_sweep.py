@@ -247,6 +247,41 @@ def test_get_sessions_pending_and_events(web) -> None:
     assert body["last_seq"] == 1
 
 
+def test_get_sessions_stream_replays_done(web) -> None:
+    base, state, _ = web
+    sid = state.session_id
+    runtime = state.current_runtime
+    assert runtime is not None
+    runtime.record_event(
+        {"v": 1, "session_id": sid, "turn_id": "t-1", "seq": 1, "type": "text_delta", "text": "hi"}
+    )
+    runtime.record_event(
+        {"v": 1, "session_id": sid, "turn_id": "t-1", "seq": 2, "type": "done"}
+    )
+    req = urllib.request.Request(base + f"/api/sessions/{sid}/stream?after_seq=0")
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        raw = resp.read().decode("utf-8", "replace")
+    assert "data:" in raw
+    payloads = [
+        json.loads(line[6:])
+        for line in raw.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert [p["type"] for p in payloads] == ["text_delta", "done"]
+    assert [p["seq"] for p in payloads] == [1, 2]
+
+
+def test_runtime_seq_is_monotonic_across_turns() -> None:
+    from spark.web.state import SessionRuntime
+
+    runtime = SessionRuntime(session_id="s")
+    assert runtime.next_seq_start() == 0
+    runtime.record_event({"seq": 3, "type": "done"})
+    assert runtime.next_seq_start() == 3
+    runtime.record_event({"seq": 4, "type": "text_delta"})
+    assert runtime.next_seq_start() == 4
+
+
 def test_get_sessions_pending_unknown_is_404(web) -> None:
     base, _, _ = web
     status, body = _request(base, "/api/sessions/missing/pending")

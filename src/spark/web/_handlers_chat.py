@@ -363,6 +363,9 @@ def _dispatch_turn(
             stream.submit_payload({"type": "turn_error", "text": "settings changed; retry the request"})
             return
         runtime.busy = True
+        # Allocate the sequence base under the lock: a second queued request
+        # must not share the first turn's numbers in the replay ring.
+        stream.set_start_seq(runtime.next_seq_start())
         # Always apply the per-turn gate. It used to be skipped whenever a
         # tool_allowlist was active, so the switch silently did nothing for
         # users running an approval profile with a tool whitelist.
@@ -512,6 +515,7 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
         secrets=_sse_secrets(),
         session_id=turn_session_id,
         turn_id=turn_id,
+        start_seq=runtime.next_seq_start(),
         on_event=runtime.record_event,
     )
     stream.start()

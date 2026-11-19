@@ -247,6 +247,57 @@ export async function switchSession(
   )
 }
 
+/** Tail a running session turn (GET SSE). Returns when the server closes. */
+export async function followSessionEvents(
+  sessionId: string,
+  afterSeq: number,
+  onEvent: (ev: ChatEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
+  const res = await fetchWithTimeout(
+    `/api/sessions/${encodeURIComponent(sessionId)}/stream?after_seq=${Math.max(0, afterSeq)}`,
+    { method: "GET", signal },
+    600_000,
+  )
+  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
+  const reader = res.body.getReader()
+  const onAbort = () => {
+    try {
+      void reader.cancel()
+    } catch {
+      /* stream already closed */
+    }
+  }
+  signal?.addEventListener("abort", onAbort, { once: true })
+  try {
+    const decoder = new TextDecoder()
+    let buffer = ""
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) return
+      buffer += decoder.decode(value, { stream: true })
+      let idx: number
+      while ((idx = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, idx)
+        buffer = buffer.slice(idx + 2)
+        for (const line of frame.split("\n")) {
+          if (!line.startsWith("data: ")) continue
+          const payload = line.slice(6)
+          if (!payload || payload === "[DONE]") continue
+          const parsed = JSON.parse(payload) as ChatEvent
+          if ((parsed as { type?: string }).type === "reset_required") {
+            throw new Error("session event buffer reset; reload history")
+          }
+          onEvent(parsed)
+        }
+      }
+    }
+  } finally {
+    signal?.removeEventListener("abort", onAbort)
+  }
+}
+
 export async function cancelTurn(sessionId?: string): Promise<void> {
   await readJson(
     await fetchWithTimeout("/api/cancel", {

@@ -178,11 +178,24 @@ class SessionRuntime:
     events: list[dict] = field(default_factory=list)
     max_events: int = 512
     _events_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    _seq_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    _last_seq: int = 0
+
+    def next_seq_start(self) -> int:
+        """Return the last sequence already used by this session.
+
+        A new SSE writer starts numbering at this value + 1, so replay cursors
+        stay monotonic across turns instead of restarting at 1.
+        """
+        with self._seq_lock:
+            return self._last_seq
 
     def record_event(self, envelope: dict) -> None:
         seq = int(envelope.get("seq") or 0)
         if seq <= 0:
             return
+        with self._seq_lock:
+            self._last_seq = max(self._last_seq, seq)
         with self._events_lock:
             self.events.append(dict(envelope))
             if len(self.events) > self.max_events:

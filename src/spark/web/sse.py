@@ -43,6 +43,7 @@ class _SSESession:
         secrets: tuple[str, ...] = (),
         session_id: str = "",
         turn_id: str = "",
+        start_seq: int = 0,
         on_event=None,
     ) -> None:
         self._wfile = wfile
@@ -53,7 +54,7 @@ class _SSESession:
         self._session_id = str(session_id or "")
         self._turn_id = str(turn_id or "")
         self._envelope_enabled = bool(self._session_id or self._turn_id)
-        self._seq = 0
+        self._seq = max(0, int(start_seq))
         self._peer_monitor_disabled = False
         # Linux 上 select+MSG_PEEK 在「刚建连、请求体刚读完」的极短窗口里可能
         # 报告可读且 recv 返回空，被误判成断连 —— 整条 SSE 流还没写出就被 abort
@@ -75,6 +76,10 @@ class _SSESession:
     @property
     def disconnected(self) -> bool:
         return self._disconnected.is_set()
+
+    def set_start_seq(self, seq: int) -> None:
+        """Set the next envelope number before the first payload is written."""
+        self._seq = max(0, int(seq))
 
     def start(self) -> None:
         if self._thread is not None:
