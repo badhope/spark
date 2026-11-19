@@ -108,10 +108,10 @@ readonly_tools = []                  # 声明为只读的工具名（免审批�
 
 ## `[plugins]` — 插件运行时
 
-安装插件本身不执行任何代码。只有同时满足两个条件，插件的 `hooks` 才会被加载：
+安装插件本身不执行任何代码。只有同时满足两个条件，插件的 `hooks` / `tools` 才会被加载：
 
 1. 插件名写入全局 `config.toml` 的 `[plugins].enabled`；
-2. manifest 声明 `hooks` 权限。
+2. manifest 声明对应的 `hooks` / `tools` 权限。
 
 ```toml
 [plugins]
@@ -128,11 +128,34 @@ spark plugins disable demo
 每个 hook 在独立子进程中运行，有超时、无 stdin 继承；环境变量只保留 `PATH` / `HOME` /
 `LANG` / 临时目录等基础项，不传入 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`SPARK_*`
 或其他云凭据。未声明 `shell` 权限时，hook 命令必须是插件目录内的可执行文件。
+
+插件工具在 manifest 里声明 runner 与 JSON Schema：
+
+```json
+{
+  "name": "demo",
+  "permissions": ["tools"],
+  "tools": [
+    {
+      "name": "hello",
+      "description": "echo a name",
+      "command": "tool.py",
+      "parameters": {"type": "object", "properties": {"name": {"type": "string"}}},
+      "timeout_sec": 30
+    }
+  ]
+}
+```
+
+模型看到的名字会加命名空间：`plugin__demo__hello`，不会遮蔽内置工具；调用仍走正常审批策略。
+工具进程从 stdin 读 JSON（`{"tool":"hello","arguments":{...}}`），stdout 返回 JSON：
+`{"ok":true,"payload":{...}}`；非 JSON 输出会作为文本回传。
+
 项目级 `.spark.toml` 的 `[plugins]` 会被安全清洗丢弃——克隆仓库不能给自己授权插件。
 
-> 安全边界：`hooks` 权限等价于允许插件执行代码。当前隔离覆盖超时、stdin、环境变量和
-> 命令路径，但**不是文件系统/网络级沙箱**；权限声明也是声明式约束，不替代操作系统隔离。
-> 只安装可信来源的插件。
+> 安全边界：`hooks` / `tools` 权限等价于允许插件执行代码。当前隔离覆盖超时、stdin、
+> 环境变量和命令路径，但**不是文件系统/网络级沙箱**；权限声明也是声明式约束，
+> 不替代操作系统隔离。只安装可信来源的插件。
 
 ## `[[hooks]]` — 生命周期钩子
 

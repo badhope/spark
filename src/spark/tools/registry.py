@@ -114,6 +114,8 @@ class ToolRegistry:
     def __init__(self, ctx: ToolContext) -> None:
         self.ctx = ctx
         self._extra_schemas: list[dict[str, Any]] = []
+        self._plugin_schemas: list[dict[str, Any]] = []
+        self._plugin_handlers: dict[str, Callable[[dict[str, Any]], ToolResult]] = {}
         self._schema_revision = 0
         self.readonly_mcp: set[str] = set()
         self.plan: list[dict[str, Any]] = []
@@ -157,6 +159,16 @@ class ToolRegistry:
             self._extra_schemas.append(schema)
             names.add(name)
         self._registered_scopes[scope_id] = names
+        self._schema_revision += 1
+
+    def register_plugin_tools(
+        self,
+        schemas: list[dict[str, Any]],
+        handlers: dict[str, Callable[[dict[str, Any]], ToolResult]],
+    ) -> None:
+        """Install plugin tool schemas/handlers; replaces a previous set."""
+        self._plugin_schemas = list(schemas)
+        self._plugin_handlers = dict(handlers)
         self._schema_revision += 1
 
     def unregister_scope(self, scope_id: str) -> None:
@@ -559,7 +571,7 @@ class ToolRegistry:
                  "complete": {"type": "boolean", "description": "declare the goal complete (evidence-gated)"}},
                 ["checklist"]),
         ]
-        schemas = builtin + self._extra_schemas
+        schemas = builtin + self._extra_schemas + self._plugin_schemas
         if self.tool_allowlist:
             schemas = [
                 s
@@ -786,6 +798,17 @@ class ToolRegistry:
                     from spark.tools.untrusted import payload_text, wrap
 
                     result.payload = {"content": wrap(payload_text(result.payload))}
+                return result
+
+            plugin_handler = self._plugin_handlers.get(name)
+            if plugin_handler is not None:
+                self.ctx.sandbox.current_tool = name
+                try:
+                    result = plugin_handler(call.arguments)
+                    if hasattr(result, "__await__"):
+                        result = await result
+                finally:
+                    self.ctx.sandbox.current_tool = ""
                 return result
 
             # Built-in tools dispatched via table（缓存：表只含静态内置映射，构建一次）

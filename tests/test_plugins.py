@@ -360,3 +360,171 @@ def test_agent_loop_registers_enabled_plugin_hook(tmp_path: Path) -> None:
     assert "plugin:demo:pre_tool" in names
     assert loop.plugin_hook_issues == []
     store.close()
+
+
+# --- W4-c: plugin tools -----------------------------------------------------
+
+
+def test_manifest_accepts_tool_specs(tmp_path: Path) -> None:
+    source = _write_plugin(
+        tmp_path,
+        permissions=["tools"],
+        tools=[
+            "declared_only",
+            {
+                "name": "hello",
+                "description": "say hello",
+                "command": "tool.py",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                },
+            },
+        ],
+    )
+    manifest = validate_plugin(source)
+    assert manifest.tools[0] == "declared_only"
+    spec = manifest.tools[1]
+    assert not isinstance(spec, str)
+    assert spec.name == "hello"
+    assert spec.parameters["type"] == "object"
+
+
+def test_build_tools_requires_permission(tmp_path: Path) -> None:
+    from spark.plugins import build_plugin_tools
+
+    source = _write_plugin(
+        tmp_path,
+        permissions=["files:read"],
+        tools=[{"name": "hello", "command": "tool.py"}],
+    )
+    workdir = tmp_path / "work"
+    install_local(source, workdir)
+    schemas, handlers, issues = build_plugin_tools(["demo"], workdir)
+    assert schemas == [] and handlers == {}
+    assert any("tools 权限" in issue for issue in issues)
+
+
+def test_plugin_tool_runs_with_json_protocol(tmp_path: Path) -> None:
+    from spark.plugins import build_plugin_tools
+
+    source = _write_plugin(
+        tmp_path,
+        permissions=["tools"],
+        tools=[
+            {
+                "name": "hello",
+                "description": "echo a name",
+                "command": "tool.py",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                },
+            }
+        ],
+    )
+    (source / "tool.py").write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "payload = json.load(sys.stdin)\n"
+        "print(json.dumps({'ok': True, 'payload': {"
+        "'tool': payload['tool'], "
+        "'echo': payload['arguments'].get('name')}}))\n"
+    )
+    (source / "tool.py").chmod(0o755)
+    workdir = tmp_path / "work"
+    install_local(source, workdir)
+    schemas, handlers, issues = build_plugin_tools(["demo"], workdir)
+    assert issues == []
+    alias = "plugin__demo__hello"
+    assert [item["function"]["name"] for item in schemas] == [alias]
+    assert schemas[0]["function"]["parameters"]["required"] == ["name"]
+    result = handlers[alias]({"name": "world"})
+    assert result.ok
+    assert result.payload == {"tool": "hello", "echo": "world"}
+
+
+def test_registry_exposes_and_runs_plugin_tool(tmp_path: Path) -> None:
+    import asyncio
+
+    from spark.config import SparkConfig
+    from spark.models import ToolCall
+    from spark.plugins import build_plugin_tools
+    from spark.sandbox import WorkdirSandbox
+    from spark.tools.registry import ToolContext, ToolRegistry
+
+    source = _write_plugin(
+        tmp_path,
+        permissions=["tools"],
+        tools=[
+            {
+                "name": "hello",
+                "description": "echo a name",
+                "command": "tool.py",
+                "parameters": {"type": "object", "properties": {"name": {"type": "string"}}},
+            }
+        ],
+    )
+    (source / "tool.py").write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "payload = json.load(sys.stdin)\n"
+        "print(json.dumps({'ok': True, 'payload': {'echo': payload['arguments']['name']}}))\n"
+    )
+    (source / "tool.py").chmod(0o755)
+    workdir = tmp_path / "work"
+    install_local(source, workdir)
+    schemas, handlers, issues = build_plugin_tools(["demo"], workdir)
+    assert issues == []
+    cfg = SparkConfig()
+    registry = ToolRegistry(
+        ToolContext(sandbox=WorkdirSandbox(workdir), config=cfg)
+    )
+    registry.register_plugin_tools(schemas, handlers)
+    names = [s["function"]["name"] for s in registry.schemas()]
+    assert "plugin__demo__hello" in names
+    result = asyncio.run(
+        registry.execute(
+            ToolCall(id="x", name="plugin__demo__hello", arguments={"name": "world"})
+        )
+    )
+    assert result.ok
+    assert result.payload == {"echo": "world"}
+
+
+def test_agent_loop_registers_enabled_plugin_tool(tmp_path: Path) -> None:
+    from spark.config import SparkConfig
+    from spark.core.loop import AgentLoop
+    from spark.sandbox import WorkdirSandbox
+    from spark.store import SessionStore
+    from spark.tools.registry import ToolContext, ToolRegistry
+
+    source = _write_plugin(
+        tmp_path,
+        permissions=["tools"],
+        tools=[{"name": "hello", "command": "tool.py"}],
+    )
+    (source / "tool.py").write_text("#!/usr/bin/env python3\nprint('{}')\n")
+    (source / "tool.py").chmod(0o755)
+    workdir = tmp_path / "work"
+    install_local(source, workdir)
+    cfg = SparkConfig()
+    cfg.provider.name = "mock"
+    cfg.plugins.enabled = ["demo"]
+    ctx = ToolContext(sandbox=WorkdirSandbox(workdir), config=cfg)
+    store = SessionStore(tmp_path / "w4c.db")
+    sid = store.create_session(workdir, "mock")
+    loop = AgentLoop(
+        workdir=workdir,
+        cfg=cfg,
+        provider=None,
+        registry=ToolRegistry(ctx),
+        store=store,
+        session_id=sid,
+    )
+    names = [s["function"]["name"] for s in loop.registry.schemas()]
+    assert "plugin__demo__hello" in names
+    assert loop.plugin_hook_issues == []
+    store.close()

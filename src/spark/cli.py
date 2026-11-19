@@ -1996,6 +1996,8 @@ def plugins_validate_cmd(
     typer.echo(f"✓ {manifest.name} {manifest.version}")
     if manifest.permissions:
         typer.echo("  permissions: " + ", ".join(manifest.permissions))
+    if manifest.tools:
+        typer.echo(f"  tools: {len(manifest.tools)}")
     if manifest.hooks:
         typer.echo(f"  hooks: {len(manifest.hooks)}")
 
@@ -2097,7 +2099,7 @@ def _set_plugin_enabled(name: str, enabled: bool, config: Path | None) -> Path:
     return path
 
 
-@plugins_app.command("enable", help="启用插件的 hook（写入全局 config.toml 的 plugins.enabled）")
+@plugins_app.command("enable", help="启用插件 hooks/tools（写入全局 config.toml 的 plugins.enabled）")
 def plugins_enable_cmd(
     name: str = typer.Argument(..., help="插件 name"),
     workdir: Path = typer.Option(Path("."), "--workdir"),
@@ -2117,7 +2119,7 @@ def plugins_enable_cmd(
     typer.echo("提示：插件需声明 hooks 权限，重启会话后生效。")
 
 
-@plugins_app.command("disable", help="停用插件 hook（从全局 config.toml 的 plugins.enabled 移除）")
+@plugins_app.command("disable", help="停用插件 hooks/tools（从全局 config.toml 的 plugins.enabled 移除）")
 def plugins_disable_cmd(
     name: str = typer.Argument(..., help="插件 name"),
     config: Path | None = typer.Option(None, "--config"),

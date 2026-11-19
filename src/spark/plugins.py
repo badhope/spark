@@ -1,9 +1,10 @@
 """Workspace plugin manifest and local install/uninstall.
 
-This module deliberately does **not** execute plugin code. A plugin can declare
-tools/hooks/commands/permissions, but execution remains in the existing hook
-runtime (which has approval, timeout and audit). Keeping discovery/installation
-separate avoids a second, unapproved code-execution path.
+Installation alone never executes plugin code. Hook and tool execution is
+opt-in (``plugins.enabled`` + the relevant permission), runs in a bounded
+subprocess with a sanitised environment, and never bypasses the normal tool
+approval path. Keeping discovery/installation separate avoids a second,
+unapproved code-execution path.
 
 Layout::
 
@@ -17,12 +18,13 @@ should use ``spark-plugin.json``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import shutil
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,6 +35,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from spark.errors import PluginError
 from spark.hooks import SHELL_METACHARACTERS, HookRegistry, ShellHook
+from spark.models import ToolResult
+from spark.proc import run_bounded
 
 MANIFEST_NAME = "spark-plugin.json"
 LEGACY_MANIFEST_NAME = "plugin.json"
@@ -49,6 +53,7 @@ KNOWN_PERMISSIONS = frozenset(
         "shell",
         "network",
         "hooks",
+        "tools",
         "mcp",
     }
 )
@@ -114,6 +119,60 @@ class PluginHook(BaseModel):
         return value
 
 
+class PluginToolSpec(BaseModel):
+    """A plugin tool runner plus the JSON Schema exposed to the model."""
+
+    model_config = ConfigDict(extra="allow")
+
+    name: str
+    description: str = ""
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    command: str
+    args: list[str] = Field(default_factory=list)
+    timeout_sec: int = Field(default=30, ge=1, le=300)
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        if not TOOL_RE.fullmatch(value):
+            raise ValueError(f"invalid tool name: {value}")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def _description(cls, value: str) -> str:
+        return value.strip()[:4000]
+
+    @field_validator("parameters")
+    @classmethod
+    def _parameters(cls, value: dict[str, Any]) -> dict[str, Any]:
+        value = dict(value or {})
+        kind = value.get("type")
+        if kind not in (None, "object"):
+            raise ValueError("tool parameters must be a JSON object schema")
+        value.setdefault("type", "object")
+        value.setdefault("properties", {})
+        return value
+
+    @field_validator("command")
+    @classmethod
+    def _command(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("tool command must not be empty")
+        if any(ch in SHELL_METACHARACTERS for ch in value):
+            raise ValueError("tool command must not contain shell metacharacters")
+        return value
+
+    @field_validator("args")
+    @classmethod
+    def _args(cls, value: list[str]) -> list[str]:
+        for part in value:
+            if any(ch in SHELL_METACHARACTERS for ch in part):
+                raise ValueError("tool args must not contain shell metacharacters")
+        return value
+
+
 class PluginManifest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -122,7 +181,7 @@ class PluginManifest(BaseModel):
     description: str = ""
     entry: str = ""
     permissions: list[str] = Field(default_factory=list)
-    tools: list[str] = Field(default_factory=list)
+    tools: list[str | PluginToolSpec] = Field(default_factory=list)
     commands: list[str] = Field(default_factory=list)
     hooks: list[PluginHook] = Field(default_factory=list)
 
@@ -174,11 +233,27 @@ class PluginManifest(BaseModel):
 
     @field_validator("tools")
     @classmethod
-    def _tools(cls, value: list[str]) -> list[str]:
-        for item in value:
-            if not TOOL_RE.fullmatch(item):
-                raise ValueError(f"invalid tool name: {item}")
-        return list(dict.fromkeys(value))
+    def _tools(cls, value: list[str | PluginToolSpec]) -> list[str | PluginToolSpec]:
+        seen: set[str] = set()
+        out: list[str | PluginToolSpec] = []
+        for raw in value:
+            item: str | PluginToolSpec
+            if isinstance(raw, str):
+                if not TOOL_RE.fullmatch(raw):
+                    raise ValueError(f"invalid tool name: {raw}")
+                item = raw
+                name = raw
+            elif isinstance(raw, dict):
+                item = PluginToolSpec.model_validate(raw)
+                name = item.name
+            else:
+                item = raw
+                name = raw.name
+            if name in seen:
+                continue
+            seen.add(name)
+            out.append(item)
+        return out
 
     @field_validator("commands")
     @classmethod
@@ -255,7 +330,7 @@ def sanitized_env() -> dict[str, str]:
 
 def _plugin_command(
     record: PluginRecord,
-    hook: PluginHook,
+    hook: PluginHook | PluginToolSpec,
     permissions: list[str],
     issues: list[str],
 ) -> str | None:
@@ -309,6 +384,8 @@ def build_plugin_hooks(
         if record.legacy:
             issues.append(f"plugin {name}: 旧 plugin.json 已跳过，请迁移到 {MANIFEST_NAME}")
             continue
+        if not record.manifest.hooks:
+            continue
         permissions = record.manifest.permissions
         if "hooks" not in permissions:
             issues.append(f"plugin {name}: 未声明 hooks 权限，已拒绝加载 hook")
@@ -332,6 +409,148 @@ def build_plugin_hooks(
                 )
             )
     return bindings, issues
+
+
+def plugin_tool_alias(plugin: str, tool: str) -> str:
+    raw = f"plugin__{plugin}__{tool}".lower()
+    safe = re.sub(r"[^a-z0-9_]", "_", raw)
+    if len(safe) <= 64:
+        return safe
+    digest = hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()[:8]
+    return f"{safe[:55]}_{digest}"
+
+
+def _run_plugin_tool(
+    record: PluginRecord,
+    spec: PluginToolSpec,
+    command: str,
+    arguments: dict[str, Any],
+    max_output_chars: int,
+) -> ToolResult:
+    payload = json.dumps({"tool": spec.name, "arguments": arguments}, ensure_ascii=False)
+    try:
+        result = run_bounded(
+            [command, *spec.args],
+            cwd=record.path,
+            env=sanitized_env(),
+            timeout=spec.timeout_sec,
+            input_text=payload,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError as exc:
+        return ToolResult(ok=False, payload={"error": f"plugin tool failed to start: {exc}"})
+    if result.timed_out:
+        return ToolResult(
+            ok=False,
+            payload={"error": f"plugin tool timed out after {spec.timeout_sec}s"},
+        )
+    stdout = result.stdout.strip()
+    stderr = result.stderr.strip()
+    if result.returncode != 0:
+        detail = (stderr or stdout)[-max_output_chars:]
+        return ToolResult(
+            ok=False,
+            payload={
+                "error": f"plugin tool exited with {result.returncode}",
+                "detail": detail,
+            },
+        )
+    if not stdout:
+        return ToolResult(ok=True, payload={})
+    try:
+        parsed = json.loads(stdout)
+    except json.JSONDecodeError:
+        return ToolResult(ok=True, payload={"output": stdout[:max_output_chars]})
+    if isinstance(parsed, dict):
+        if "ok" in parsed:
+            body = parsed.get("payload")
+            if not isinstance(body, dict):
+                body = {"output": body}
+            return ToolResult(ok=bool(parsed.get("ok")), payload=body)
+        return ToolResult(ok=True, payload=parsed)
+    return ToolResult(ok=True, payload={"output": parsed})
+
+
+def build_plugin_tools(
+    enabled: Sequence[str],
+    workdir: Path,
+    *,
+    max_output_chars: int = 8000,
+) -> tuple[
+    list[dict[str, Any]],
+    dict[str, Callable[[dict[str, Any]], ToolResult]],
+    list[str],
+]:
+    """Build model-facing schemas and handlers for explicit plugin tools.
+
+    A plugin must be enabled and declare the ``tools`` permission. Its tool
+    names are namespaced (``plugin__<plugin>__<tool>``) so they cannot shadow
+    built-ins; execution stays a bounded subprocess with sanitised env and the
+    normal approval policy still applies.
+    """
+    selected = {str(name).strip() for name in enabled if str(name).strip()}
+    records = {record.name: record for record in scan_plugins(workdir)}
+    schemas: list[dict[str, Any]] = []
+    handlers: dict[str, Callable[[dict[str, Any]], ToolResult]] = {}
+    issues: list[str] = []
+    aliases: dict[str, str] = {}
+    for name in sorted(selected):
+        record = records.get(name)
+        if record is None:
+            issues.append(f"plugin {name}: 未安装或清单不匹配")
+            continue
+        if record.manifest is None or record.error:
+            issues.append(f"plugin {name}: {record.error or 'manifest 无效，已跳过'}")
+            continue
+        if record.legacy:
+            issues.append(f"plugin {name}: 旧 plugin.json 已跳过，请迁移到 {MANIFEST_NAME}")
+            continue
+        if not record.manifest.tools:
+            continue
+        permissions = record.manifest.permissions
+        if "tools" not in permissions:
+            issues.append(f"plugin {name}: 未声明 tools 权限，已拒绝加载工具")
+            continue
+        for spec in record.manifest.tools:
+            if isinstance(spec, str):
+                issues.append(f"plugin {name}: 工具 {spec} 只有名称，缺少 runner，已跳过")
+                continue
+            command = _plugin_command(record, spec, permissions, issues)
+            if command is None:
+                continue
+            alias = plugin_tool_alias(name, spec.name)
+            if alias in aliases:
+                issues.append(
+                    f"plugin {name}: 工具别名冲突 {alias}（已有 {aliases[alias]}）"
+                )
+                continue
+            aliases[alias] = f"{name}:{spec.name}"
+            description = f"[plugin {name}] {spec.description}".strip()[:4000]
+            schemas.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": alias,
+                        "description": description,
+                        "parameters": spec.parameters,
+                    },
+                }
+            )
+            def _handler(
+                arguments: dict[str, Any],
+                *,
+                _record: PluginRecord = record,
+                _spec: PluginToolSpec = spec,
+                _command: str = command,
+                _max: int = max_output_chars,
+            ) -> ToolResult:
+                return _run_plugin_tool(
+                    _record, _spec, _command, arguments, _max
+                )
+
+            handlers[alias] = _handler
+    return schemas, handlers, issues
 
 
 def _utc_stamp() -> str:

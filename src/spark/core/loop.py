@@ -137,6 +137,18 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
                 self.plugin_hook_issues = issues
             except Exception as exc:  # noqa: BLE001 - a plugin must not kill the loop
                 self.plugin_hook_issues = [f"plugin runtime: {exc}"]
+            try:
+                from spark.plugins import build_plugin_tools
+
+                schemas, handlers, tool_issues = build_plugin_tools(
+                    plugin_names,
+                    workdir,
+                    max_output_chars=cfg.agent.max_output_chars,
+                )
+                self.registry.register_plugin_tools(schemas, handlers)
+                self.plugin_hook_issues.extend(tool_issues)
+            except Exception as exc:  # noqa: BLE001 - a plugin must not kill the loop
+                self.plugin_hook_issues.append(f"plugin tools: {exc}")
         # Lazy: spark.core.compact pulls litellm + llama_index (~1.7 s of import
         # time) and is only needed when a turn actually has to compact.
         self._compactor: Any = None
