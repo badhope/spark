@@ -1,0 +1,16 @@
+{
+  "cli_version_p50_ms": 530,
+  "cli_version_p95_ms": 500,
+  "cli_version_hard_ms": 630,
+  "web_startup_delta_ms": 200,
+  "first_screen_js_gzip_kb": 220,
+  "first_screen_js_target_kb": 170,
+  "sse_overhead_ms": 100,
+  "api_status_p95_ms": 50,
+  "api_sessions_p95_ms": 80,
+  "api_history_p95_ms": 120,
+  "api_fs_tree_p95_ms": 100,
+  "idle_rss_delta_pct": 20,
+  "bundle_growth_kb": 5,
+  "wheel_growth_pct": 10
+}
