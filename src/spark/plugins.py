@@ -24,6 +24,8 @@ import os
 import re
 import shutil
 import tempfile
+import urllib.error
+import urllib.request
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -322,6 +324,28 @@ def record_to_dict(record: PluginRecord) -> dict[str, Any]:
         "legacy": record.legacy,
         "error": record.error,
     }
+
+
+def enabled_plugin_names() -> set[str]:
+    """Read ``[plugins].enabled`` without loading the full SparkConfig."""
+    import tomlkit
+
+    from spark.config import default_home
+
+    path = default_home() / "config.toml"
+    if not path.is_file():
+        return set()
+    try:
+        doc = tomlkit.parse(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - a broken config must not hide plugins
+        return set()
+    table = doc.get("plugins")
+    if table is None or not hasattr(table, "get"):
+        return set()
+    names = table.get("enabled")
+    if not isinstance(names, list):
+        return set()
+    return {str(name) for name in names}
 
 
 def sanitized_env() -> dict[str, str]:
@@ -743,7 +767,133 @@ def install_local(source: Path, workdir: Path, *, force: bool = False) -> Plugin
     )
 
 
+REGISTRY_ENV = "SPARK_PLUGIN_REGISTRY"
+MAX_REGISTRY_BYTES = 2_000_000
 _GIT_URL_PREFIXES = ("https://", "http://", "ssh://", "git@")
+
+
+class PluginRegistryEntry(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    version: str = "0.0.0"
+    description: str = ""
+    url: str
+    ref: str = ""
+    subdir: str = ""
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        if not NAME_RE.fullmatch(value):
+            raise ValueError(f"invalid plugin name: {value}")
+        return value
+
+    @field_validator("version")
+    @classmethod
+    def _version(cls, value: str) -> str:
+        try:
+            Version(value)
+        except InvalidVersion as exc:
+            raise ValueError(f"invalid registry version: {value}") from exc
+        return value
+
+    @field_validator("url")
+    @classmethod
+    def _url(cls, value: str) -> str:
+        value = value.strip()
+        if not value.startswith(("https://", "ssh://", "git@")):
+            raise ValueError("registry plugin url must use https/ssh")
+        return value
+
+
+class PluginRegistry(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    plugins: list[PluginRegistryEntry] = Field(default_factory=list)
+
+
+def registry_source(source: str | Path | None = None) -> str:
+    raw = str(source or os.environ.get(REGISTRY_ENV, "")).strip()
+    if not raw:
+        raise PluginError(
+            f"未配置插件市场：传 --registry 或设置 {REGISTRY_ENV}"
+        )
+    return raw
+
+
+def load_registry(source: str | Path | None = None) -> PluginRegistry:
+    """Load a registry index from https or a local JSON file (bounded read)."""
+    raw = registry_source(source)
+    if raw.startswith(("https://", "http://")):
+        if not raw.startswith("https://"):
+            raise PluginError("远程插件市场必须使用 https")
+        try:
+            request = urllib.request.Request(
+                raw, headers={"User-Agent": "spark-plugin-registry"}
+            )
+            with urllib.request.urlopen(request, timeout=15) as response:  # noqa: S310
+                payload = response.read(MAX_REGISTRY_BYTES + 1)
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise PluginError(f"插件市场不可用: {exc}") from exc
+        if len(payload) > MAX_REGISTRY_BYTES:
+            raise PluginError("插件市场索引过大")
+        text = payload.decode("utf-8", errors="replace")
+    else:
+        path = Path(raw).expanduser()
+        if not path.is_file():
+            raise PluginError(f"插件市场索引不存在: {path}")
+        if path.stat().st_size > MAX_REGISTRY_BYTES:
+            raise PluginError("插件市场索引过大")
+        text = path.read_text(encoding="utf-8", errors="replace")
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise PluginError(f"插件市场索引不是合法 JSON: {exc}") from exc
+    if isinstance(data, list):
+        data = {"plugins": data}
+    if not isinstance(data, dict):
+        raise PluginError("插件市场索引必须是对象或数组")
+    try:
+        return PluginRegistry.model_validate(data)
+    except ValidationError as exc:
+        raise PluginError(f"插件市场索引校验失败: {exc}") from exc
+
+
+def search_registry(
+    query: str = "", source: str | Path | None = None
+) -> list[PluginRegistryEntry]:
+    registry = load_registry(source)
+    needle = query.strip().lower()
+    if not needle:
+        return list(registry.plugins)
+    return [
+        item
+        for item in registry.plugins
+        if needle in item.name.lower() or needle in item.description.lower()
+    ]
+
+
+def install_from_registry(
+    name: str,
+    workdir: Path,
+    *,
+    source: str | Path | None = None,
+    force: bool = False,
+) -> PluginRecord:
+    registry = load_registry(source)
+    for entry in registry.plugins:
+        if entry.name == name:
+            return install_git(
+                entry.url,
+                workdir,
+                ref=entry.ref,
+                subdir=entry.subdir,
+                force=force,
+            )
+    raise PluginError(f"插件市场没有插件: {name}")
+
+
 _REF_RE = re.compile(r"^[A-Za-z0-9._/][A-Za-z0-9._/-]{0,127}$")
 
 

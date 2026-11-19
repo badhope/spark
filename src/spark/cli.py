@@ -2018,6 +2018,52 @@ def plugins_install_cmd(
     typer.echo(f"✓ {record.name} -> {record.path}")
 
 
+@plugins_app.command("search", help="在插件市场索引中搜索（--registry 或 SPARK_PLUGIN_REGISTRY）")
+def plugins_search_cmd(
+    query: str = typer.Argument("", help="搜索词；留空列出全部"),
+    registry: str = typer.Option("", "--registry", help="市场索引 URL 或本地 JSON"),
+    json_output: bool = typer.Option(False, "--json", help="输出 JSON"),
+) -> None:
+    import json
+
+    from spark.plugins import search_registry
+
+    try:
+        entries = search_registry(query, registry or None)
+    except PluginError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    if json_output:
+        typer.echo(
+            json.dumps([entry.model_dump() for entry in entries], ensure_ascii=False)
+        )
+        return
+    if not entries:
+        typer.echo("没有匹配的插件。")
+        return
+    for entry in entries:
+        typer.echo(f"{entry.name}\t{entry.version}\t{entry.description}\t{entry.url}")
+
+
+@plugins_app.command("install-registry", help="按市场索引中的名称安装插件")
+def plugins_install_registry_cmd(
+    name: str = typer.Argument(..., help="插件 name"),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    registry: str = typer.Option("", "--registry", help="市场索引 URL 或本地 JSON"),
+    force: bool = typer.Option(False, "--force", help="已存在时备份旧版本再安装"),
+) -> None:
+    from spark.plugins import install_from_registry
+
+    try:
+        record = install_from_registry(
+            name, workdir.resolve(), source=registry or None, force=force
+        )
+    except PluginError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"✓ {record.name} -> {record.path}")
+
+
 @plugins_app.command("install-git", help="从 git 仓库克隆并安装插件（仅 https/ssh 网络地址）")
 def plugins_install_git_cmd(
     url: str = typer.Argument(..., help="git 地址"),

@@ -194,3 +194,65 @@ def asyncio_run_collect(loop: AgentLoop, prompt: str):
         return [e async for e in loop.iter_turn(prompt)]
 
     return asyncio.run(collect())
+
+
+# ---------------------------------------------------------------------------
+# W4-c：插件 commands
+# ---------------------------------------------------------------------------
+
+
+def _install_command_plugin(workdir: Path, home: Path, monkeypatch) -> None:
+    import json
+
+    from spark.plugins import install_local
+
+    source = workdir / "plugin-source"
+    (source / "commands").mkdir(parents=True)
+    (source / "spark-plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "demo",
+                "version": "0.1.0",
+                "entry": "run.py",
+                "permissions": ["files:read"],
+                "commands": ["hello"],
+            }
+        )
+    )
+    (source / "run.py").write_text("print('demo')\n")
+    (source / "commands" / "hello.md").write_text(
+        "---\ndescription: plugin hello\n---\nPlugin says hi to $ARGUMENTS",
+        encoding="utf-8",
+    )
+    install_local(source, workdir)
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.toml").write_text('[plugins]\nenabled = ["demo"]\n')
+    monkeypatch.setenv("SPARK_HOME", str(home))
+
+
+def test_plugin_command_discovery_and_expand(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    _install_command_plugin(workdir, home, monkeypatch)
+    commands = [c for c in discover_commands(workdir) if c.name == "hello"]
+    assert len(commands) == 1
+    assert commands[0].plugin == "demo"
+    assert expand_command(workdir, "/hello world") == "Plugin says hi to world"
+
+
+def test_plugin_command_disabled_and_local_shadow(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    _install_command_plugin(workdir, home, monkeypatch)
+    (home / "config.toml").write_text("[plugins]\nenabled = []\n")
+    assert all(c.name != "hello" for c in discover_commands(workdir))
+
+    (home / "config.toml").write_text('[plugins]\nenabled = ["demo"]\n')
+    local = workdir / ".spark" / "commands"
+    local.mkdir(parents=True)
+    (local / "hello.md").write_text("LOCAL says $ARGUMENTS", encoding="utf-8")
+    commands = [c for c in discover_commands(workdir) if c.name == "hello"]
+    assert commands[0].plugin == ""
+    assert expand_command(workdir, "/hello world") == "LOCAL says world"

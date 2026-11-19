@@ -686,7 +686,7 @@ def build_handler_class(html: str):
                 from spark.slash import discover_commands
 
                 items = [
-                    {"name": c.name, "description": c.description}
+                    {"name": c.name, "description": c.description, "plugin": c.plugin}
                     for c in discover_commands(state.workdir)
                 ]
                 self._json(200, {"commands": items})

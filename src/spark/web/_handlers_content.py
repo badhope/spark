@@ -70,6 +70,7 @@ def _command_entries(workdir: Path) -> list[dict[str, Any]]:
                 "name": c.name,
                 "description": c.description,
                 "path": getattr(c, "path", ""),
+                "plugin": getattr(c, "plugin", ""),
             }
         )
     return out

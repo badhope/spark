@@ -21,7 +21,7 @@
 | 声明式专家代理 | `agents.py` + `.claude/agents/*.md` | 放一个 md 文件即多一个可委派的专家 |
 | 项目技能 | `skills.py` + `.spark/skills/*.md` | 放文件即生效，模型按需 `load_skill`；设置→技能可增删改 |
 | 自定义斜杠命令 | `slash.py` + `.spark/commands/*.md` | `/name 参数` 展开为提示词；设置→提示词可管理 |
-| 工作区插件 | `plugins.py` + `spark plugins` | `spark-plugin.json` 校验（permissions/tools/commands/hooks）、本地/git 安装、卸载/备份、Web 只读发现；`[plugins].enabled` + 对应权限双重 opt-in 后，hook/tool 走独立子进程（超时/无 stdin/环境变量清洗），插件工具以 `plugin__<plugin>__<tool>` 命名空间注册进 ToolRegistry 并走正常审批；commands 与市场待后续 |
+| 工作区插件 | `plugins.py` + `spark plugins` | `spark-plugin.json` 校验（permissions/tools/commands/hooks）、本地/git 安装、卸载/备份、Web 只读发现；`[plugins].enabled` + 对应权限双重 opt-in 后，hook/tool 走独立子进程（超时/无 stdin/环境变量清洗），插件工具以 `plugin__<plugin>__<tool>` 命名空间注册进 ToolRegistry 并走正常审批；插件命令与市场索引已接；官方包/升级策略待后续 |
 | 长期记忆 | `memory/` | 自动抽取 + 关键词/可选向量检索 + 网页面板管理 |
 | 项目知识库 | `knowledge.py` | 导入文档（md/txt/rst/json/yaml/csv/toml），BM25 检索后按轮注入只读参考 |
 | 会话全文检索 | `store.search()` + FTS5 | 侧栏搜索命中聊天正文，结果带片段 |

@@ -168,48 +168,87 @@ class CommandInfo:
     description: str
     body: str
     path: Path
+    #: 插件命令的来源插件名；本地 ``.spark/commands`` 为空。
+    plugin: str = ""
+
+
+def _read_command_file(md: Path, name: str, *, plugin: str = "") -> CommandInfo | None:
+    from spark.skills import _parse_frontmatter
+
+    try:
+        text = md.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    parsed = _parse_frontmatter(text)
+    if parsed is None:
+        meta: dict[str, str] = {}
+        body = text
+    else:
+        meta, body = parsed
+    resolved = (meta.get("name") or name or md.stem).strip().lower()
+    if not resolved or resolved in KNOWN_COMMANDS:
+        return None
+    body = body.strip()
+    if not body:
+        return None
+    return CommandInfo(
+        name=resolved,
+        description=(meta.get("description") or "").strip(),
+        body=body,
+        path=md,
+        plugin=plugin,
+    )
+
+
+def _plugin_command_files(workdir: Path) -> list[tuple[str, str, Path]]:
+    """Return ``(plugin, command, path)`` for enabled plugins only."""
+    from spark.plugins import enabled_plugin_names, scan_plugins
+
+    enabled = enabled_plugin_names()
+    if not enabled:
+        return []
+    out: list[tuple[str, str, Path]] = []
+    for record in scan_plugins(workdir):
+        if record.name not in enabled or record.manifest is None:
+            continue
+        if record.error or record.legacy:
+            continue
+        for command in record.manifest.commands:
+            candidate = (record.path / "commands" / f"{command}.md").resolve()
+            try:
+                candidate.relative_to(record.path.resolve())
+            except ValueError:
+                continue
+            if candidate.is_file():
+                out.append((record.name, command, candidate))
+    return out
 
 
 def discover_commands(workdir: str | Path) -> list[CommandInfo]:
-    """扫描 ``.spark/commands/*.md``；frontmatter 可选（description 提示用）。
+    """扫描 ``.spark/commands/*.md`` 与已启用插件的 ``commands/*.md``。
 
-    目录缺失/文件不可读 → 空列表（调用方可安全迭代）。内建命令
-    （目前 ``/test``）优先——同名自定义命令永远不会遮蔽内建行为。
+    本地命令优先；内建命令（``/test`` 等）永远优先于两类自定义命令。
+    目录缺失/文件不可读不会中断枚举。
     """
-    from spark.skills import _parse_frontmatter
-
     base = Path(workdir)
-    commands_dir = base / COMMANDS_DIR
-    if not commands_dir.is_dir():
-        return []
     commands: list[CommandInfo] = []
-    for md in sorted(commands_dir.glob("*.md")):
-        if md.name.startswith("."):
+    commands_dir = base / COMMANDS_DIR
+    if commands_dir.is_dir():
+        for md in sorted(commands_dir.glob("*.md")):
+            if md.name.startswith("."):
+                continue
+            item = _read_command_file(md, md.stem)
+            if item is not None:
+                commands.append(item)
+    seen = {c.name for c in commands}
+    for plugin, command, path in _plugin_command_files(base):
+        if command in seen:
             continue
-        try:
-            text = md.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        item = _read_command_file(path, command, plugin=plugin)
+        if item is None or item.name in seen:
             continue
-        parsed = _parse_frontmatter(text)
-        if parsed is None:
-            meta: dict[str, str] = {}
-            body = text
-        else:
-            meta, body = parsed
-        name = (meta.get("name") or md.stem).strip().lower()
-        if not name:
-            continue
-        if name in KNOWN_COMMANDS:
-            logger.debug("自定义命令 %s 与内建同名，已跳过（内建优先）", name)
-            continue
-        commands.append(
-            CommandInfo(
-                name=name,
-                description=(meta.get("description") or "").strip(),
-                body=body.strip(),
-                path=md,
-            )
-        )
+        seen.add(item.name)
+        commands.append(item)
     return commands
 
 
@@ -236,7 +275,12 @@ def expand_command(workdir: str | Path, text: str) -> str | None:
     base = Path(workdir)
     candidate = base / COMMANDS_DIR / f"{name}.md"
     if not candidate.is_file():
-        return None
+        for plugin, command, plugin_path in _plugin_command_files(base):
+            if command == name:
+                candidate = plugin_path
+                break
+        else:
+            return None
     try:
         raw = candidate.read_text(encoding="utf-8", errors="replace")
     except OSError:

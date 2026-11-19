@@ -153,6 +153,21 @@ spark plugins disable demo
 工具进程从 stdin 读 JSON（`{"tool":"hello","arguments":{...}}`），stdout 返回 JSON：
 `{"ok":true,"payload":{...}}`；非 JSON 输出会作为文本回传。
 
+插件命令（manifest 的 `commands`）由插件目录下的 `commands/<name>.md` 提供，正文支持
+`$ARGUMENTS`；只有插件启用后才会出现在命令面板。本地 `.spark/commands` 与内建命令优先，
+插件命令不会遮蔽它们。
+
+插件市场使用一个 JSON 索引（`SPARK_PLUGIN_REGISTRY` 或 `--registry`，支持 https 或本地文件）：
+
+```json
+{"plugins":[{"name":"demo","version":"1.2.0","description":"demo","url":"https://example.com/demo.git"}]}
+```
+
+```bash
+spark plugins search demo --registry ./registry.json
+spark plugins install-registry demo --registry ./registry.json
+```
+
 项目级 `.spark.toml` 的 `[plugins]` 会被安全清洗丢弃——克隆仓库不能给自己授权插件。
 
 > 安全边界：`hooks` / `tools` 权限等价于允许插件执行代码。当前隔离覆盖超时、stdin、

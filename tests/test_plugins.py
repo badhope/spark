@@ -542,3 +542,56 @@ def test_install_git_rejects_local_and_unsafe_refs(tmp_path: Path) -> None:
         install_git("https://example.com/demo.git", workdir, subdir="../escape")
     with pytest.raises(PluginError, match="git 安装"):
         install_git("file:///tmp/demo", workdir)
+
+
+def test_registry_search_and_missing_install(tmp_path: Path, monkeypatch) -> None:
+    from spark.plugins import (
+        PluginError,
+        install_from_registry,
+        load_registry,
+        search_registry,
+    )
+
+    index = tmp_path / "registry.json"
+    index.write_text(
+        json.dumps(
+            {
+                "plugins": [
+                    {
+                        "name": "demo",
+                        "version": "1.2.0",
+                        "description": "demo plugin",
+                        "url": "https://example.com/demo.git",
+                    }
+                ]
+            }
+        )
+    )
+    monkeypatch.delenv("SPARK_PLUGIN_REGISTRY", raising=False)
+    registry = load_registry(index)
+    assert registry.plugins[0].name == "demo"
+    assert [e.name for e in search_registry("DEM", index)] == ["demo"]
+    assert search_registry("missing", index) == []
+    with pytest.raises(PluginError, match="没有插件"):
+        install_from_registry("missing", tmp_path / "work", source=index)
+
+
+def test_registry_rejects_bad_entries(tmp_path: Path) -> None:
+    from spark.plugins import PluginError, load_registry
+
+    index = tmp_path / "registry.json"
+    index.write_text(
+        json.dumps(
+            {
+                "plugins": [
+                    {
+                        "name": "demo",
+                        "version": "not-a-version",
+                        "url": "https://example.com/demo.git",
+                    }
+                ]
+            }
+        )
+    )
+    with pytest.raises(PluginError, match="校验失败"):
+        load_registry(index)
