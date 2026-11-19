@@ -18,7 +18,7 @@
 ## M1（第 7–13 周）
 
 - [x] W9a：前端 `sessionRuntime`；切会话 0 污染；后台会话“生成中/待审批/待回答”徽标（`9448d3c`、`1e63da0`）
-- [x] W1：definition/references/hover/symbols/diagnostics/rename/code action + 影响面（`src/spark/lsp/`，`tests/test_lsp_tools.py` 11 项）
+- [x] W1：definition/references/hover/symbols/diagnostics/rename/code action + 影响面（`src/spark/lsp/`，`tests/test_lsp_tools.py` 12 项）
 - [ ] W2：Anthropic/OpenAI/Gemini 原生预设；routing 有调用方；成本面板
 - [ ] 前端首屏 gzip ≤220KB；Workbench 5 tab；设置 5 页
 - [ ] SSE 契约漂移 CI 阻断

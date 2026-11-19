@@ -36,7 +36,7 @@
 | M29 | 自动化 / Git 记忆 | `automations.py`、`git_memory.py` | cron/automation / git memory | `test_automations*`、`test_git_bg_persist.py` | badhope | 稳定 |
 | M30 | 评测与可观测 | `evals/`、`otel.py` | eval runner / OTel span | `test_evals*`、`test_otel*` | badhope | 演进中（覆盖不足） |
 | M31 | 发布 / 文档 / 品牌 | `updater.py`、`deploy/`、`docs/`、`brand/`、`.github/` | 包 / 升级 / CI / 品牌 | CI、打包冒烟 | badhope | 演进中 |
-| M32 | 代码智能 / LSP | `src/spark/lsp/`（client / servers / manager / workspace / impact / tools） | LSP definition/references/hover/symbols/diagnostics/rename/code action；`affected_tests` | `tests/test_lsp_tools.py`（11 项，含 fake stdio server、dry-run/落盘、跨文件、降级、沙箱、六语言探测） | badhope | 稳定 |
+| M32 | 代码智能 / LSP | `src/spark/lsp/`（client / servers / manager / workspace / impact / tools） | LSP definition/references/hover/symbols/diagnostics/rename/code action；`affected_tests` | `tests/test_lsp_tools.py`（12 项，含 fake stdio server、dry-run/落盘、跨文件、降级、沙箱、六语言探测） | badhope | 稳定 |
 
 ## 契约规则
 

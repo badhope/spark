@@ -121,6 +121,9 @@ def test_rename_dry_run_is_identical_to_apply(tmp_path: Path) -> None:
         assert preview["ok"] is True
         assert preview["payload"]["applied"] is False
         assert preview["payload"]["file_count"] == 2
+        preview_diffs = {
+            item["file"]: item["diff"] for item in preview["payload"]["files"]
+        }
         assert (root / "main.py").read_text(encoding="utf-8") == before_main
 
         applied = _call(
@@ -135,6 +138,10 @@ def test_rename_dry_run_is_identical_to_apply(tmp_path: Path) -> None:
         assert applied["ok"] is True
         assert applied["payload"]["applied"] is True
         assert applied["payload"]["written"] == ["main.py", "other.py"]
+        applied_diffs = {
+            item["file"]: item["diff"] for item in applied["payload"]["files"]
+        }
+        assert applied_diffs == preview_diffs
         assert "bar" in (root / "main.py").read_text(encoding="utf-8")
         assert "bar" in (root / "other.py").read_text(encoding="utf-8")
         assert before_other == "foo()\n"
@@ -296,3 +303,32 @@ def test_server_detection_covers_six_languages(tmp_path: Path, monkeypatch) -> N
         spec = detect_server(language, tmp_path)
         assert spec is not None
         assert spec.command
+
+
+def test_rename_across_twenty_files(tmp_path: Path) -> None:
+    for index in range(20):
+        (tmp_path / f"f{index}.py").write_text("foo()\n", encoding="utf-8")
+    edit = {
+        "changes": {
+            (tmp_path / f"f{index}.py").as_uri(): [
+                {
+                    "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 3},
+                    },
+                    "newText": "bar",
+                }
+            ]
+            for index in range(20)
+        }
+    }
+    plans = plan_workspace_edit(tmp_path, edit)
+    assert len(plans) == 20
+    apply_plans(WorkdirSandbox(tmp_path, SparkConfig()), plans, dry_run=True)
+    assert (tmp_path / "f0.py").read_text(encoding="utf-8") == "foo()\n"
+    outcome = apply_plans(WorkdirSandbox(tmp_path, SparkConfig()), plans, dry_run=False)
+    assert len(outcome["written"]) == 20
+    assert all(
+        (tmp_path / f"f{index}.py").read_text(encoding="utf-8") == "bar()\n"
+        for index in range(20)
+    )
