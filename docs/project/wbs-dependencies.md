@@ -4,7 +4,7 @@
 
 | ID | 工作 | 依赖 | 出口 |
 |---|---|---|---|
-| W0 | Web 迁 FastAPI + 会话运行时 | 无 | SSE envelope、SessionRuntimeRegistry、pending/events、旧 server 可回退 |
+| W0 | Web 迁 FastAPI + 会话运行时 | 无 | SSE envelope、SessionRuntimeRegistry、pending/events、旧 SSE 客户端协议兼容（代码基线无旧 server） |
 | W0.5 | 工程基线 + 双内核收口 | W0 的 OpenAPI/SSE 契约 | 门禁全绿、loop <800、control 走 AgentLoop、性能基线 |
 | W1 | 代码智能 LSP/重构 | W0 的 fs API | definition/references/hover/rename/影响面 |
 | W2 | 模型与成本 | W0 的 config API | 5 家原生预设、routing 有调用方、成本预算 |

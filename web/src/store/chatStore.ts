@@ -125,7 +125,9 @@ interface ChatState {
   /** 传输失败时记住原 prompt，供「重试」按钮一键重发 */
   lastFailedPrompt: { prompt: string; images: string[] } | null
   retryLastFailed: () => Promise<void>
-  loadInitialHistory: () => Promise<void>
+  /** ``autoResume=false`` is used by resumeSession itself to avoid a
+   *  reconnect loop when a dropped SSE stream leaves the turn busy. */
+  loadInitialHistory: (autoResume?: boolean) => Promise<void>
   /** Re-attach to a turn that was already running before a reload/switch. */
   resumeSession: (sessionId: string, afterSeq?: number) => Promise<void>
   cancel: () => void
@@ -249,7 +251,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  loadInitialHistory: async () => {
+  loadInitialHistory: async (autoResume = true) => {
     set({ loading: true })
     try {
       const h = await fetchHistory()
@@ -267,7 +269,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       try {
         const pending = await fetchSessionPending(h.session_id)
         useSessionRuntimeStore.getState().hydratePending(h.session_id, pending)
-        if (pending.busy && !pending.approval && !pending.question) {
+        if (autoResume && pending.busy && !pending.approval && !pending.question) {
           void get().resumeSession(h.session_id, pending.last_seq ?? 0)
         }
       } catch {
@@ -369,17 +371,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch {
       /* the endpoint may have closed; history fallback below is authoritative */
     } finally {
-      RESUMING.delete(sessionId)
-      patchResume((it) => (it.streaming ? { ...it, streaming: false } : it))
-      useSessionRuntimeStore.getState().setAbortController(sessionId, null)
       const phase = useSessionRuntimeStore.getState().runtimes[sessionId]?.phase
+      const settled = sawDone || phase === "idle" || phase === "error"
+      // A dropped stream is not a finished turn: keep the partial bubble alive
+      // so a later switch/reload can reconnect instead of showing stale text.
+      if (settled) {
+        patchResume((it) => (it.streaming ? { ...it, streaming: false } : it))
+      }
+      useSessionRuntimeStore.getState().setAbortController(sessionId, null)
       if (sawDone || phase === "idle") {
         useSessionRuntimeStore.getState().finish(sessionId)
       }
       const currentVisible = useSessionStore.getState().status?.session_id === sessionId
-      if (currentVisible) {
-        if (get().abortController === ac) set({ streaming: false, abortController: null })
-        await get().loadInitialHistory()
+      try {
+        if (currentVisible) {
+          if (get().abortController === ac) set({ streaming: false, abortController: null })
+          // Only replace the live cache with server history once the turn is
+          // actually settled. Otherwise a transient SSE drop would erase the
+          // partial answer and leave the runtime claiming the turn is still busy.
+          if (settled) await get().loadInitialHistory(false)
+          // The done frame is authoritative even if /pending still reports
+          // busy for a few milliseconds while the server unwinds the turn.
+          if (sawDone) useSessionRuntimeStore.getState().finish(sessionId)
+        }
+      } finally {
+        RESUMING.delete(sessionId)
       }
     }
   },

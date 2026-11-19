@@ -336,3 +336,31 @@ class TestSessionsCRUD:
         _, _, port = server
         status, body = _post(port, "/api/sessions/switch", {"session_id": "invalid-id"})
         assert status == 404
+
+
+def test_legacy_env_streams_without_envelope(tmp_path, monkeypatch) -> None:
+    """SPARK_WEB_LEGACY=1 keeps old clients working with bare data frames."""
+    monkeypatch.setenv("SPARK_WEB_LEGACY", "1")
+    cfg = SparkConfig()
+    cfg.provider.name = "mock"
+    cfg.provider.base_url = "http://localhost:9999/v1"
+    cfg.provider.model = "mock-model"
+    cfg.agent.approval = "full-auto"
+    store = SessionStore(tmp_path / "legacy.db")
+    port = _free_port()
+    server, state = build_web_server(
+        workdir=tmp_path, cfg=cfg, store=store, host="127.0.0.1", port=port
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    time.sleep(0.3)
+    try:
+        payloads = _post_sse(port, "/api/chat/stream", {"prompt": "hi"})
+        assert payloads
+        assert all("v" not in item for item in payloads)
+        assert payloads[-1].get("type") == "done"
+    finally:
+        server.shutdown()
+        server.server_close()
+        state.close()
+        store.close()

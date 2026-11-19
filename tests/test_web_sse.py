@@ -380,3 +380,38 @@ def test_legacy_sse_env_switch(tmp_path, monkeypatch) -> None:
         server.server_close()
         state.close()
         store.close()
+
+
+def test_legacy_session_stream_writes_bare_data_frames() -> None:
+    """The legacy switch also applies to /api/sessions/{id}/stream."""
+    import json
+
+    from spark.web.session_stream import _write_event
+
+    class _WFile:
+        def __init__(self) -> None:
+            self.data = b""
+
+        def write(self, data: bytes) -> None:
+            self.data += data
+
+        def flush(self) -> None:
+            pass
+
+    wfile = _WFile()
+    _write_event(
+        type("H", (), {"wfile": wfile})(),  # type: ignore[arg-type]
+        3,
+        {
+            "v": 1,
+            "session_id": "s",
+            "turn_id": "t",
+            "seq": 3,
+            "type": "text_delta",
+            "text": "hi",
+        },
+        legacy=True,
+    )
+    assert wfile.data.startswith(b"data: ")
+    payload = json.loads(wfile.data.decode("utf-8").removeprefix("data: ").strip())
+    assert payload == {"type": "text_delta", "text": "hi"}

@@ -373,13 +373,18 @@ def _build_router() -> Any:
 
         settings: ControlSettings = request.app.state.settings
         runner: ControlAgentRunner = request.app.state.agent_runner
-        root = Path(settings.agent_workdir).expanduser() / auth.tenant_id
+        root = Path(settings.agent_workdir).expanduser().resolve()
+        task_root = (root / auth.tenant_id / task.id).resolve()
+        try:
+            task_root.relative_to(root)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="tenant path escapes agent root") from exc
         try:
             result = runner.run(
                 prompt,
                 title=task.title,
                 session_id=payload.session_id or task.session_id,
-                workdir=root / task.id,
+                workdir=task_root,
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -418,17 +423,30 @@ def _build_router() -> Any:
         key = f"{auth.tenant_id}/{task.id}/agent-output.md"
         artifact_store: LocalArtifactStore = request.app.state.artifacts
         artifact_store.put(key, data)
-        artifact = Artifact(
-            tenant_id=auth.tenant_id,
-            task_id=task.id,
-            name="agent-output.md",
-            kind="agent_output",
-            uri=key,
-            sha256=hashlib.sha256(data).hexdigest(),
-            size=len(data),
-            session_id=result.session_id,
-        )
-        session.add(artifact)
+        digest = hashlib.sha256(data).hexdigest()
+        artifact = session.scalars(
+            select(Artifact)
+            .where(Artifact.task_id == task.id, Artifact.kind == "agent_output")
+            .order_by(Artifact.created_at.desc())
+        ).first()
+        if artifact is None:
+            artifact = Artifact(
+                tenant_id=auth.tenant_id,
+                task_id=task.id,
+                name="agent-output.md",
+                kind="agent_output",
+                uri=key,
+                sha256=digest,
+                size=len(data),
+                session_id=result.session_id,
+            )
+            session.add(artifact)
+        else:
+            artifact.name = "agent-output.md"
+            artifact.uri = key
+            artifact.sha256 = digest
+            artifact.size = len(data)
+            artifact.session_id = result.session_id
         _audit(
             session,
             auth,

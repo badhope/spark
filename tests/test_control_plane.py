@@ -148,3 +148,11 @@ def test_task_runs_through_agent_loop_and_links_session(
     artifacts = client.get(f"/api/v1/tasks/{task['id']}/artifacts").json()
     assert artifacts[0]["name"] == "agent-output.md"
     assert artifacts[0]["session_id"] == body["session_id"]
+
+    # A rerun updates the existing output artifact instead of stacking duplicates.
+    rerun = client.post(f"/api/v1/tasks/{task['id']}/run", json={})
+    assert rerun.status_code == 200, rerun.text
+    rerun_body = rerun.json()
+    newest = client.get(f"/api/v1/tasks/{task['id']}/artifacts").json()
+    assert len(newest) == 1
+    assert newest[0]["session_id"] == rerun_body["session_id"]

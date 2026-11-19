@@ -185,7 +185,9 @@ export const useSessionRuntimeStore = create<SessionRuntimeState>((set, get) => 
           ? "waiting_question"
           : busy
             ? "streaming"
-            : current.phase === "waiting_approval" || current.phase === "waiting_question"
+            : current.phase === "streaming" ||
+                current.phase === "waiting_approval" ||
+                current.phase === "waiting_question"
               ? "idle"
               : current.phase
       return {

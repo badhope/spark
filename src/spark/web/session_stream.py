@@ -28,6 +28,7 @@ def serve_session_events(handler, state, session_id: str, after_seq: int = 0) ->
     if not _send_sse_headers(handler):
         return
 
+    legacy = bool(getattr(state, "legacy_sse", False))
     cursor = max(0, int(after_seq))
     deadline = time.monotonic() + MAX_STREAM_SECS
     last_write = time.monotonic()
@@ -37,7 +38,7 @@ def serve_session_events(handler, state, session_id: str, after_seq: int = 0) ->
             events, reset = runtime.events_after(cursor)
             if reset:
                 payload = {"type": "reset_required", "session_id": session_id}
-                _write_event(handler, 0, payload)
+                _write_event(handler, 0, payload, legacy=legacy)
                 break
             if cursor == 0 and events:
                 last_turn = str(events[-1].get("turn_id") or "")
@@ -45,7 +46,7 @@ def serve_session_events(handler, state, session_id: str, after_seq: int = 0) ->
                     events = [e for e in events if str(e.get("turn_id") or "") == last_turn]
             for event in events:
                 seq = int(event.get("seq") or 0)
-                _write_event(handler, seq, event)
+                _write_event(handler, seq, event, legacy=legacy)
                 cursor = max(cursor, seq)
                 last_write = time.monotonic()
                 if str(event.get("type") or "") == "done":
@@ -73,6 +74,20 @@ def serve_session_events(handler, state, session_id: str, after_seq: int = 0) ->
             pass
 
 
-def _write_event(handler, seq: int, payload: dict) -> None:
-    handler.wfile.write(f"id: {seq}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8"))
+def _write_event(handler, seq: int, payload: dict, *, legacy: bool = False) -> None:
+    if legacy:
+        clean = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"v", "session_id", "turn_id", "seq"}
+        }
+        handler.wfile.write(
+            f"data: {json.dumps(clean, ensure_ascii=False)}\n\n".encode("utf-8")
+        )
+    else:
+        handler.wfile.write(
+            f"id: {seq}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode(
+                "utf-8"
+            )
+        )
     handler.wfile.flush()

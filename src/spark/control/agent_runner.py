@@ -10,6 +10,7 @@ is the bridge: it creates/uses a normal Agent session, drives one turn through
 from __future__ import annotations
 
 import logging
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -67,8 +68,12 @@ class ControlAgentRunner:
         task_workdir.mkdir(parents=True, exist_ok=True)
 
         if session_id:
-            if self.store.get_session(session_id) is None:
+            session = self.store.get_session(session_id)
+            if session is None:
                 raise ValueError(f"agent session not found: {session_id}")
+            stored_workdir = str(session.get("workdir") or "")
+            if stored_workdir and Path(stored_workdir).expanduser().resolve() != task_workdir:
+                raise ValueError("agent session workdir does not match this control task")
             sid = session_id
         else:
             sid = self.store.create_session(
@@ -77,35 +82,40 @@ class ControlAgentRunner:
                 title=(title or "control task")[:80],
             )
 
-        tool_ctx = ToolContext(
-            sandbox=WorkdirSandbox(task_workdir, self.cfg),
-            config=self.cfg,
-        )
-        registry = ToolRegistry(tool_ctx)
-        provider = create_provider(self.cfg)
-        loop = AgentLoop(
-            workdir=task_workdir,
-            cfg=self.cfg,
-            provider=provider,
-            registry=registry,
-            store=self.store,
-            session_id=sid,
-            approver=self.approver,
-            checkpointer=persistent_checkpointer(),
-        )
-
         text_parts: list[str] = []
-        events: list[dict] = []
+        events: deque[dict] = deque(maxlen=200)
+        event_count = 0
         error = ""
         final_text = ""
-        for event in loop.iter_turn_sync(prompt):
-            events.append({"type": event.type, "text": event.text or ""})
-            if event.type == "text_delta" and event.text:
-                text_parts.append(event.text)
-            elif event.type == "turn_end" and event.text:
-                final_text = event.text
-            elif event.type == "turn_error":
-                error = event.text or "turn failed"
+        try:
+            tool_ctx = ToolContext(
+                sandbox=WorkdirSandbox(task_workdir, self.cfg),
+                config=self.cfg,
+            )
+            registry = ToolRegistry(tool_ctx)
+            provider = create_provider(self.cfg)
+            loop = AgentLoop(
+                workdir=task_workdir,
+                cfg=self.cfg,
+                provider=provider,
+                registry=registry,
+                store=self.store,
+                session_id=sid,
+                approver=self.approver,
+                checkpointer=persistent_checkpointer(),
+            )
+            for event in loop.iter_turn_sync(prompt):
+                event_count += 1
+                events.append({"type": event.type, "text": event.text or ""})
+                if event.type == "text_delta" and event.text:
+                    text_parts.append(event.text)
+                elif event.type == "turn_end" and event.text:
+                    final_text = event.text
+                elif event.type == "turn_error":
+                    error = event.text or "turn failed"
+        except Exception as exc:  # noqa: BLE001 - return the session id on failure
+            logger.exception("control_agent_run_failed session=%s", sid)
+            error = f"{type(exc).__name__}: {str(exc)[:400]}"
 
         text = final_text or "".join(text_parts)
         status = "failed" if error else "completed"
@@ -120,7 +130,7 @@ class ControlAgentRunner:
             session_id=sid,
             text=text,
             status=status,
-            event_count=len(events),
+            event_count=event_count,
             error=error,
-            events=events[-200:],
+            events=list(events),
         )
