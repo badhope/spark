@@ -17,7 +17,7 @@
 | 任务即分支（自动提交） | `git_memory.py` | `task_begin` → 绿测后 `task_step_commit` → `task_finish` |
 | 联网查资料 | `tools/web.py` | `web_search` / `web_fetch`，含 SSRF 防护 |
 | 浏览器操作 | `tools/browser.py` | `browser_open/click/type/scroll/wait/screenshot/viewport`：Playwright 后台线程持有页面；只允许公网 http(s) 或工作目录内 `file://`；页面文本进 untrusted 围栏；截图落 `.spark/browser/` |
-| PR 审查上下文 | `pr.py` + `tools/pr_tools.py` | `pr_context` / `pr_view` / `pr_diff` / `pr_checks`；GitHub REST 只读，origin 自动解析，`GITHUB_TOKEN` 可选；CLI `spark pr view/diff/checks`；PR 文本进 untrusted 围栏 |
+| PR 审查上下文 | `pr.py` + `tools/pr_tools.py` | `pr_context` / `pr_view` / `pr_diff` / `pr_checks` / `pr_review`；GitHub REST 只读，origin 自动解析，`GITHUB_TOKEN` 可选；CLI `spark pr view/diff/checks/review`；review brief 给风险、测试缺口与 CI 清单；PR 文本进 untrusted 围栏 |
 | 接第三方能力 | `tools/mcp_bridge.py` | stdio / sse / streamable_http 三种传输；也可从内置 registry 一键添加，工具以 `mcp__<server>__<tool>` 出现 |
 | 子代理并行 | `core/loop.py:spawn_subtasks_parallel` | 模型调用 `task`，最多 4 路并行 |
 | 声明式专家代理 | `agents.py` + `.claude/agents/*.md` | 放一个 md 文件即多一个可委派的专家 |
