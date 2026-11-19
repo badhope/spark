@@ -1952,6 +1952,104 @@ plugins_app = typer.Typer(help="工作区插件（清单/校验/安装/卸载/�
 app.add_typer(plugins_app, name="plugins")
 
 
+pr_app = typer.Typer(help="GitHub Pull Request 上下文（只读）")
+app.add_typer(pr_app, name="pr")
+
+
+def _pr_repo(repo: str, workdir: Path):
+    from spark.pr import RepoRef, find_repo
+
+    if repo:
+        owner, _, name = repo.partition("/")
+        if not owner or not name:
+            typer.echo("--repo 需要 owner/name 格式", err=True)
+            raise typer.Exit(2)
+        return RepoRef(owner, name)
+    return find_repo(workdir.resolve())
+
+
+def _pr_client(repo, number: int, *, token: str = ""):
+    from spark.pr import GitHubClient
+
+    return GitHubClient(repo, token or None)
+
+
+@pr_app.command("view", help="查看 PR 标题、文件、diff、评论和 CI 状态")
+def pr_view_cmd(
+    number: int = typer.Argument(..., help="PR 编号"),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    repo: str = typer.Option("", "--repo", help="owner/name，默认读取 origin"),
+    max_diff: int = typer.Option(20000, "--max-diff"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    import json
+
+    from spark.pr import build_context, format_context
+
+    try:
+        ref = _pr_repo(repo, workdir)
+        client = _pr_client(ref, number)
+        try:
+            context = build_context(client, number, max_diff_chars=max_diff)
+        finally:
+            client.close()
+    except SparkError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    if json_output:
+        typer.echo(json.dumps(context, ensure_ascii=False, indent=2))
+    else:
+        typer.echo(format_context(context))
+
+
+@pr_app.command("diff", help="只输出 PR 的 unified diff")
+def pr_diff_cmd(
+    number: int = typer.Argument(...),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    repo: str = typer.Option("", "--repo"),
+) -> None:
+    try:
+        ref = _pr_repo(repo, workdir)
+        client = _pr_client(ref, number)
+        try:
+            typer.echo(client.diff(number))
+        finally:
+            client.close()
+    except SparkError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+
+
+@pr_app.command("checks", help="输出 PR 的 CI 检查")
+def pr_checks_cmd(
+    number: int = typer.Argument(...),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    repo: str = typer.Option("", "--repo"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    import json
+
+    try:
+        ref = _pr_repo(repo, workdir)
+        client = _pr_client(ref, number)
+        try:
+            checks = client.checks(number)
+        finally:
+            client.close()
+    except SparkError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    if json_output:
+        typer.echo(json.dumps(checks, ensure_ascii=False, indent=2))
+        return
+    for row in checks.get("check_runs") or []:
+        typer.echo(f"{row.get('conclusion') or row.get('status')}\t{row.get('name')}")
+    for row in checks.get("statuses") or []:
+        typer.echo(f"{row.get('state')}\t{row.get('context')}")
+
+
+
+
 @plugins_app.command("list", help="列出 .spark/plugins 下的插件与清单状态")
 def plugins_list_cmd(
     workdir: Path = typer.Option(Path("."), "--workdir"),

@@ -27,7 +27,7 @@
 
 - [x] W3：VS Code 0.15.2（diff 审批、会话同步）+ JetBrains 2025.3+ 原生 ACP 配置 + Neovim CodeCompanion 模块；配置层单测与 Lua 语法检查通过。真实 JetBrains / Neovim 冒烟待有客户端环境
 - [ ] W4：插件子进程隔离、权限拒绝路径、技能 6 目录导入（W4-b hook 隔离/权限门、W4-c 工具/git 安装/commands/市场索引已落地；官方包待完成）
-- [ ] W5：浏览器工具、PR 工作流
+- [ ] W5：浏览器工具、PR 工作流（浏览器工具/PR 只读上下文已落；PR review/Action 待接）
 - [ ] 插件崩溃不拖主进程；官方插件包可单关
 
 ## M3（第 22–27 周）

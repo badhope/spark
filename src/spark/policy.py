@@ -46,6 +46,10 @@ READONLY_TOOLS = {
     "git_branch",
     "worktree_list",
     "affected_tests",
+    "pr_context",
+    "pr_view",
+    "pr_diff",
+    "pr_checks",
 }
 # These run code, spawn agents, or reach the network on behalf of the repository
 # being edited, so they are not read-only: ``run_tests`` executes whatever the
