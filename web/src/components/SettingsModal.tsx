@@ -1103,7 +1103,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                       <TextInput value={profileForm.small_model} onChange={(e) => setProfileForm((p) => ({ ...p, small_model: e.target.value }))} placeholder={t("model.smallModelPh", lang)} />
                     </Field>
                     <div className="flex gap-2">
-                      <Button variant="primary" full onClick={handleSaveProfile} disabled={busy === "profile" || !profileForm.name || !profileForm.base_url || !profileForm.model}>
+                      <Button variant="primary" full onClick={handleSaveProfile} disabled={busy === "profile" || !profileForm.name || !profileForm.model || (!profileForm.base_url && !["anthropic", "openai", "gemini", "bedrock"].includes(profileForm.provider))}>
                         {busy === "profile" ? <Spinner size={12} /> : t("settings.saveAndActivate", lang)}
                       </Button>
                       <Button variant="ghost" onClick={() => setShowProfileForm(false)}>{t("common.cancel", lang)}</Button>
