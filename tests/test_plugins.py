@@ -528,3 +528,17 @@ def test_agent_loop_registers_enabled_plugin_tool(tmp_path: Path) -> None:
     assert "plugin__demo__hello" in names
     assert loop.plugin_hook_issues == []
     store.close()
+
+
+def test_install_git_rejects_local_and_unsafe_refs(tmp_path: Path) -> None:
+    from spark.plugins import install_git
+
+    workdir = tmp_path / "work"
+    with pytest.raises(PluginError, match="git 安装"):
+        install_git(str(tmp_path), workdir)
+    with pytest.raises(PluginError, match="无效的 ref"):
+        install_git("https://example.com/demo.git", workdir, ref="-evil")
+    with pytest.raises(PluginError, match="subdir"):
+        install_git("https://example.com/demo.git", workdir, subdir="../escape")
+    with pytest.raises(PluginError, match="git 安装"):
+        install_git("file:///tmp/demo", workdir)

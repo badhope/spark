@@ -121,6 +121,8 @@ enabled = ["demo"]
 用 CLI 维护这一项（不会重写其他配置，也不会把环境变量里的密钥落盘）：
 
 ```bash
+spark plugins install ./my-plugin --workdir .
+spark plugins install-git https://github.com/me/spark-plugin-demo.git --workdir .
 spark plugins enable demo --workdir .
 spark plugins disable demo
 ```

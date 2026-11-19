@@ -23,6 +23,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -740,6 +741,83 @@ def install_local(source: Path, workdir: Path, *, force: bool = False) -> Plugin
         manifest=manifest,
         legacy=False,
     )
+
+
+_GIT_URL_PREFIXES = ("https://", "http://", "ssh://", "git@")
+_REF_RE = re.compile(r"^[A-Za-z0-9._/][A-Za-z0-9._/-]{0,127}$")
+
+
+def _validate_git_source(url: str, ref: str, subdir: str) -> None:
+    if not url.startswith(_GIT_URL_PREFIXES):
+        raise PluginError(
+            "git 安装只接受 https:// / http:// / ssh:// / git@ 地址；本地目录请用 install"
+        )
+    if any(ch in url for ch in ("\n", "\r", "\x00")):
+        raise PluginError("git 地址包含非法字符")
+    if ref:
+        if not _REF_RE.fullmatch(ref) or ref.startswith("-"):
+            raise PluginError(f"无效的 ref: {ref}")
+    if subdir:
+        raw = subdir.replace("\\", "/")
+        if raw.startswith("/") or raw.startswith("../") or "/../" in raw:
+            raise PluginError("subdir 必须位于仓库内")
+
+
+def install_git(
+    url: str,
+    workdir: Path,
+    *,
+    ref: str = "",
+    subdir: str = "",
+    force: bool = False,
+    timeout_sec: int = 300,
+) -> PluginRecord:
+    """Clone a public/authorised git repo, validate its manifest, then install.
+
+    Only network git URLs are accepted. The clone runs with hooks disabled and
+    in a private temp directory; the resulting plugin is installed through the
+    same ``install_local`` validation/backup path as a local directory.
+    """
+    _validate_git_source(url, ref, subdir)
+    dest = Path(tempfile.mkdtemp(prefix="spark-plugin-git-"))
+    clone = dest / "repo"
+    args = [
+        "git",
+        "-c",
+        f"core.hooksPath={os.devnull}",
+        "-c",
+        "protocol.file.allow=never",
+        "clone",
+        "--depth",
+        "1",
+        "--single-branch",
+    ]
+    if ref:
+        args.extend(["--branch", ref])
+    args.extend([url, str(clone)])
+    try:
+        result = run_bounded(
+            args,
+            cwd=dest,
+            timeout=timeout_sec,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if result.timed_out:
+            raise PluginError(f"git clone 超时（{timeout_sec}s）")
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()[-2000:]
+            raise PluginError(f"git clone 失败: {detail or result.returncode}")
+        source = clone / subdir if subdir else clone
+        try:
+            source.resolve().relative_to(clone.resolve())
+        except ValueError as exc:
+            raise PluginError("subdir 逃出仓库目录") from exc
+        if not source.is_dir():
+            raise PluginError(f"仓库内不存在插件目录: {subdir or '.'}")
+        return install_local(source, workdir, force=force)
+    finally:
+        shutil.rmtree(dest, ignore_errors=True)
 
 
 def remove_plugin(name: str, workdir: Path) -> Path:

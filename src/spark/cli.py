@@ -2018,6 +2018,26 @@ def plugins_install_cmd(
     typer.echo(f"✓ {record.name} -> {record.path}")
 
 
+@plugins_app.command("install-git", help="从 git 仓库克隆并安装插件（仅 https/ssh 网络地址）")
+def plugins_install_git_cmd(
+    url: str = typer.Argument(..., help="git 地址"),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    ref: str = typer.Option("", "--ref", help="分支/标签"),
+    subdir: str = typer.Option("", "--subdir", help="插件在仓库内的子目录"),
+    force: bool = typer.Option(False, "--force", help="已存在时备份旧版本再安装"),
+) -> None:
+    from spark.plugins import install_git
+
+    try:
+        record = install_git(
+            url, workdir.resolve(), ref=ref, subdir=subdir, force=force
+        )
+    except PluginError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"✓ {record.name} -> {record.path}")
+
+
 @plugins_app.command("remove", help="卸载插件（移动到 .spark/plugins/.trash）")
 def plugins_remove_cmd(
     name: str = typer.Argument(..., help="插件 name"),
