@@ -980,6 +980,9 @@ export interface PluginItem {
   path: string
   has_manifest: boolean
   entry: string
+  version?: string
+  error?: string
+  legacy?: boolean
 }
 
 export async function fetchPlugins(): Promise<{

@@ -57,9 +57,14 @@ export default function PluginsSection() {
             {items.map((p) => (
               <div key={p.path} className="flex flex-col gap-1 rounded-lg border border-line bg-panel2 px-3 py-2.5">
                 <div className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{p.name}</span>
-                  <Badge tone={p.has_manifest ? "ok" : "warn"}>
-                    {p.has_manifest ? t("plugins.hasManifest", lang) : t("plugins.noManifest", lang)}
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
+                    {p.name}
+                    {p.version ? <span className="ml-1.5 font-mono text-[11px] font-normal text-ink3">v{p.version}</span> : null}
+                  </span>
+                  <Badge tone={p.error ? "warn" : "ok"}>
+                    <span title={p.error || undefined}>
+                      {p.error ? t("plugins.noManifest", lang) : t("plugins.hasManifest", lang)}
+                    </span>
                   </Badge>
                 </div>
                 {p.description && <p className="text-[11.5px] leading-relaxed text-ink3">{p.description}</p>}

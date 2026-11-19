@@ -52,7 +52,7 @@ def neovim_config_path(home: Path | None = None) -> Path:
 
 
 def _backup(path: Path) -> Path:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     backup = path.with_name(f"{path.name}.spark-backup-{stamp}")
     shutil.copy2(path, backup)
     return backup

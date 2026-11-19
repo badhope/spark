@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, cast
 import typer
 
 from spark.brand import version_line
-from spark.errors import ConfigError, SparkError
+from spark.errors import ConfigError, PluginError, SparkError
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, keeps CLI startup fast
     # Runtime-loaded globals (see ``_load_runtime_imports``); declaring them
@@ -1945,6 +1945,82 @@ def ide_install_cmd(
         typer.echo(f"  在 Neovim init.lua 中加入：{result.snippet.get('usage')}")
     elif result.target == "jetbrains":
         typer.echo("  在 JetBrains AI Chat → 配置 ACP Agent 中选择 Spark")
+
+
+plugins_app = typer.Typer(help="工作区插件（清单/校验/本地安装/卸载）", no_args_is_help=True)
+app.add_typer(plugins_app, name="plugins")
+
+
+@plugins_app.command("list", help="列出 .spark/plugins 下的插件与清单状态")
+def plugins_list_cmd(
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    json_output: bool = typer.Option(False, "--json", help="输出 JSON"),
+) -> None:
+    from spark.plugins import record_to_dict, scan_plugins
+
+    records = scan_plugins(workdir.resolve())
+    if json_output:
+        import json
+
+        typer.echo(json.dumps([record_to_dict(r) for r in records], ensure_ascii=False))
+        return
+    if not records:
+        typer.echo("没有插件。")
+        return
+    for record in records:
+        version = record.manifest.version if record.manifest else "-"
+        status = record.error or "ok"
+        typer.echo(f"{record.name}\t{version}\t{status}\t{record.path}")
+
+
+@plugins_app.command("validate", help="校验一个插件目录或 manifest")
+def plugins_validate_cmd(
+    source: Path = typer.Argument(..., help="插件目录或 spark-plugin.json"),
+    require_entry: bool = typer.Option(True, "--require-entry/--no-require-entry"),
+) -> None:
+    from spark.plugins import validate_plugin
+
+    try:
+        manifest = validate_plugin(source, require_entry=require_entry)
+    except PluginError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"✓ {manifest.name} {manifest.version}")
+    if manifest.permissions:
+        typer.echo("  permissions: " + ", ".join(manifest.permissions))
+    if manifest.hooks:
+        typer.echo(f"  hooks: {len(manifest.hooks)}")
+
+
+@plugins_app.command("install", help="从本地目录安装插件（复制到 .spark/plugins）")
+def plugins_install_cmd(
+    source: Path = typer.Argument(..., help="插件目录"),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    force: bool = typer.Option(False, "--force", help="已存在时备份旧版本再安装"),
+) -> None:
+    from spark.plugins import install_local
+
+    try:
+        record = install_local(source, workdir.resolve(), force=force)
+    except PluginError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"✓ {record.name} -> {record.path}")
+
+
+@plugins_app.command("remove", help="卸载插件（移动到 .spark/plugins/.trash）")
+def plugins_remove_cmd(
+    name: str = typer.Argument(..., help="插件 name"),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+) -> None:
+    from spark.plugins import remove_plugin
+
+    try:
+        target = remove_plugin(name, workdir.resolve())
+    except PluginError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"✓ {name} -> {target}")
 
 
 config_app = typer.Typer(help="查看或修改配置", no_args_is_help=True)

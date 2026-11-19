@@ -76,36 +76,26 @@ def _command_entries(workdir: Path) -> list[dict[str, Any]]:
 
 
 def _plugin_entries(workdir: Path) -> list[dict[str, Any]]:
-    """``.spark/plugins/*``：约定每个插件是一个目录，含可执行入口。
+    """Read-only plugin view backed by :mod:`spark.plugins`.
 
-    这里只做发现与展示；真正的执行仍由 hooks 负责（避免出现第二套
-    不受审批约束的代码执行通道）。
+    Installation stays in the CLI for now; the Web panel remains discovery-only
+    so it cannot become a second unapproved code-execution path.
     """
-    root = workdir / PLUGINS_DIR
-    if not root.is_dir():
-        return []
-    out: list[dict[str, Any]] = []
-    for entry in sorted(root.iterdir()):
-        if entry.name.startswith("."):
-            continue
-        manifest = entry / "plugin.json"
-        meta: dict[str, Any] = {}
-        if manifest.is_file():
-            try:
-                import json
+    from spark.plugins import find_manifest, scan_plugins
 
-                loaded = json.loads(manifest.read_text(encoding="utf-8"))
-                if isinstance(loaded, dict):
-                    meta = loaded
-            except (OSError, ValueError):
-                meta = {}
+    out: list[dict[str, Any]] = []
+    for record in scan_plugins(workdir):
+        manifest = record.manifest
         out.append(
             {
-                "name": str(meta.get("name") or entry.name),
-                "description": str(meta.get("description") or ""),
-                "path": entry.relative_to(workdir).as_posix(),
-                "has_manifest": manifest.is_file(),
-                "entry": str(meta.get("entry") or ""),
+                "name": record.name,
+                "description": manifest.description if manifest else "",
+                "path": record.path.relative_to(workdir.resolve()).as_posix(),
+                "has_manifest": find_manifest(record.path) is not None,
+                "entry": manifest.entry if manifest else "",
+                "version": manifest.version if manifest else "",
+                "legacy": record.legacy,
+                "error": record.error,
             }
         )
     return out
