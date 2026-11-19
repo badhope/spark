@@ -287,4 +287,4 @@ HTTP API 与 SSE 事件协议单独成篇：见 [API.md](API.md)。CLI 命令见
 ## 可选组件
 
 - `pip install "spark[browser]"`：启用 `browser_*` 工具；首次使用前 `playwright install chromium`。
-- PR 工具只读，使用 `GITHUB_TOKEN` / `GH_TOKEN` 访问私有仓库或提高速率限制；不会写 PR。
+- PR 工具使用 `GITHUB_TOKEN` / `GITCODE_TOKEN` / `GITEE_TOKEN` 访问私有仓库或提高速率限制；读取默认只读，发布评论必须 `spark pr publish --confirm`。

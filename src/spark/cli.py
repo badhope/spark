@@ -1952,7 +1952,7 @@ plugins_app = typer.Typer(help="工作区插件（清单/校验/安装/卸载/�
 app.add_typer(plugins_app, name="plugins")
 
 
-pr_app = typer.Typer(help="GitHub Pull Request 上下文（只读）")
+pr_app = typer.Typer(help="Pull Request 上下文（GitHub/GitCode/Gitee；除 publish 外只读）")
 app.add_typer(pr_app, name="pr")
 
 
@@ -2050,6 +2050,43 @@ def pr_review_cmd(
     typer.echo(format_review(context, brief))
     if include_diff:
         typer.echo("\n" + format_context(context))
+
+
+@pr_app.command("publish", help="发布 PR review 评论（必须 --confirm，写操作）")
+def pr_publish_cmd(
+    number: int = typer.Argument(...),
+    body_file: Path = typer.Option(..., "--body-file", help="review Markdown 文件"),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    repo: str = typer.Option("", "--repo"),
+    event: str = typer.Option("COMMENT", "--event", help="COMMENT/REQUEST_CHANGES/APPROVE"),
+    confirm: bool = typer.Option(False, "--confirm", help="显式确认发布到远端"),
+) -> None:
+    from spark.pr import post_review
+
+    try:
+        body = body_file.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        typer.echo(f"读取 review 文件失败: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    if not body:
+        typer.echo("review 文件为空", err=True)
+        raise typer.Exit(2)
+    if not confirm:
+        typer.echo("预览（未发布）：\n")
+        typer.echo(body[:2000])
+        typer.echo("\n加上 --confirm 才会发布到 PR。", err=True)
+        raise typer.Exit(2)
+    try:
+        ref = _pr_repo(repo, workdir)
+        client = _pr_client(ref, number)
+        try:
+            result = post_review(client, number, body, event=event)
+        finally:
+            client.close()
+    except SparkError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"已发布 review: {result.get('html_url') or result.get('id') or 'ok'}")
 
 
 @pr_app.command("checks", help="输出 PR 的 CI 检查")

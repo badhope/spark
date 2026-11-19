@@ -1,0 +1,40 @@
+name: Spark PR Review
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    # Only PR comments that explicitly ask Spark to review. The command is
+    # fixed here; comment text is never interpolated into a shell command.
+    if: >
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/spark review')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Spark
+        run: pip install -e .
+      - name: Build review brief
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m spark pr review "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" > "$RUNNER_TEMP/spark-review.md"
+      - name: Publish review comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m spark pr publish "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --body-file "$RUNNER_TEMP/spark-review.md" \
+            --event COMMENT --confirm

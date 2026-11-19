@@ -1,4 +1,4 @@
-"""GitHub Pull Request context: remote parsing, REST client, compact context.
+"""Pull Request context for GitHub / GitCode / Gitee: remote parsing, REST client, compact context.
 
 The client is deliberately read-only: it fetches PR metadata, files, diff,
 comments and checks so the agent can review without a second push path. All
@@ -20,8 +20,13 @@ from spark.errors import SparkError
 from spark.proc import run_bounded
 
 GITHUB_API = "https://api.github.com"
+FORGE_CONFIG = {
+    "github": ("https://api.github.com", "github"),
+    "gitcode": ("https://api.gitcode.com/api/v5", "gitcode"),
+    "gitee": ("https://gitee.com/api/v5", "gitee"),
+}
 _REMOTE_RE = re.compile(
-    r"(?:github\.com[:/])(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?/?$"
+    r"(?P<host>github\.com|gitcode\.com|gitee\.com)[:/](?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)(?:\.git)?/?"
 )
 
 
@@ -33,6 +38,7 @@ class PrError(SparkError):
 class RepoRef:
     owner: str
     repo: str
+    forge: str = "github"
 
     @property
     def slug(self) -> str:
@@ -40,19 +46,26 @@ class RepoRef:
 
 
 def parse_remote(url: str) -> RepoRef | None:
-    """Parse a GitHub remote URL (https, ssh://, git@) into owner/repo."""
+    """Parse a GitHub/GitCode/Gitee remote URL into owner/repo/forge."""
     value = (url or "").strip()
     if not value:
         return None
     match = _REMOTE_RE.search(value)
     if match:
-        return RepoRef(match.group("owner"), match.group("repo"))
+        host = match.group("host")
+        forge = "gitcode" if host == "gitcode.com" else "gitee" if host == "gitee.com" else "github"
+        repo = match.group("repo")
+        if repo.endswith(".git"):
+            repo = repo[:-4]
+        return RepoRef(match.group("owner"), repo, forge)
     parsed = urlparse(value)
-    if parsed.hostname == "github.com":
+    host = (parsed.hostname or "").lower()
+    if host in {"github.com", "gitcode.com", "gitee.com"}:
         parts = [part for part in parsed.path.split("/") if part]
         if len(parts) >= 2:
+            forge = "gitcode" if host == "gitcode.com" else "gitee" if host == "gitee.com" else "github"
             repo = parts[1][:-4] if parts[1].endswith(".git") else parts[1]
-            return RepoRef(parts[0], repo)
+            return RepoRef(parts[0], repo, forge)
     return None
 
 
@@ -73,11 +86,15 @@ def find_repo(workdir) -> RepoRef:
     remote = find_remote(workdir)
     repo = parse_remote(remote)
     if repo is None:
-        raise PrError(f"只支持 GitHub remote，当前 origin: {remote}")
+        raise PrError(f"只支持 GitHub/GitCode/Gitee remote，当前 origin: {remote}")
     return repo
 
 
-def _token() -> str:
+def _token(forge: str = "github") -> str:
+    if forge == "gitcode":
+        return os.environ.get("GITCODE_TOKEN") or os.environ.get("GITCODE_ACCESS_TOKEN") or ""
+    if forge == "gitee":
+        return os.environ.get("GITEE_TOKEN") or os.environ.get("GITEE_ACCESS_TOKEN") or ""
     return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
 
 
@@ -92,16 +109,21 @@ class GitHubClient:
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.repo = repo
+        base_url, _ = FORGE_CONFIG.get(repo.forge, ("", ""))
+        if not base_url:
+            raise PrError(f"不支持的代码托管平台: {repo.forge}")
         headers = {
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
+            "Accept": "application/vnd.github+json" if repo.forge == "github" else "application/json",
             "User-Agent": "spark-pr-context",
         }
-        token = token if token is not None else _token()
-        if token:
+        if repo.forge == "github":
+            headers["X-GitHub-Api-Version"] = "2022-11-28"
+        token = token if token is not None else _token(repo.forge)
+        self._token = token
+        if token and repo.forge == "github":
             headers["Authorization"] = f"Bearer {token}"
         self._client = httpx.Client(
-            base_url=GITHUB_API,
+            base_url=base_url,
             headers=headers,
             timeout=25.0,
             transport=transport,
@@ -112,29 +134,36 @@ class GitHubClient:
 
     def _get(self, path: str, *, accept: str | None = None, **params: Any) -> Any:
         headers = {"Accept": accept} if accept else None
+        if self._token and self.repo.forge != "github":
+            params["access_token"] = self._token
         try:
             response = self._client.get(path, headers=headers, params=params or None)
         except httpx.HTTPError as exc:
-            raise PrError(f"GitHub API 请求失败: {exc}") from exc
+            raise PrError(f"PR API 请求失败: {exc}") from exc
         if response.status_code == 404:
-            raise PrError(f"GitHub 资源不存在: {path}")
+            raise PrError(f"PR 资源不存在: {path}")
         if response.status_code in (401, 403):
             raise PrError(
-                "GitHub API 拒绝了请求（检查 GITHUB_TOKEN 权限或速率限制）"
+                "PR API 拒绝了请求（检查平台 token 权限或速率限制）"
             )
         if response.status_code >= 400:
-            raise PrError(f"GitHub API {response.status_code}: {response.text[:300]}")
+            raise PrError(f"PR API {response.status_code}: {response.text[:300]}")
         if accept and "diff" in accept:
             return response.text
         try:
             return response.json()
         except ValueError as exc:
-            raise PrError("GitHub API 返回非 JSON 内容") from exc
+            raise PrError("PR API 返回非 JSON 内容") from exc
 
     def pull(self, number: int) -> dict[str, Any]:
         return self._get(f"/repos/{self.repo.slug}/pulls/{number}")
 
     def diff(self, number: int) -> str:
+        if self.repo.forge != "github":
+            try:
+                return self._get(f"/repos/{self.repo.slug}/pulls/{number}/diff", accept="text/plain")
+            except PrError:
+                return ""
         return self._get(
             f"/repos/{self.repo.slug}/pulls/{number}",
             accept="application/vnd.github.v3.diff",
@@ -160,6 +189,8 @@ class GitHubClient:
         return data if isinstance(data, list) else []
 
     def checks(self, number: int) -> dict[str, Any]:
+        if self.repo.forge != "github":
+            return {"statuses": [], "check_runs": []}
         head = self._get(f"/repos/{self.repo.slug}/pulls/{number}")
         sha = str((head.get("head") or {}).get("sha") or "")
         if not sha:
@@ -189,6 +220,48 @@ class GitHubClient:
         return {"statuses": statuses, "check_runs": check_runs}
 
 
+def _checked_body(body: str, limit: int = 60000) -> str:
+    body = body.strip()
+    if not body:
+        raise PrError("review body 不能为空")
+    if len(body) > limit:
+        raise PrError(f"review body 超过 {limit} 字符上限")
+    return body
+
+
+def post_review(
+    client: GitHubClient,
+    number: int,
+    body: str,
+    *,
+    event: str = "COMMENT",
+) -> dict[str, Any]:
+    """Publish a PR review. This is a write; callers must confirm explicitly."""
+    event = event.upper()
+    if event not in {"COMMENT", "REQUEST_CHANGES", "APPROVE"}:
+        raise PrError("event 只支持 COMMENT / REQUEST_CHANGES / APPROVE")
+    payload = {"body": _checked_body(body), "event": event}
+    if client.repo.forge != "github":
+        # GitCode/Gitee v5 expose PR comments, not GitHub's review-event endpoint.
+        payload = {"body": payload["body"]}
+        path = f"/repos/{client.repo.slug}/pulls/{number}/comments"
+    else:
+        path = f"/repos/{client.repo.slug}/pulls/{number}/reviews"
+    params = {"access_token": client._token} if client._token and client.repo.forge != "github" else None
+    try:
+        response = client._client.post(path, json=payload, params=params)
+    except httpx.HTTPError as exc:
+        raise PrError(f"发布 PR review 失败: {exc}") from exc
+    if response.status_code in (401, 403):
+        raise PrError("发布 PR review 被拒绝（token 需要 pull_request:write 权限）")
+    if response.status_code >= 400:
+        raise PrError(f"发布 PR review 失败: {response.status_code} {response.text[:300]}")
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise PrError("发布 PR review 返回非 JSON") from exc
+
+
 def build_context(
     client: GitHubClient,
     number: int,
@@ -200,6 +273,15 @@ def build_context(
     pr = client.pull(number)
     diff = client.diff(number)
     files = client.files(number)
+    if not diff:
+        parts: list[str] = []
+        for row in files:
+            if not isinstance(row, dict):
+                continue
+            patch = str(row.get("patch") or "")
+            if patch:
+                parts.append(f"--- a/{row.get('filename', '')}\n+++ b/{row.get('filename', '')}\n{patch}")
+        diff = "\n".join(parts)
     issue_comments = client.issue_comments(number)
     review_comments = client.review_comments(number)
     checks = client.checks(number)
