@@ -93,6 +93,8 @@ export function uid(): string {
 
 interface ChatState {
   items: ChatMsg[]
+  /** Per-session item cache so a background turn survives a session switch. */
+  itemsBySession: Record<string, ChatMsg[]>
   input: string
   streaming: boolean
   loading: boolean
@@ -105,6 +107,7 @@ interface ChatState {
   setInput: (v: string) => void
   setStreaming: (v: boolean) => void
   setItems: (items: ChatMsg[]) => void
+  saveVisibleItems: (sessionId: string) => void
   setLoading: (v: boolean) => void
   setWebSearch: (v: boolean) => void
   addErrorItem: (text: string) => void
@@ -171,6 +174,7 @@ function readWebSearchPref(): boolean {
 
 export const useChatStore = create<ChatState>((set, get) => ({
   items: [],
+  itemsBySession: {},
   input: readDraft(),
   streaming: false,
   loading: false,
@@ -185,7 +189,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ input: v })
   },
   setStreaming: (v) => set({ streaming: v }),
-  setItems: (items) => set({ items }),
+  setItems: (items) => set((s) => {
+    const sid = useSessionStore.getState().status?.session_id
+    if (!sid) return { items }
+    return { items, itemsBySession: { ...s.itemsBySession, [sid]: items } }
+  }),
+  saveVisibleItems: (sessionId) => {
+    if (!sessionId) return
+    const items = get().items
+    set((s) => ({ itemsBySession: { ...s.itemsBySession, [sessionId]: items } }))
+  },
   setLoading: (v) => set({ loading: v }),
   setWebSearch: (v) => {
     try {
@@ -272,13 +285,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     useSessionRuntimeStore.getState().begin(turnSessionId, ac)
     set({ input: "", streaming: true, abortController: ac })
     const assistantId = uid()
-    set((s) => ({
-      items: [
+    set((s) => {
+      const items: ChatMsg[] = [
         ...s.items,
         { id: uid(), role: "user", text: prompt, images, segments: [] },
         { id: assistantId, role: "assistant", text: "", streaming: true, segments: [] },
-      ],
-    }))
+      ]
+      return {
+        items,
+        itemsBySession: { ...s.itemsBySession, [turnSessionId]: items },
+      }
+    })
 
     const buf = { text: "", think: "" }
     let rafPending = false
@@ -292,15 +309,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ turnGraph: { nodes: [...graphNodes], edges: [] } })
     const pushGraph = () => set({ turnGraph: { nodes: [...graphNodes], edges: [...graphEdges] } })
 
-    /** 修改当前助手消息；无则 no-op。后台会话的事件不能写进当前会话视图。 */
+    /** 修改本轮助手消息：始终写会话缓存；仅当该会话可见时同步视图。 */
     function patchLast(fn: (it: ChatMsg) => ChatMsg) {
-      if (useSessionStore.getState().status?.session_id !== turnSessionId) return
       set((s) => {
-        const idx = s.items.findIndex((m) => m.id === assistantId)
+        const visible = useSessionStore.getState().status?.session_id === turnSessionId
+        const source = s.itemsBySession[turnSessionId] ?? (visible ? s.items : [])
+        const idx = source.findIndex((m) => m.id === assistantId)
         if (idx < 0) return s
-        const next = [...s.items]
+        const next = [...source]
         next[idx] = fn(next[idx])
-        return { items: next }
+        const itemsBySession = { ...s.itemsBySession, [turnSessionId]: next }
+        return visible ? { items: next, itemsBySession } : { itemsBySession }
       })
     }
 
@@ -354,9 +373,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // phase/pending/seq even when another session is currently visible.
       useSessionRuntimeStore.getState().applyEvent(turnSessionId, ev)
       const isVisible = useSessionStore.getState().status?.session_id === turnSessionId
-      // Background streams update their runtime only; never paint into the
-      // currently visible conversation or its status/plan.
-      if (!isVisible) return
+      // Background streams update their own item cache and runtime only; never
+      // paint into the currently visible conversation or its status/plan.
+      if (!isVisible) {
+        if (ev.type === "text_delta") {
+          buf.text += ev.text
+          schedule()
+        } else if (ev.type === "reasoning_delta") {
+          buf.think += ev.text
+          schedule()
+        }
+        return
+      }
       switch (ev.type) {
         case "text_delta":
           buf.text += ev.text
@@ -681,13 +709,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const isAbort = e instanceof DOMException && e.name === "AbortError"
       if (!isAbort) {
         useSessionRuntimeStore.getState().fail(turnSessionId, msg)
-        set({
-          lastFailedPrompt: { prompt, images },
-        })
-        set((s) => ({
-          items: s.items.filter((m) => !(m.id === assistantId && !m.text && !m.segments.length)),
-        }))
-        get().addErrorItem(msg)
+        const visible = useSessionStore.getState().status?.session_id === turnSessionId
+        if (visible) {
+          set({ lastFailedPrompt: { prompt, images } })
+          set((s) => ({
+            items: s.items.filter((m) => !(m.id === assistantId && !m.text && !m.segments.length)),
+          }))
+          get().addErrorItem(msg)
+        } else {
+          // Keep the background session's cache tidy without touching the
+          // visible conversation; its runtime carries the error badge.
+          set((s) => {
+            const cached = s.itemsBySession[turnSessionId] ?? []
+            const next = cached.filter((m) => m.id !== assistantId || m.text || m.segments.length)
+            return { itemsBySession: { ...s.itemsBySession, [turnSessionId]: next } }
+          })
+        }
         // api.ts already surfaced a toast for transport failures; only the
         // higher-level "send failed" toast is added here for other errors.
       }

@@ -140,6 +140,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
     },
 
     handleNewSession: async () => {
+      const previous = get().status?.session_id
+      if (previous) useChatStore.getState().saveVisibleItems(previous)
       try {
         const st = await newSession()
         useSessionRuntimeStore.getState().ensure(st.session_id)
@@ -159,12 +161,15 @@ export const useSessionStore = create<SessionState>((set, get) => {
     handleSwitch: async (id: string) => {
       const { status: currentStatus } = get()
       if (!currentStatus || id === currentStatus.session_id) return
+      useChatStore.getState().saveVisibleItems(currentStatus.session_id)
       try {
         const data = await switchSession(id)
         set({ status: data.status, plan: data.status.plan || [] })
         syncVisibleStreaming(id)
-        const items = historyToItems(data.messages)
         const chat = useChatStore.getState()
+        // Prefer the in-memory cache: a background stream has live text that
+        // history does not contain yet. A never-visited session falls back.
+        const items = chat.itemsBySession[id] ?? historyToItems(data.messages)
         chat.setItems(items)
         // Pick up this session's own draft (empty for a session never typed in).
         chat.setInput(localStorage.getItem(`spark.draft:${id}`) ?? "")
@@ -204,7 +209,9 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     handleFork: async (id) => {
       try {
-        const data = await forkSession(id ?? get().status?.session_id)
+        const current = get().status?.session_id
+        if (current) useChatStore.getState().saveVisibleItems(current)
+        const data = await forkSession(id ?? current)
         useSessionRuntimeStore.getState().ensure(data.status.session_id)
         set({ status: data.status, plan: data.status.plan || [] })
         syncVisibleStreaming(data.status.session_id)
