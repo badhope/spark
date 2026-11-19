@@ -97,7 +97,7 @@ CI 另外跑 Windows 保留路径检查、前端构建漂移、打包检查、�
 
 ## 运行要求
 
-Python 3.11+（或直接使用打包产物），Node.js 18+ 仅用于前端开发，支持 Windows / macOS / Linux。
+Python 3.11.5+（或直接使用打包产物），Node.js 18+ 仅用于前端开发，支持 Windows / macOS / Linux。
 
 ---
 

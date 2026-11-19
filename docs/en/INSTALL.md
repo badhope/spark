@@ -15,7 +15,7 @@ spark web                        # open the printed URL
 
 ### Windows EXE
 
-Local build (any Windows machine with Python 3.11+):
+Local build (any Windows machine with Python 3.11.5+):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1

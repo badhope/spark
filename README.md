@@ -97,7 +97,7 @@ CI also runs a Windows checkout check, frontend build drift, packaging checks, a
 
 ## Requirements
 
-Python 3.11+ (or the bundled executable), Node.js 18+ only for frontend development, Windows / macOS / Linux.
+Python 3.11.5+ (or the bundled executable), Node.js 18+ only for frontend development, Windows / macOS / Linux.
 
 ---
 

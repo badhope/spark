@@ -78,7 +78,7 @@ spark web                        # 打开打印出的地址
 
 ### Windows EXE
 
-任意 Windows 机器（Python 3.11+）本地一键构建：
+任意 Windows 机器（Python 3.11.5+）本地一键构建：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1
