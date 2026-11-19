@@ -144,7 +144,10 @@ def run_bounded(
     if input_text is not None:
         payload = input_text.encode(encoding or "utf-8", errors or "replace")
     try:
-        proc = subprocess.Popen(  # noqa: S603 - argv is constructed by the caller
+        # shell=True is an explicit, approved tool capability: callers pass
+        # through the same approval gate as normal command execution and argv
+        # is never interpolated here.
+        proc = subprocess.Popen(  # noqa: S603  # nosec B602
             args,
             stdin=subprocess.PIPE if payload is not None else subprocess.DEVNULL,
             stdout=out_file,

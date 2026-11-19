@@ -12,6 +12,11 @@ from spark.brand import version_line
 from spark.errors import ConfigError, SparkError
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, keeps CLI startup fast
+    # Runtime-loaded globals (see ``_load_runtime_imports``); declaring them
+    # here keeps mypy's name-defined gate green without importing pydantic on
+    # the ``--version`` path.
+    from typing import Any
+
     from spark.config import (
         ApprovalMode,
         ProviderName,
@@ -23,6 +28,27 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, keeps CLI startup fast
     from spark.store import SessionStore
     from spark.tools.mcp_bridge import McpBridge
     from spark.tools.registry import ToolRegistry
+
+    ensure_home: Any
+    write_config_template: Any
+    default_home: Any
+    load_config: Any
+    require_api_key: Any
+    friendly_config_error: Any
+    read_config: Any
+    activate_model_profile: Any
+    save_config: Any
+    banner: Any
+    ensure_skeleton: Any
+    apply_setup: Any
+    save: Any
+    env_api_key: Any
+    check_health: Any
+    render_health: Any
+    health_exit_code: Any
+    config_as_dict: Any
+    render_config_text: Any
+    set_value: Any
 
 
 _RUNTIME_IMPORTS_LOADED = False

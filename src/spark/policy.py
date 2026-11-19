@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Literal
+from typing import Literal
 
 from spark.config import ApprovalMode, PermissionAction, PermissionRule
 from spark.models import ToolCall
 
-_wc_glob: Any = None
 try:  # optional: minimal installs keep the in-tree matcher below
     from wcmatch import glob as _wc_glob
 except Exception:  # pragma: no cover - optional dependency
-    pass
+    _wc_glob = None
 
 _WC_FLAGS: int | None = None
 if _wc_glob is not None:
