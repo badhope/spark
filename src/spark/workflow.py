@@ -250,7 +250,7 @@ def load_workflow(
 
 
 def _lock_key(path: str) -> str:
-    return hashlib.sha1(path.encode("utf-8")).hexdigest()[:20]
+    return hashlib.sha256(path.encode("utf-8")).hexdigest()[:20]
 
 
 class WorkspaceLocks:

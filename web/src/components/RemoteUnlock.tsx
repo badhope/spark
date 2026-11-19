@@ -35,7 +35,7 @@ export function RemoteUnlock() {
     }
   }
 
-  function useManualToken() {
+  function saveManualToken() {
     const value = token.trim()
     if (!value) return
     setRemoteToken(value)
@@ -79,12 +79,12 @@ export function RemoteUnlock() {
               value={token}
               onChange={(e) => setToken(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") useManualToken()
+                if (e.key === "Enter") saveManualToken()
               }}
               placeholder={t("remote.tokenPh", lang)}
               className="mt-1.5 h-10 w-full rounded-xl border border-line bg-panel2 px-3 font-mono text-[12px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
             />
-            <Button className="mt-3 w-full" variant="primary" onClick={useManualToken} disabled={!token.trim()}>
+            <Button className="mt-3 w-full" variant="primary" onClick={saveManualToken} disabled={!token.trim()}>
               {t("remote.saveToken", lang)}
             </Button>
             <button type="button" onClick={() => setManual(false)} className="mt-3 w-full text-[11px] text-ink3 hover:text-ink2">
