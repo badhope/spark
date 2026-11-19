@@ -170,7 +170,13 @@ def test_axe_wcag_aa_has_no_serious_or_critical(tmp_path: Path) -> None:
                     try:
                         for name, path in _AXE_CASES:
                             page.goto(base + path, wait_until="domcontentloaded")
-                            page.wait_for_timeout(500)
+                            # The theme bootstrap applies the stored palette in
+                            # the HTML shell, then the app adds a 220ms color
+                            # transition. Auditing at 500ms can catch an
+                            # in-flight blend (axe reports a lower contrast than
+                            # the settled colors); wait for the transition to
+                            # finish so the check reflects the real UI.
+                            page.wait_for_timeout(1000)
                             page.add_script_tag(path=str(axe))
                             violations = page.evaluate(
                                 """async () => {

@@ -57,11 +57,12 @@ def uri_to_path(uri: str) -> Path:
     raw = unquote(parsed.path or "")
     if parsed.netloc and parsed.netloc not in {"", "localhost"}:
         raw = f"//{parsed.netloc}{raw}"
-    path = Path(raw)
-    if str(path).startswith("/") and len(str(path)) > 3 and str(path)[2] == ":":
-        # Windows file URI: /C:/repo/file.py -> C:/repo/file.py
-        path = Path(str(path)[1:])
-    return path
+    # Windows file URIs are ``file:///C:/...``. Strip the URI's leading slash
+    # before constructing Path; Path('/C:/...') on Windows normalizes to a
+    # drive-relative string and makes every edit look outside the workspace.
+    if raw.startswith("/") and len(raw) > 3 and raw[2] == ":":
+        raw = raw[1:]
+    return Path(raw)
 
 
 def position_to_offset(text: str, line: int, character: int) -> int:

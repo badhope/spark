@@ -23,6 +23,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import urllib.error
 import urllib.request
@@ -407,9 +408,9 @@ def _plugin_command(
     hook: PluginHook | PluginToolSpec,
     permissions: list[str],
     issues: list[str],
-) -> str | None:
+) -> list[str] | None:
     if "shell" in permissions:
-        return hook.command
+        return [hook.command]
     raw = hook.command.strip().replace("\\", "/")
     if raw.startswith("/") or raw.startswith("../") or "/../" in raw:
         issues.append(
@@ -430,7 +431,11 @@ def _plugin_command(
             f"plugin {record.name}: hook 命令不可执行（chmod +x）: {hook.command}"
         )
         return None
-    return str(target)
+    # Windows has no shebang execution: a .py entry must be handed to the
+    # current interpreter, otherwise CreateProcess returns WinError 193.
+    if os.name == "nt" and target.suffix.lower() in {".py", ".pyw"}:
+        return [sys.executable, str(target)]
+    return [str(target)]
 
 
 def build_plugin_hooks(
@@ -474,7 +479,7 @@ def build_plugin_hooks(
                     plugin=name,
                     hook=ShellHook(
                         name=f"plugin:{name}:{hook.name or hook.event}",
-                        command=[command, *hook.args],
+                        command=[*command, *hook.args],
                         cwd=record.path,
                         timeout=hook.timeout_sec,
                         on_deny=hook.on_deny,
@@ -497,14 +502,14 @@ def plugin_tool_alias(plugin: str, tool: str) -> str:
 def _run_plugin_tool(
     record: PluginRecord,
     spec: PluginToolSpec,
-    command: str,
+    command: list[str],
     arguments: dict[str, Any],
     max_output_chars: int,
 ) -> ToolResult:
     payload = json.dumps({"tool": spec.name, "arguments": arguments}, ensure_ascii=False)
     try:
         result = run_bounded(
-            [command, *spec.args],
+            [*command, *spec.args],
             cwd=record.path,
             env=sanitized_env(),
             timeout=spec.timeout_sec,
@@ -616,7 +621,7 @@ def build_plugin_tools(
                 *,
                 _record: PluginRecord = record,
                 _spec: PluginToolSpec = spec,
-                _command: str = command,
+                _command: list[str] = command,
                 _max: int = max_output_chars,
             ) -> ToolResult:
                 return _run_plugin_tool(

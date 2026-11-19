@@ -41,7 +41,12 @@ def send(payload: dict) -> None:
 
 def file_path(uri: str) -> Path:
     parsed = urlparse(uri)
-    return Path(unquote(parsed.path))
+    raw = unquote(parsed.path or "")
+    if parsed.netloc and parsed.netloc not in {"", "localhost"}:
+        raw = f"//{parsed.netloc}{raw}"
+    if raw.startswith("/") and len(raw) > 3 and raw[2] == ":":
+        raw = raw[1:]
+    return Path(raw)
 
 
 def range_at(path: Path, line: int = 0, start: int = 0, end: int = 3) -> dict:

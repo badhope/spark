@@ -25,7 +25,7 @@ def test_browser_local_page_click_type_screenshot(tmp_path: Path) -> None:
     )
     ctx = _ctx(tmp_path)
     opened = browser.browser_open(
-        ctx, browser.BrowserArgs(url="file://" + str(page))
+        ctx, browser.BrowserArgs(url=page.as_uri())
     )
     assert opened.ok, opened.payload
     clicked = browser.browser_click(ctx, browser.BrowserClickArgs(selector="#b"))
@@ -49,7 +49,7 @@ def test_browser_rejects_file_outside_workdir(tmp_path: Path) -> None:
     outside.write_text("<html><body>no</body></html>")
     ctx = _ctx(tmp_path)
     result = browser.browser_open(
-        ctx, browser.BrowserArgs(url="file://" + str(outside))
+        ctx, browser.BrowserArgs(url=outside.as_uri())
     )
     assert not result.ok
     assert "工作目录" in str(result.payload.get("error", ""))

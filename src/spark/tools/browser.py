@@ -72,7 +72,14 @@ def _is_local_file(url: str, workdir: Path) -> tuple[bool, str]:
     parsed = urlparse(url)
     if parsed.scheme != "file":
         return False, ""
-    raw = unquote(parsed.path)
+    raw = unquote(parsed.path or "")
+    if parsed.netloc and parsed.netloc not in {"", "localhost"}:
+        raw = f"//{parsed.netloc}{raw}"
+    # Windows file URIs are ``file:///C:/...``. Strip the URI's leading slash
+    # before constructing Path; Path('/C:/...') on Windows normalizes to a
+    # drive-relative string and escapes the workspace check.
+    if raw.startswith("/") and len(raw) > 3 and raw[2] == ":":
+        raw = raw[1:]
     path = Path(raw)
     try:
         resolved = path.resolve()

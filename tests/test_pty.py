@@ -6,6 +6,7 @@ Windows 使用 pywinpty（ConPTY），Linux/macOS 使用 ptyprocess；对应后�
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -59,7 +60,13 @@ def test_pty_read_write_and_cwd():
         try:
             text = _collect(sess, loop)
             assert "SPARK_PTY_ECHO" in text          # 命令回显
-            assert str(tmp) in text                   # pwd = 工作目录
+            # Windows may render the temp directory with its long name even
+            # when tempfile.mkdtemp() returned an 8.3 short name. Accept either
+            # representation of the same cwd.
+            expected = os.path.normcase(str(tmp))
+            expected_long = os.path.normcase(str(tmp.resolve()))
+            actual = os.path.normcase(text)
+            assert expected in actual or expected_long in actual
             assert "\x00__SPARK_PTY_EXIT__\x00" in text  # 退出标记
         finally:
             loop.close()
