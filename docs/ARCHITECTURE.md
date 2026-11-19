@@ -4,7 +4,7 @@
 
 ## 概览
 
-Spark 是一个**本地自托管的 AI 编程 Agent**，采用 Codex 式 Agent Loop 设计，支持多种 LLM Provider，内置丰富工具集，具备长会话记忆与检查点回滚能力。
+Spark 是一个 **API-first 的 AI 编程开发工具**：默认接入云端/自建模型 API， 采用 Codex 式 Agent Loop 设计，内置代码智能、丰富工具集、长会话记忆与检查点回滚；本地/自托管只是可选部署方式，不是产品卖点。
 
 ```
 用户输入 → AgentLoop（回合引擎）→ 模型推理 → 工具执行 → 结果反馈 → 下一轮
@@ -95,8 +95,31 @@ ToolRegistry
 ├── 联网工具：web_search, web_fetch
 ├── 规划工具：update_plan
 ├── 扩展工具：task（子 Agent 委派，最多 4 个并行）
+├── 代码智能：lsp_definition, lsp_references, lsp_hover, lsp_symbols,
+│             lsp_diagnostics, lsp_rename/rename_symbol, lsp_code_action,
+│             affected_tests（LSP 优先，缺服务器时显式降级）
 └── MCP 工具：McpBridge 桥接外部协议
 ```
+
+### 4.1 代码智能层 (`src/spark/lsp/`)
+
+LSP 走同一套 ToolRegistry / policy / sandbox 路径，不是旁路：
+
+```
+lsp_definition/references/hover/symbols/diagnostics
+        │
+        ├─ 有语言服务器 → stdio JSON-RPC（initialize/didOpen/request）
+        └─ 无服务器     → tree-sitter / 文本扫描 / ruff+tsc，结果标 degraded
+
+lsp_rename / lsp_code_action
+        │
+        ├─ dry_run=true（默认）→ 返回逐文件 diff，不落盘
+        └─ dry_run=false → WorkspaceEdit 计划 → 沙箱 check_write_path
+                            → 全量快照预检 → 写入（失败回滚）
+```
+
+安全边界：语言服务器只能返回编辑计划，`workspace/applyEdit` 被明确拒绝；
+任何写入必须经过 Spark 的沙箱与审批；服务器 command 永不执行。
 
 ### 5. 沙箱系统 (`src/spark/sandbox.py`)
 
@@ -240,6 +263,7 @@ spark/
 │   │   ├── openai_compat.py # LiteLLM 统一实现（openai_compat + ollama 两个类）
 │   │   ├── mock.py          # Mock 实现
 │   │   └── probe.py         # 连通性探测
+│   ├── lsp/                 # 代码智能（client/servers/manager/workspace/impact/tools）
 │   ├── tools/
 │   │   ├── registry.py      # 工具注册表
 │   │   ├── fs.py            # 文件系统工具
@@ -259,7 +283,7 @@ spark/
 │   ├── store.py             # SQLite 持久化
 │   ├── control/             # 企业控制面（FastAPI /api/v1、SQLAlchemy、Casbin）
 │   ├── tui/                 # 终端 UI（textual）
-│   └── web/                 # Web 服务器（stdlib http.server）
+│   └── web/                 # Web 服务器（FastAPI + SSE）
 ├── tests/
 │   ├── test_sandbox.py      # 沙箱测试
 │   ├── test_policy.py       # 策略测试

@@ -29,7 +29,8 @@
 | 定时任务 | `automations.py` + 设置→定时任务 | cron 触发一段提示词；进程不在线时下次启动补跑一次；忙则跳过不排队 |
 | 额外目录 | `sandbox.py:extra_roots` | `--add-dir DIR` 或配置 `agent.extra_dirs`；只放行文件读写，不放宽 shell |
 | 写后格式化 | `tools/formatting.py` | `agent.format_on_write = true`；只调用项目已有的 ruff / prettier，失败不阻断写入 |
-| 符号定位 | `tools/symbols.py` | `find_symbol` 工具：tree-sitter 找定义 + 文本扫引用，免审批只读 |
+| 符号定位 | `tools/symbols.py` | `find_symbol` 工具：tree-sitter 找定义 + 文本扫引用，免审批只读；无 LSP 时的降级路径 |
+| 代码智能（LSP） | `src/spark/lsp/` | 9 个工具：definition/references/hover/symbols/diagnostics/rename/code action/affected_tests；LSP 优先，无服务器显式降级；rename 默认 dry-run，落盘走沙箱+审批 |
 | 自动审查 | `core/review.py` | `agent.auto_review`：写/执行前用独立模型审一次，block 即拒绝；默认关 |
 | 断网执行 | `tools/shell.py` | `agent.network_access = false`：bwrap 下跑空网络命名空间；不可用时如实告警 |
 | 配色主题 | `web/src/theme.ts` + `index.css` | 5 套强调色（Ember/Ocean/Forest/Violet/Mono），与明暗正交 |

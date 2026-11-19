@@ -45,13 +45,28 @@ READONLY_TOOLS = {
     "git_log",
     "git_branch",
     "worktree_list",
+    "affected_tests",
 }
 # These run code, spawn agents, or reach the network on behalf of the repository
 # being edited, so they are not read-only: ``run_tests`` executes whatever the
 # cloned repo declares as its test command, ``task`` fans out sub-agents that
 # inherit the caller's grants, and ``web_fetch`` can be aimed at internal
 # endpoints. They prompt unless the user opted into ``full-auto``.
-EXECUTE_TOOLS = {"run_tests", "task", "web_fetch"}
+EXECUTE_TOOLS = {
+    "run_tests",
+    "task",
+    "web_fetch",
+    # LSP tools start a trusted language-server child process; they are not
+    # read-only even when the request itself only asks for a definition.
+    "lsp_definition",
+    "lsp_references",
+    "lsp_hover",
+    "lsp_symbols",
+    "lsp_diagnostics",
+    "lsp_code_action",
+    "lsp_rename",
+    "rename_symbol",
+}
 WRITE_TOOLS = {
     "write_file",
     "apply_patch",
@@ -70,6 +85,8 @@ NEVER_PERSIST_ALLOW = SHELL_TOOLS | {
     "worktree_remove",
     "task_begin",
     "task_finish",
+    "lsp_rename",
+    "rename_symbol",
 }
 
 

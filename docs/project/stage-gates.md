@@ -11,14 +11,14 @@
 - [x] 流中切会话：旧流继续、审批/提问不跨会话；前端 per-session 缓存与徽标（`9448d3c`、`1e63da0`）
 - [x] W0.5a：`loop.py` 从 2035 行拆到 736 行（`context_window` / `turn_control` / `tool_runner` / `subagent_runner` 四个 mixin），核心 79 项回归通过
 - [x] W0.5b：`POST /api/v1/tasks/{id}/run` 走 `ControlAgentRunner -> AgentLoop`；`tasks.session_id`/`artifacts.session_id` 迁移与契约测试通过
-- [x] 31 模块台账 + owner + `docs/project/roles-raci.md` 真实 owner（`module-ledger.md`）
+- [x] 32 模块台账 + owner + `docs/project/roles-raci.md` 真实 owner（`module-ledger.md`）
 - [x] `perf/baseline.json` 可对比（CLI p50 155.8ms / p95 170.9ms）
 - [x] 旧 SSE 客户端兼容开关 `SPARK_WEB_LEGACY=1` 可用（裸 `data:` 帧，无 v1 envelope/id）
 
 ## M1（第 7–13 周）
 
 - [x] W9a：前端 `sessionRuntime`；切会话 0 污染；后台会话“生成中/待审批/待回答”徽标（`9448d3c`、`1e63da0`）
-- [ ] W1：definition/references/hover/rename + 影响面
+- [x] W1：definition/references/hover/symbols/diagnostics/rename/code action + 影响面（`src/spark/lsp/`，`tests/test_lsp_tools.py` 11 项）
 - [ ] W2：Anthropic/OpenAI/Gemini 原生预设；routing 有调用方；成本面板
 - [ ] 前端首屏 gzip ≤220KB；Workbench 5 tab；设置 5 页
 - [ ] SSE 契约漂移 CI 阻断

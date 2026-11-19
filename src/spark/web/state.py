@@ -503,6 +503,20 @@ class SparkWebState:
         except Exception:  # pragma: no cover - teardown must not raise
             logger.debug("memory store close failed", exc_info=True)
 
+        # Language servers are child processes. Close every registry owned by
+        # this web state so a reload/teardown cannot orphan them.
+        loops = [runtime.loop for runtime in self._runtimes.values()]
+        if self._orphan_loop is not None:
+            loops.append(self._orphan_loop)
+        for loop in loops:
+            registry = getattr(loop, "registry", None) if loop is not None else None
+            close = getattr(registry, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:  # pragma: no cover - teardown must not raise
+                    logger.debug("tool registry close failed", exc_info=True)
+
     @classmethod
     def close_all(cls) -> None:
         """Close every live state created in this process (used by tests)."""

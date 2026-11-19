@@ -6,7 +6,7 @@
 |---|---|---|---|
 | W0 | Web 迁 FastAPI + 会话运行时 | 无 | SSE envelope、SessionRuntimeRegistry、pending/events、旧 SSE 客户端协议兼容（代码基线无旧 server） |
 | W0.5 | 工程基线 + 双内核收口 | W0 的 OpenAPI/SSE 契约 | 门禁全绿、loop <800、control 走 AgentLoop、性能基线 |
-| W1 | 代码智能 LSP/重构 | W0 的 fs API | definition/references/hover/rename/影响面 |
+| W1 | 代码智能 LSP/重构 | W0 的 fs API | definition/references/hover/symbols/diagnostics/rename/code action/affected_tests；无服务器降级；LSP 编辑走沙箱与审批 |
 | W2 | 模型与成本 | W0 的 config API | 5 家原生预设、routing 有调用方、成本预算 |
 | W3 | IDE 深度 | W0 OpenAPI + W1 | VS Code 0.15.2、diff 审批、会话同步 |
 | W4 | 插件/技能生态 | W0.5 工具契约 | 插件运行时、技能导入、官方包 |

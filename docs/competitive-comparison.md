@@ -96,7 +96,7 @@
 | shell | ✅ 沙箱策略 + 超时/输出上限 | codex unified exec（可后台）；opencode bash |
 | 后台任务 | ✅ bg_start/output/kill/list（跨重启持久化） | codex `/ps` `/stop`；Qoder `/tasks` 面板 |
 | grep/glob | ✅ | opencode ripgrep 尊重 .gitignore + `.ignore`；codex file-search |
-| **LSP 集成** | ⚠️ `find_symbol` 语法级定义/引用（tree-sitter，零子进程）；非完整 LSP | opencode 内建 40+ 语言 LSP（definition/references/hover/…） |
+| **LSP 集成** | ✅ 9 个代码智能工具：definition/references/hover/symbols/diagnostics/rename/code action/affected_tests；LSP 优先，无服务器显式降级；编辑走沙箱+审批 | opencode 内建 40+ 语言 LSP（definition/references/hover/…） |
 | 代码格式化 | ✅ `agent.format_on_write`（ruff/prettier，默认关） | opencode 30+ formatter（写后自动，默认关） |
 | web 搜索/抓取 | ✅ Bing 搜索 + HTML→text | codex 原生 web_search + browser_use/computer_use 配置 |
 | 内置浏览器（agent 可驱动） | ❌ | ZCode built-in browser（点击/填表/截图/视口模拟/Chrome 数据导入）；Qoder Browser Agent |
@@ -187,7 +187,7 @@
 - ~~自定义斜杠命令~~（已完成，见 §3）
 - ~~桌面通知~~（第七轮完成，见 §10）
 - ~~`exec --json`~~（第七轮完成，见 §3）
-- ~~LSP 只读工具~~（已用 `find_symbol` 语法级实现；刻意不拉起语言服务器子进程，见 tools/symbols.py 的边界说明）
+- ~~LSP 代码智能~~（已完成：`src/spark/lsp/` 9 个工具；LSP 优先，无服务器显式降级；编辑走沙箱/审批）
 - ~~会话分享~~（第七轮完成：单文件 HTML，见 §4）
 - ~~快捷键可配置~~（已完成）+ ~~主题扩展~~（已完成：5 套配色，与明暗正交）
 
@@ -201,7 +201,7 @@
 - 插件市场（先做"本地目录 + git URL 安装"最小版）
 - 多 agent 专业编排（Experts/Workflows 级）
 
-**不建议做**：云端沙箱/账号体系/移动 App（与本地自托管定位冲突）；Tab 补全/NES（那是 IDE 形态的功能，spark 无编辑器本体）。
+**不建议做**：云端沙箱/账号体系/移动 App（与 API-first 定位不符，本地/自托管只是部署选项）；Tab 补全/NES（那是 IDE 形态的功能，spark 无编辑器本体）。
 
 ## 13. 来源
 

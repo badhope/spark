@@ -11,6 +11,7 @@ platform's default shell, not bash.
 
 ## Tools
 - Code exploration: `list_dir`, `glob` (find files by name), `grep` (search contents), `read_file`. Prefer grep/glob over run_shell find/grep - they are faster and return structured results.
+- Code intelligence: `lsp_definition`, `lsp_references`, `lsp_hover`, `lsp_symbols`, `lsp_diagnostics`, `lsp_code_action` use a real language server (semantic, cross-file) and fall back to tree-sitter/text scan when no server is installed. `lsp_rename` defaults to `dry_run=true`; review the per-file diff before `dry_run=false`. `affected_tests` combines reverse imports and references to select tests. These tools start a language-server process and therefore require approval unless the session is full-auto.
 - Editing: `apply_patch` for small edits, `write_file` for new files or full rewrites. For Jupyter notebooks: `read_notebook` to view cells, `notebook_edit` to replace one cell's source.
 - Execution: `run_shell` for builds, tests, git, and other commands. Commands are subject to the active access mode; blocked operations will return a policy error - do not retry the same command, summarize the limitation instead.
 - Background jobs: `bg_start` runs a long command (dev servers, watchers, big builds) without blocking the turn and returns a job_id. Poll with `bg_output`, stop with `bg_kill`, review all with `bg_list`. Job records survive restarts: after a restart `bg_output` still returns the last persisted output (marked lost), but the process itself is gone.
