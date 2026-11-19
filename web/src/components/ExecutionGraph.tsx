@@ -1,9 +1,11 @@
-import { memo, useMemo } from "react"
+import { memo, useEffect, useMemo, useState } from "react"
 import { ReactFlow, Background, Controls, type Node, type Edge } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import { IconButton } from "./ui"
 import { IconX, IconSpark } from "./icons"
 import { useChatStore } from "../store/chatStore"
+import { fetchWorkflowGraph } from "../api"
+import type { WorkflowGraphState } from "../types"
 import { useUiStore } from "../store/uiStore"
 import { t, type Lang, type TranslationKey } from "../i18n"
 
@@ -136,6 +138,7 @@ export const ExecutionGraph = memo(function ExecutionGraph() {
   const lang = useUiStore((s) => s.lang)
   const live = useChatStore((s) => s.turnGraph)
   const streaming = useChatStore((s) => s.streaming)
+  const [remote, setRemote] = useState<{ name: string; nodes: ExecutionNode[]; edges: ExecutionEdge[] } | null>(null)
 
   const liveNodes = useMemo<ExecutionNode[]>(
     () => live.nodes.map((n) => ({ ...n, label: n.kind === "root" || n.kind === "result" ? `graph.kind.${n.kind}` : n.label })),
@@ -144,9 +147,47 @@ export const ExecutionGraph = memo(function ExecutionGraph() {
   const liveEdges = useMemo<ExecutionEdge[]>(() => live.edges.map((e) => ({ ...e })), [live.edges])
   const hasLive = liveNodes.length > 0
 
+  useEffect(() => {
+    if (!open || hasLive) return
+    let cancelled = false
+    fetchWorkflowGraph()
+      .then((data: WorkflowGraphState) => {
+        if (cancelled) return
+        const status = (raw: string): ExecutionNode["status"] => {
+          if (raw === "completed" || raw === "done") return "done"
+          if (raw === "failed" || raw === "blocked" || raw === "cancelled") return "error"
+          if (raw === "running") return "running"
+          return "pending"
+        }
+        const nodes: ExecutionNode[] = data.graph.nodes.map((n) => ({
+          id: n.id,
+          label: `${n.id} · ${n.role}`,
+          kind: "agent" as const,
+          status: status(n.status),
+        }))
+        const edges: ExecutionEdge[] = data.graph.edges.map((e) => ({ from: e.from, to: e.to }))
+        const rootId = "workflow-root"
+        const targets = new Set(data.graph.edges.map((e) => e.to))
+        nodes.unshift({ id: rootId, label: data.name, kind: "root", status: "done" })
+        for (const node of data.graph.nodes) {
+          if (!targets.has(node.id)) edges.push({ from: rootId, to: node.id })
+        }
+        setRemote({ name: data.name, nodes, edges })
+      })
+      .catch(() => {
+        if (!cancelled) setRemote(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, hasLive])
+
+  const sourceNodes = hasLive ? liveNodes : remote?.nodes ?? []
+  const sourceEdges = hasLive ? liveEdges : remote?.edges ?? []
+  const hasGraph = sourceNodes.length > 0
   const { nodes, edges } = useMemo(
-    () => buildGraph(liveNodes, liveEdges, lang),
-    [liveNodes, liveEdges, lang],
+    () => buildGraph(sourceNodes, sourceEdges, lang),
+    [sourceNodes, sourceEdges, lang],
   )
 
   if (!open) return null
@@ -163,10 +204,12 @@ export const ExecutionGraph = memo(function ExecutionGraph() {
           <IconSpark size={15} className="text-accent" />
           <span className="text-sm font-semibold text-ink">{t("graph.title", lang)}</span>
           <span className="ml-1 text-[10.5px] text-ink3">
-            {hasLive
-              ? streaming
-                ? t("graph.liveRunning", lang)
-                : t("graph.liveDone", lang)
+            {hasGraph
+              ? hasLive
+                ? streaming
+                  ? t("graph.liveRunning", lang)
+                  : t("graph.liveDone", lang)
+                : t("graph.workflowDone", lang)
               : t("graph.empty", lang)}
           </span>
           <IconButton title={t("common.close", lang)} onClick={close} className="ml-auto">
@@ -174,7 +217,7 @@ export const ExecutionGraph = memo(function ExecutionGraph() {
           </IconButton>
         </div>
         <div className="min-h-0 flex-1">
-          {!hasLive ? (
+          {!hasGraph ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
               <IconSpark size={28} className="text-ink3" />
               <p className="max-w-xs text-[12.5px] leading-relaxed text-ink3">{t("graph.emptyHint", lang)}</p>

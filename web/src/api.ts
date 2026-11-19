@@ -11,6 +11,7 @@ import type {
   ModelProfile,
   ProviderPreset,
   CostReport,
+  WorkflowGraphState,
 } from "./types"
 import { useUiStore } from "./store/uiStore"
 
@@ -69,6 +70,12 @@ export async function fetchConfig(): Promise<FullConfig> {
 
 export async function fetchProviderPresets(): Promise<{ presets: ProviderPreset[]; native: string[] }> {
   return readJson(await fetchWithTimeout("/api/provider-presets"))
+}
+
+export async function fetchWorkflowGraph(name = "latest.json"): Promise<WorkflowGraphState> {
+  const res = await fetchWithTimeout(`/api/workflow/state?name=${encodeURIComponent(name)}`)
+  if (!res.ok) throw new Error("no workflow state")
+  return readJson<WorkflowGraphState>(res)
 }
 
 export async function fetchCostReport(): Promise<CostReport> {

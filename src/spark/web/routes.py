@@ -90,6 +90,42 @@ def _resolve_in_workdir(workdir: str, rel: str) -> Path | None:
         return None
 
 
+WORKFLOW_RUNS_DIR = Path(".spark") / "workflow-runs"
+
+
+def _workflow_state(workdir: str, name: str) -> dict[str, Any]:
+    """Read a workflow run state JSON, restricted to .spark/workflow-runs."""
+    base = (Path(workdir) / WORKFLOW_RUNS_DIR).resolve()
+    safe = (name or "latest.json").strip()
+    if "/" in safe or "\\" in safe or safe in {".", ".."} or not safe.endswith(".json"):
+        return {"error": "invalid workflow state name"}
+    target = (base / safe).resolve()
+    try:
+        target.relative_to(base)
+    except ValueError:
+        return {"error": "workflow state escapes runs dir"}
+    if not target.is_file():
+        return {"error": "not found"}
+    try:
+        raw = target.read_text(encoding="utf-8")
+    except OSError as exc:
+        return {"error": f"unreadable: {exc}"}
+    if len(raw.encode("utf-8")) > 2_000_000:
+        return {"error": "workflow state too large"}
+    try:
+        data = _json.loads(raw)
+    except ValueError as exc:
+        return {"error": f"invalid JSON: {exc}"}
+    graph = data.get("graph") if isinstance(data, dict) else None
+    if not isinstance(graph, dict):
+        return {"error": "state has no graph"}
+    return {
+        "name": data.get("workflow") or safe,
+        "statuses": data.get("statuses") or {},
+        "graph": graph,
+    }
+
+
 def _fs_tree(workdir: str, rel: str) -> dict[str, Any]:
     base = _resolve_in_workdir(workdir, rel)
     if base is None:
@@ -457,6 +493,15 @@ def build_handler_class(html: str):
                     budget=cast("Budget", qs.get("budget", ["medium"])[0] or "medium"),
                 )
                 self._json(200, dict(describe_decision(decision)))
+                return
+            if path == "/api/workflow/state":
+                qs = parse_qs(urlparse(self.path).query)
+                name = (qs.get("name", ["latest.json"])[0] or "latest.json").strip()
+                payload = _workflow_state(str(state.workdir), name)
+                if "error" in payload:
+                    self._json(404, payload)
+                    return
+                self._json(200, payload)
                 return
             if path == "/api/cost":
                 self._json(

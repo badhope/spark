@@ -11,12 +11,12 @@ spark workflow run examples/workflows/review.yaml --max-parallel 2
 暂停、续跑和单节点重跑：
 
 ```bash
-# 在 implement 完成后暂停，状态写入 JSON
-spark workflow run examples/workflows/review.yaml --stop-after implement --state-out .spark/run.json
+# 默认写入 .spark/workflow-runs/latest.json，Web 执行图会读取它
+spark workflow run examples/workflows/review.yaml --stop-after implement
 # 从状态继续跑完
-spark workflow run examples/workflows/review.yaml --resume .spark/run.json
+spark workflow run examples/workflows/review.yaml --resume .spark/workflow-runs/latest.json
 # 续跑时重跑 review（其下游也会重置；本例 review 无下游）
-spark workflow run examples/workflows/review.yaml --resume .spark/run.json --rerun review
+spark workflow run examples/workflows/review.yaml --resume .spark/workflow-runs/latest.json --rerun review
 ```
 
 ## YAML shape
@@ -60,5 +60,7 @@ cross-process (`filelock`).
   `spark workflow run` executes the DAG with child contexts and role tools/model.
 - done: state JSON (`--state-out`/`--resume`), pause (`--stop-after`) and
   single-node replay (`--rerun`, downstream reset).
-- next: a real provider-backed end-to-end run, Web execution graph and cost
-  budgets.
+- done: Web graph fallback reads `GET /api/workflow/state` from
+  `.spark/workflow-runs/latest.json`; the existing Agent execution graph shows
+  the latest workflow run when there is no live turn.
+- next: a real provider-backed end-to-end run and cost budgets.

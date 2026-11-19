@@ -333,6 +333,7 @@ class WorkflowRun:
             "outputs": dict(self.outputs),
             "errors": dict(self.errors),
             "events": list(self.events),
+            "graph": self.graph(),
         }
 
     @classmethod

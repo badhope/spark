@@ -404,3 +404,26 @@ export interface ModelProfile {
   fallback_models?: string[]
   small_model?: string
 }
+
+export interface WorkflowGraphNode {
+  id: string
+  role: string
+  agent?: string
+  prompt?: string
+  status: string
+}
+
+export interface WorkflowGraphEdge {
+  from: string
+  to: string
+}
+
+export interface WorkflowGraphState {
+  name: string
+  statuses: Record<string, string>
+  graph: {
+    name?: string
+    nodes: WorkflowGraphNode[]
+    edges: WorkflowGraphEdge[]
+  }
+}

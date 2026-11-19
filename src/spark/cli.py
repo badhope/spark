@@ -2111,7 +2111,11 @@ def workflow_run_cmd(
     sandbox_mode: str | None = typer.Option(None, "--sandbox-mode"),
     max_parallel: int = typer.Option(2, "--max-parallel", min=1, max=8),
     resume: Path | None = typer.Option(None, "--resume", help="从 state-out JSON 继续"),
-    state_out: Path | None = typer.Option(None, "--state-out", help="运行结束写状态 JSON"),
+    state_out: Path | None = typer.Option(
+        Path(".spark/workflow-runs/latest.json"),
+        "--state-out",
+        help="运行结束写状态 JSON（供 Web 执行图读取）",
+    ),
     stop_after: list[str] = typer.Option(None, "--stop-after", help="指定步骤完成后暂停，可重复"),
     rerun: list[str] = typer.Option(None, "--rerun", help="配合 --resume 单节点重跑，可重复"),
     as_json: bool = typer.Option(False, "--json", help="输出 NDJSON 工作流事件"),
