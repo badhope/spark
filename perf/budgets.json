@@ -1,7 +1,7 @@
 {
-  "cli_version_p50_ms": 530,
-  "cli_version_p95_ms": 500,
-  "cli_version_hard_ms": 630,
+  "cli_version_p50_ms": 200,
+  "cli_version_p95_ms": 300,
+  "cli_version_hard_ms": 450,
   "web_startup_delta_ms": 200,
   "first_screen_js_gzip_kb": 220,
   "first_screen_js_target_kb": 170,

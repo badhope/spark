@@ -8,43 +8,94 @@ from typing import TYPE_CHECKING, cast
 
 import typer
 
-from spark.config import (
-    ApprovalMode,
-    ProviderName,
-    SandboxMode,
-    SparkConfig,
-    activate_model_profile,
-    default_home,
-    ensure_home,
-    env_api_key,
-    load_config,
-    require_api_key,
-    save_config,
-    write_config_template,
-)
+from spark.brand import version_line
 from spark.errors import ConfigError, SparkError
-from spark.onboard import (
-    SetupError,
-    apply_setup,
-    banner,
-    check_health,
-    config_as_dict,
-    ensure_skeleton,
-    friendly_config_error,
-    health_exit_code,
-    read_config,
-    render_config_text,
-    render_health,
-    save,
-    set_value,
-    version_line,
-)
-from spark.sandbox import WorkdirSandbox
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, keeps CLI startup fast
+    from spark.config import (
+        ApprovalMode,
+        ProviderName,
+        SandboxMode,
+        SparkConfig,
+    )
+    from spark.onboard import SetupError
+    from spark.sandbox import WorkdirSandbox
     from spark.store import SessionStore
     from spark.tools.mcp_bridge import McpBridge
     from spark.tools.registry import ToolRegistry
+
+
+_RUNTIME_IMPORTS_LOADED = False
+_CONFIG_NAMES = (
+    "ApprovalMode",
+    "ProviderName",
+    "SandboxMode",
+    "SparkConfig",
+    "activate_model_profile",
+    "default_home",
+    "ensure_home",
+    "env_api_key",
+    "load_config",
+    "require_api_key",
+    "save_config",
+    "write_config_template",
+)
+_ONBOARD_NAMES = (
+    "SetupError",
+    "apply_setup",
+    "banner",
+    "check_health",
+    "config_as_dict",
+    "ensure_skeleton",
+    "friendly_config_error",
+    "health_exit_code",
+    "read_config",
+    "render_config_text",
+    "render_health",
+    "save",
+    "set_value",
+)
+
+
+def _load_runtime_imports() -> None:
+    """Load config/onboarding/sandbox only when a real command needs them.
+
+    ``spark --version`` and ``spark version`` must not pay pydantic-settings +
+    tomlkit + sandbox imports. Every other command reaches this through the
+    Typer callback or a helper that is called from the command body.
+    """
+    global _RUNTIME_IMPORTS_LOADED
+    if _RUNTIME_IMPORTS_LOADED:
+        return
+    import spark.config as _config
+    import spark.onboard as _onboard
+    from spark.sandbox import WorkdirSandbox
+
+    for name in _CONFIG_NAMES:
+        if name not in globals():
+            globals()[name] = getattr(_config, name)
+    for name in _ONBOARD_NAMES:
+        if name not in globals():
+            globals()[name] = getattr(_onboard, name)
+    if "WorkdirSandbox" not in globals():
+        globals()["WorkdirSandbox"] = WorkdirSandbox
+    _RUNTIME_IMPORTS_LOADED = True
+
+
+def __getattr__(name: str):
+    """Keep historical ``spark.cli.<name>`` access working on demand.
+
+    Tests and embedders monkeypatch ``cli.default_home`` / read
+    ``cli.friendly_config_error``; without this hook those lookups fail before
+    a command has triggered the lazy runtime import.
+    """
+    if name in _CONFIG_NAMES or name in _ONBOARD_NAMES or name == "WorkdirSandbox":
+        _load_runtime_imports()
+        try:
+            return globals()[name]
+        except KeyError:
+            pass
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def probe_provider(*args, **kwargs):
@@ -83,6 +134,7 @@ app = typer.Typer(
 def _store() -> "SessionStore":
     from spark.store import SessionStore
 
+    _load_runtime_imports()
     ensure_home()
     write_config_template(default_home() / "config.toml")
     return SessionStore(default_home() / "sessions.db")
@@ -117,6 +169,7 @@ def _common_cfg(
     sandbox_mode: str | None = None,
     add_dirs: list[Path] | None = None,
 ) -> SparkConfig:
+    _load_runtime_imports()
     cfg = load_config(
         config_path=config,
         workdir=workdir,
@@ -202,7 +255,10 @@ def main(
         typer.echo(version_line(_installed_version()))
         raise typer.Exit(0)
     if ctx.invoked_subcommand is not None:
+        if ctx.invoked_subcommand != "version":
+            _load_runtime_imports()
         return
+    _load_runtime_imports()
     try:
         workdir = workdir.resolve()
         cfg = _common_cfg(

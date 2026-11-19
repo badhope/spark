@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from typing import Any, cast
 
+from spark.brand import BRAND, TAGLINE, version_line  # noqa: F401 - public re-export
 from spark.config import (
     APPROVAL_MODES,
     SANDBOX_MODES,
@@ -61,16 +62,8 @@ class SetupError(Exception):
     pass
 
 
-BRAND = "◆ Spark"
-TAGLINE = "本地编程智能体 · 代码在你手，密钥在你手"
-
-
 def banner(title: str) -> str:
     return f"{BRAND} [Ember] — {title}"
-
-
-def version_line(detail: str) -> str:
-    return f"{BRAND} {detail}\n  {TAGLINE}"
 
 
 def config_target_path(config: Path | None) -> Path:

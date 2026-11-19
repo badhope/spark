@@ -1,166 +1,166 @@
 {
-  "generated_at": "2026-11-19T01:39:34.767439+00:00",
+  "generated_at": "2026-11-19T02:42:14.048593+00:00",
   "python": "3.12.11",
   "platform": "Linux-6.6.95.bck.4-rc5-amd64-x86_64-with-glibc2.35",
   "runs": 10,
   "cli_version_ms": {
-    "p50": 548.6,
-    "p95": 670.5,
-    "min": 534.2,
-    "max": 670.5
+    "p50": 155.8,
+    "p95": 170.9,
+    "min": 151.4,
+    "max": 170.9
   },
   "import_audit": {
     "module": "spark.cli",
     "top": [
       {
         "module": "spark.cli",
-        "self_ms": 5.93,
-        "cumulative_ms": 459.69
-      },
-      {
-        "module": "spark.config",
-        "self_ms": 21.82,
-        "cumulative_ms": 383.75
-      },
-      {
-        "module": "pydantic_settings",
-        "self_ms": 4.02,
-        "cumulative_ms": 228.01
-      },
-      {
-        "module": "pydantic_settings.main",
-        "self_ms": 2.45,
-        "cumulative_ms": 220.3
-      },
-      {
-        "module": "pydantic_settings.sources",
-        "self_ms": 2.39,
-        "cumulative_ms": 213.97
-      },
-      {
-        "module": "pydantic_settings.sources.base",
-        "self_ms": 12.83,
-        "cumulative_ms": 178.54
-      },
-      {
-        "module": "pydantic_settings.sources.utils",
-        "self_ms": 160.62,
-        "cumulative_ms": 162.18
+        "self_ms": 5.05,
+        "cumulative_ms": 62.87
       },
       {
         "module": "site",
-        "self_ms": 14.22,
-        "cumulative_ms": 57.45
-      },
-      {
-        "module": "pydantic",
-        "self_ms": 2.48,
-        "cumulative_ms": 42.65
-      },
-      {
-        "module": "_aio_mpl_fontconfig",
-        "self_ms": 12.96,
-        "cumulative_ms": 41.52
+        "self_ms": 22.24,
+        "cumulative_ms": 56.27
       },
       {
         "module": "spark",
-        "self_ms": 22.15,
-        "cumulative_ms": 36.21
+        "self_ms": 22.37,
+        "cumulative_ms": 33.04
       },
       {
-        "module": "pydantic_settings.sources.providers.aws",
-        "self_ms": 0.04,
-        "cumulative_ms": 31.69
-      },
-      {
-        "module": "pydantic_settings.sources.providers",
-        "self_ms": 3.7,
-        "cumulative_ms": 31.66
-      },
-      {
-        "module": "pydantic._migration",
-        "self_ms": 3.34,
-        "cumulative_ms": 28.27
+        "module": "_aio_mpl_fontconfig",
+        "self_ms": 11.56,
+        "cumulative_ms": 32.6
       },
       {
         "module": "importlib.abc",
-        "self_ms": 0.42,
-        "cumulative_ms": 25.16
-      },
-      {
-        "module": "pydantic.warnings",
-        "self_ms": 1.15,
-        "cumulative_ms": 24.94
+        "self_ms": 0.36,
+        "cumulative_ms": 18.59
       },
       {
         "module": "importlib.resources",
-        "self_ms": 0.1,
-        "cumulative_ms": 24.14
+        "self_ms": 0.09,
+        "cumulative_ms": 17.79
       },
       {
         "module": "importlib.resources._common",
-        "self_ms": 0.32,
-        "cumulative_ms": 23.89
-      },
-      {
-        "module": "pydantic.version",
-        "self_ms": 0.98,
-        "cumulative_ms": 23.79
-      },
-      {
-        "module": "pydantic_core",
-        "self_ms": 2.37,
-        "cumulative_ms": 22.8
-      },
-      {
-        "module": "pydantic._internal._model_construction",
-        "self_ms": 1.45,
-        "cumulative_ms": 21.3
-      },
-      {
-        "module": "tomlkit",
-        "self_ms": 3.19,
-        "cumulative_ms": 19.3
-      },
-      {
-        "module": "pydantic._internal._generate_schema",
-        "self_ms": 2.65,
-        "cumulative_ms": 18.8
-      },
-      {
-        "module": "tomlkit.api",
-        "self_ms": 3.22,
-        "cumulative_ms": 16.12
+        "self_ms": 0.28,
+        "cumulative_ms": 17.59
       },
       {
         "module": "asyncio",
-        "self_ms": 0.22,
-        "cumulative_ms": 15.98
+        "self_ms": 0.2,
+        "cumulative_ms": 11.54
       },
       {
         "module": "typer",
-        "self_ms": 0.3,
-        "cumulative_ms": 14.05
+        "self_ms": 0.23,
+        "cumulative_ms": 10.11
       },
       {
         "module": "importlib.metadata",
-        "self_ms": 1.78,
-        "cumulative_ms": 13.43
+        "self_ms": 1.54,
+        "cumulative_ms": 10.09
       },
       {
         "module": "asyncio.base_events",
-        "self_ms": 0.83,
-        "cumulative_ms": 12.84
+        "self_ms": 0.63,
+        "cumulative_ms": 9.41
       },
       {
-        "module": "pydantic.types",
-        "self_ms": 10.7,
-        "cumulative_ms": 12.38
+        "module": "pathlib",
+        "self_ms": 0.6,
+        "cumulative_ms": 7.63
       },
       {
-        "module": "pydantic.errors",
-        "self_ms": 1.38,
-        "cumulative_ms": 11.89
+        "module": "typer.main",
+        "self_ms": 0.66,
+        "cumulative_ms": 6.45
+      },
+      {
+        "module": "importlib.metadata._adapters",
+        "self_ms": 0.17,
+        "cumulative_ms": 5.63
+      },
+      {
+        "module": "email.message",
+        "self_ms": 0.41,
+        "cumulative_ms": 5.32
+      },
+      {
+        "module": "inspect",
+        "self_ms": 1.36,
+        "cumulative_ms": 4.78
+      },
+      {
+        "module": "fnmatch",
+        "self_ms": 0.09,
+        "cumulative_ms": 4.19
+      },
+      {
+        "module": "re",
+        "self_ms": 0.32,
+        "cumulative_ms": 4.09
+      },
+      {
+        "module": "email.utils",
+        "self_ms": 0.29,
+        "cumulative_ms": 3.86
+      },
+      {
+        "module": "typer._click.exceptions",
+        "self_ms": 0.02,
+        "cumulative_ms": 3.29
+      },
+      {
+        "module": "typer._click",
+        "self_ms": 0.07,
+        "cumulative_ms": 3.27
+      },
+      {
+        "module": "typer._click.core",
+        "self_ms": 0.89,
+        "cumulative_ms": 3.2
+      },
+      {
+        "module": "ssl",
+        "self_ms": 2.42,
+        "cumulative_ms": 2.92
+      },
+      {
+        "module": "typer.completion",
+        "self_ms": 0.2,
+        "cumulative_ms": 2.76
+      },
+      {
+        "module": "enum",
+        "self_ms": 0.91,
+        "cumulative_ms": 2.74
+      },
+      {
+        "module": "subprocess",
+        "self_ms": 0.59,
+        "cumulative_ms": 2.45
+      },
+      {
+        "module": "urllib.parse",
+        "self_ms": 1.4,
+        "cumulative_ms": 2.4
+      },
+      {
+        "module": "concurrent.futures",
+        "self_ms": 0.1,
+        "cumulative_ms": 2.24
+      },
+      {
+        "module": "tempfile",
+        "self_ms": 0.31,
+        "cumulative_ms": 2.21
+      },
+      {
+        "module": "concurrent.futures._base",
+        "self_ms": 0.34,
+        "cumulative_ms": 2.06
       }
     ]
   }

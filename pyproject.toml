@@ -184,6 +184,9 @@ ignore = []
 "src/spark/memory/service.py" = ["E402"]
 "src/spark/tools/shell.py" = ["E402"]
 "src/spark/tui/app.py" = ["E402"]
+# cli.py deliberately binds config/onboarding names into module globals at
+# command time so `spark --version` does not import pydantic-settings.
+"src/spark/cli.py" = ["F821"]
 # routes.py 保持 import-light：pty 写路径在 _POST_HANDLERS 定义后就近懒加载，
 # 不为 import 排序把 pty 依赖提到模块顶部。
 "src/spark/web/routes.py" = ["E402", "I001"]
