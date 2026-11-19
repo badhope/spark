@@ -348,6 +348,55 @@ def enabled_plugin_names() -> set[str]:
     return {str(name) for name in names}
 
 
+def set_plugin_enabled(
+    name: str, enabled: bool, *, path: Path | None = None
+) -> Path:
+    """Add/remove a plugin from the global ``[plugins].enabled`` array.
+
+    Edits only the ``plugins`` table so unrelated config (including secrets)
+    stays byte-for-byte as the user wrote it.
+    """
+    import tomlkit
+
+    from spark.config import ConfigError, default_home
+
+    if not NAME_RE.fullmatch(name):
+        raise ConfigError(f"非法插件名: {name}")
+    target = path or (default_home() / "config.toml")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        try:
+            doc = tomlkit.parse(target.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001 - keep the user's file intact
+            raise ConfigError(f"配置文件无法解析：{target}") from exc
+    else:
+        doc = tomlkit.document()
+    table = doc.get("plugins")
+    if table is None:
+        table = tomlkit.table()
+        doc["plugins"] = table
+    if not hasattr(table, "get"):
+        raise ConfigError("[plugins] 必须是表")
+    names = table.get("enabled")
+    if names is None:
+        names = tomlkit.array()
+        table["enabled"] = names
+    if not isinstance(names, list):
+        raise ConfigError("[plugins] enabled 必须是数组")
+    current = [str(item) for item in names]
+    if enabled:
+        if name not in current:
+            current.append(name)
+    else:
+        current = [item for item in current if item != name]
+    new_names = tomlkit.array()
+    for item in current:
+        new_names.append(item)
+    table["enabled"] = new_names
+    target.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    return target
+
+
 def sanitized_env() -> dict[str, str]:
     """Return only benign process variables for plugin subprocesses."""
     return {key: os.environ[key] for key in SAFE_ENV_KEYS if key in os.environ}

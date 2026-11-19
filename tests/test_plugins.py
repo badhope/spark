@@ -661,3 +661,22 @@ def test_registry_bundle_resolution_and_install(tmp_path: Path, monkeypatch: pyt
     assert calls == ["https://example.com/one.git", "https://example.com/two.git"]
     with pytest.raises(PluginError, match="不存在"):
         plugins_mod.resolve_bundle("missing", index)
+
+
+def test_set_plugin_enabled_preserves_unrelated_config(tmp_path: Path) -> None:
+    import tomlkit
+
+    from spark.plugins import set_plugin_enabled
+
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[agent]\napproval = "manual"\n\n[plugins]\nenabled = ["demo"]\n',
+        encoding="utf-8",
+    )
+    set_plugin_enabled("demo", False, path=path)
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
+    assert "demo" not in list(doc["plugins"]["enabled"])
+    assert str(doc["agent"]["approval"]) == "manual"
+    set_plugin_enabled("demo", True, path=path)
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
+    assert "demo" in list(doc["plugins"]["enabled"])

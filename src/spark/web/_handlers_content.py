@@ -4,8 +4,8 @@
   工具同一份数据源，见 ``spark.skills``）。
 * **提示词** 有两层：全局系统提示词在 ``cfg.agent.system_prompt``；可复用模板
   是 ``<workdir>/.spark/commands/*.md``（斜杠命令，见 ``spark.slash``）。
-* **插件** 复用 hooks：``cfg.hooks`` 里的 shell 命令就是插件挂载点，这里额外
-  提供"发现工作区里声明的插件清单"的只读视图。
+* **插件** 复用 hooks：``cfg.hooks`` 里的 shell 命令就是插件挂载点；这里提供
+  发现视图，以及仅限本机请求的 enable/disable 开关。
 * **知识库** 见 ``spark.knowledge``：用户显式导入的文档，检索后注入。
 
 这些端点的共同约束：**只读写工作区与 spark home 内的文件**，不接受绝对路径，
@@ -300,8 +300,43 @@ def _default_system_prompt() -> str:
 def _handle_plugins(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)
     action = str(body.get("action") or "list").strip()
+    if action in {"enable", "disable"}:
+        # Enabling a plugin permits code execution. Keep this local-only: remote
+        # token holders can use the agent but must not flip execution grants.
+        if not getattr(handler, "_is_loopback", lambda: False)():
+            handler._json(403, {"error": "plugin enable/disable is local-only"})
+            return
+        name = str(body.get("name") or "").strip()
+        from spark.config import ConfigError, default_home
+        from spark.plugins import scan_plugins, set_plugin_enabled
+
+        record = next(
+            (item for item in scan_plugins(state.workdir) if item.name == name), None
+        )
+        if record is None:
+            handler._json(404, {"error": f"plugin not installed: {name}"})
+            return
+        if record.manifest is None or record.error:
+            handler._json(400, {"error": f"plugin manifest is invalid: {name}"})
+            return
+        try:
+            set_plugin_enabled(name, action == "enable")
+        except ConfigError as exc:
+            handler._json(400, {"error": str(exc)})
+            return
+        handler._json(
+            200,
+            {
+                "ok": True,
+                "name": name,
+                "enabled": action == "enable",
+                "items": _plugin_entries(state.workdir),
+                "config": str(default_home() / "config.toml"),
+            },
+        )
+        return
     if action != "list":
-        handler._json(400, {"error": "plugins are read-only; use hooks to run code"})
+        handler._json(400, {"error": "unknown plugin action"})
         return
     handler._json(
         200,

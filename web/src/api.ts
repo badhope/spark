@@ -1004,6 +1004,17 @@ export async function fetchPlugins(): Promise<{
   )
 }
 
+export async function setPluginEnabled(name: string, enabled: boolean): Promise<{ ok: boolean; items?: PluginItem[] }> {
+  return readJson(
+    await fetchWithTimeout("/api/plugins", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: enabled ? "enable" : "disable", name }),
+    }),
+  )
+}
+
+
 export interface KnowledgeDoc {
   id: string
   name: string

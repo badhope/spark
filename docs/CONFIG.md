@@ -289,4 +289,5 @@ HTTP API 与 SSE 事件协议单独成篇：见 [API.md](API.md)。CLI 命令见
 ## 可选组件
 
 - `pip install "spark[browser]"`：启用 `browser_*` 工具；首次使用前 `playwright install chromium`。
+- 插件 Web enable/disable 仅接受本机请求；远程 token 只能查看，不能开启代码执行。
 - PR 工具使用 `GITHUB_TOKEN` / `GITCODE_TOKEN` / `GITEE_TOKEN` 访问私有仓库或提高速率限制；读取默认只读，发布评论必须 `spark pr publish --confirm`。

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 import tempfile
 from pathlib import Path
@@ -2373,48 +2372,10 @@ def _enabled_plugin_names(config: Path | None = None) -> set[str]:
 
 
 def _set_plugin_enabled(name: str, enabled: bool, config: Path | None) -> Path:
-    """Update ``[plugins] enabled`` without loading/saving unrelated secrets."""
-    import tomlkit
+    """Reuse the same config writer as the Web plugin toggle."""
+    from spark.plugins import set_plugin_enabled
 
-    from spark.config import default_home
-
-    path = config or (default_home() / "config.toml")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        try:
-            doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-        except Exception as exc:  # noqa: BLE001 - keep the user's file intact
-            raise ConfigError(f"配置文件无法解析：{path}") from exc
-    else:
-        doc = tomlkit.document()
-    plugins = doc.get("plugins")
-    if plugins is None:
-        plugins = tomlkit.table()
-        doc["plugins"] = plugins
-    if not hasattr(plugins, "get"):
-        raise ConfigError("[plugins] 必须是表")
-    names = plugins.get("enabled")
-    if names is None:
-        names = tomlkit.array()
-        plugins["enabled"] = names
-    if not isinstance(names, list):
-        raise ConfigError("[plugins] enabled 必须是数组")
-    current = [str(item) for item in names]
-    if enabled:
-        if name not in current:
-            current.append(name)
-    elif name in current:
-        current.remove(name)
-    names.clear()
-    for item in current:
-        names.append(item)
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
-    if os.name != "nt":
-        try:
-            path.chmod(0o600)
-        except OSError:
-            pass
-    return path
+    return set_plugin_enabled(name, enabled, path=config)
 
 
 @plugins_app.command("enable", help="启用插件 hooks/tools（写入全局 config.toml 的 plugins.enabled）")

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { Badge, Button, Spinner } from "./ui"
 import { IconExternal } from "./icons"
-import { fetchPlugins, type PluginItem } from "../api"
+import { fetchPlugins, setPluginEnabled, type PluginItem } from "../api"
 import { useUiStore } from "../store/uiStore"
 import { t } from "../i18n"
 
@@ -19,6 +19,7 @@ export default function PluginsSection() {
   const [hooks, setHooks] = useState<Array<Record<string, unknown>>>([])
   const [dir, setDir] = useState(".spark/plugins")
   const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState("")
   const openSettingsAt = useUiStore((s) => s.openSettingsAt)
 
   const load = useCallback(async () => {
@@ -61,6 +62,29 @@ export default function PluginsSection() {
                     {p.name}
                     {p.version ? <span className="ml-1.5 font-mono text-[11px] font-normal text-ink3">v{p.version}</span> : null}
                   </span>
+                  {!p.error && p.has_manifest ? (
+                    <Button
+                      size="sm"
+                      variant={p.enabled ? "ghost" : "primary"}
+                      disabled={busy === p.name}
+                      onClick={() => {
+                        if (!p.enabled && !window.confirm(t("plugins.enableConfirm", lang))) return
+                        setBusy(p.name)
+                        void setPluginEnabled(p.name, !p.enabled)
+                          .then((data) => {
+                            if (data.items) setItems(data.items)
+                            else void load()
+                          })
+                          .catch((e) =>
+                            pushToast("common.error", "error", e instanceof Error ? e.message : String(e)),
+                          )
+                          .finally(() => setBusy(""))
+                      }}
+                    >
+                      {busy === p.name ? <Spinner size={10} /> : null}
+                      {p.enabled ? t("plugins.disable", lang) : t("plugins.enable", lang)}
+                    </Button>
+                  ) : null}
                   <Badge tone={p.error ? "warn" : p.enabled ? "ok" : "neutral"}>
                     <span title={p.error || undefined}>
                       {p.error
