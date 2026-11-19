@@ -1,6 +1,6 @@
 import { create } from "zustand"
 import type { ChatEvent, GoalState, PlanStep } from "../types"
-import { streamChat, fetchHistory, fetchSessionPending, deleteMessage as deleteMessageApi, truncateFromMessage as truncateFromMessageApi, runInlineShell } from "../api"
+import { streamChat, fetchHistory, fetchSessionPending, fetchSessionEvents, deleteMessage as deleteMessageApi, truncateFromMessage as truncateFromMessageApi, runInlineShell } from "../api"
 import { useSessionStore } from "./sessionStore"
 import { useSessionRuntimeStore } from "./sessionRuntime"
 import { useUiStore } from "./uiStore"
@@ -83,7 +83,11 @@ export interface TurnGraph {
   edges: GraphEdge[]
 }
 
-export function uid(): string {
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+function uid(): string {
   try {
     return crypto.randomUUID()
   } catch {
@@ -699,6 +703,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
 
+    /** After a dropped SSE connection, replay the server's ring buffer. */
+    async function recoverTurn(sessionId: string, afterSeq: number): Promise<boolean> {
+      let seq = afterSeq
+      let failures = 0
+      const deadline = Date.now() + 120_000
+      while (Date.now() < deadline && !ac.signal.aborted) {
+        try {
+          const page = await fetchSessionEvents(sessionId, seq)
+          if (page.reset_required) return false
+          for (const ev of page.events) {
+            if (typeof ev.seq !== "number" || ev.seq > seq) onEvent(ev)
+          }
+          seq = Math.max(seq, page.last_seq)
+          failures = 0
+          const phase = useSessionRuntimeStore.getState().runtimes[sessionId]?.phase
+          if (phase === "idle" || phase === "error") return true
+        } catch {
+          failures += 1
+          if (failures >= 5) return false
+        }
+        await sleep(250)
+      }
+      return false
+    }
+
     try {
       await streamChat(prompt, onEvent, ac.signal, images, get().webSearch)
       flush()
@@ -708,6 +737,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       flush()
       const isAbort = e instanceof DOMException && e.name === "AbortError"
       if (!isAbort) {
+        const runtime = useSessionRuntimeStore.getState().runtimes[turnSessionId]
+        if (runtime && runtime.lastSeq > 0 && !ac.signal.aborted) {
+          try {
+            const recovered = await recoverTurn(turnSessionId, runtime.lastSeq)
+            if (recovered && !ac.signal.aborted) {
+              flush()
+              set({ lastFailedPrompt: null })
+              return
+            }
+          } catch {
+            /* fall through to the normal failure path */
+          }
+        }
         useSessionRuntimeStore.getState().fail(turnSessionId, msg)
         const visible = useSessionStore.getState().status?.session_id === turnSessionId
         if (visible) {
