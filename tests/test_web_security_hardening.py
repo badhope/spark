@@ -836,11 +836,12 @@ def test_stream_queued_before_settings_change_does_not_run_stale_loop() -> None:
 
     events = []
     stream = SimpleNamespace(disconnected=False, submit_payload=events.append)
+    runtime = SimpleNamespace(turn_lock=threading.Lock(), loop=object(), busy=False)
     state = SimpleNamespace(turn_lock=threading.Lock(), loop=object(), busy=False)
     old_loop = SimpleNamespace(registry=SimpleNamespace(disabled_tools=set()))
-    _dispatch_turn(state, stream, old_loop, "prompt", None, None, lambda event: None, True)
+    _dispatch_turn(state, runtime, stream, old_loop, "prompt", None, None, lambda event: None, True)
     assert events == [{"type": "turn_error", "text": "settings changed; retry the request"}]
-    assert not state.busy
+    assert not runtime.busy
 
 
 def test_real_vite_proxy_enforces_browser_origin(web) -> None:

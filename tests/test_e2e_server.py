@@ -130,9 +130,9 @@ def _post_sse(port: int, path: str, body: dict, timeout: float = 30.0) -> list[d
     raw = resp.read().decode("utf-8", "replace")
     payloads = []
     for block in raw.split("\n\n"):
-        block = block.strip()
-        if block.startswith("data: "):
-            payloads.append(json.loads(block[6:]))
+        for line in block.splitlines():
+            if line.startswith("data: "):
+                payloads.append(json.loads(line[6:]))
     return payloads
 
 

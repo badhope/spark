@@ -19,36 +19,55 @@ logger = logging.getLogger(__name__)
 
 def _handle_cancel(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)
+    requested = bool(str(body.get("session_id") or "").strip())
+    session_id = str(body.get("session_id") or state.session_id or "").strip()
+    runtime = state.runtime_for(session_id) if session_id else None
+    if requested and runtime is None:
+        handler._json(404, {"error": "unknown session"})
+        return
+    if runtime is not None and runtime.loop is not None:
+        runtime.loop.cancel()
+        if runtime.approver is not None:
+            runtime.approver.cancel()
+        runtime.question_bridge.cancel()
+        handler._json(200, {"ok": True, "session_id": runtime.session_id})
+        return
+    # No runtime for this id: keep the old current-session behaviour for
+    # embedders that call /api/cancel without a session_id.
     if state.loop:
         state.loop.cancel()
     if state.approver is not None:
         state.approver.cancel()
-    bridge = getattr(state, "question_bridge", None)
-    if bridge is not None:
-        bridge.cancel()
-    handler._json(200, {"ok": True})
+    state.question_bridge.cancel()
+    handler._json(200, {"ok": True, "session_id": session_id or None})
 
 
 def _handle_approval(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)
-    if state.approver is None:
+    requested = bool(str(body.get("session_id") or "").strip())
+    session_id = str(body.get("session_id") or state.session_id or "").strip()
+    runtime = state.runtime_for(session_id) if session_id else None
+    if requested and runtime is None:
+        handler._json(404, {"error": "unknown session"})
+        return
+    approver = runtime.approver if runtime is not None else state.approver
+    if approver is None:
         handler._json(400, {"error": "approval disabled (full-auto)"})
         return
     action = str(body.get("decision") or "").strip()
     if action not in {"allow", "allow_always", "deny"}:
         handler._json(400, {"error": "decision must be allow, allow_always or deny"})
         return
-    state.approver.respond(cast(ApprovalAction, action))
+    approver.respond(cast(ApprovalAction, action))
     handler._json(200, {"ok": True})
 
 
 def _handle_sessions_new(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)
-    if state.busy:
-        handler._json(409, {"error": "agent is busy"})
-        return
-    with state.turn_lock:
-        state.rebuild_loop()
+    # Creating a new session only moves the current pointer. If the outgoing
+    # session is still streaming, its runtime stays in the registry and keeps
+    # running; do not wait for its turn lock here.
+    state.rebuild_loop()
     handler._json(200, {"ok": True, "status": state.status()})
 
 
@@ -62,22 +81,25 @@ def _handle_sessions_delete(handler: HandlerBase, body: dict) -> None:
     if not row or row.get("workdir") != str(state.workdir):
         handler._json(404, {"error": "unknown session"})
         return
-    if state.busy:
+    runtime = state.runtime_for(session_id)
+    if (runtime is not None and runtime.busy) or (
+        runtime is None and session_id == state.session_id and state.busy
+    ):
         handler._json(409, {"error": "agent is busy"})
         return
     deleting_active = session_id == state.session_id
     state.store.delete_session(session_id)
+    state.drop_runtime(session_id)
     if deleting_active:
-        with state.turn_lock:
-            remaining = [
-                r
-                for r in state.store.list_sessions()
-                if r["workdir"] == str(state.workdir)
-            ]
-            if remaining:
-                state.rebuild_loop(session_id=remaining[0]["id"])
-            else:
-                state.rebuild_loop()
+        remaining = [
+            r
+            for r in state.store.list_sessions()
+            if r["workdir"] == str(state.workdir)
+        ]
+        if remaining:
+            state.rebuild_loop(session_id=remaining[0]["id"])
+        else:
+            state.rebuild_loop()
     handler._json(200, {"ok": True, "status": state.status()})
 
 
@@ -88,11 +110,11 @@ def _handle_sessions_switch(handler: HandlerBase, body: dict) -> None:
     if not row or row.get("workdir") != str(state.workdir):
         handler._json(404, {"error": "unknown session"})
         return
-    if state.busy:
-        handler._json(409, {"error": "agent is busy"})
+    # Switching is a pointer move, not a rebuild: the outgoing stream keeps
+    # its loop/approver/question bridge in the runtime registry.
+    if not state.switch_session(session_id):
+        handler._json(404, {"error": "unknown session"})
         return
-    with state.turn_lock:
-        state.rebuild_loop(session_id=session_id)
     handler._json(
         200,
         {

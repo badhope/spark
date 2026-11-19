@@ -226,6 +226,72 @@ def test_post_sessions_switch_unknown_is_404(web) -> None:
     assert status == 404
 
 
+def test_get_sessions_pending_and_events(web) -> None:
+    base, state, _ = web
+    sid = state.session_id
+    runtime = state.current_runtime
+    assert runtime is not None
+    runtime.record_event(
+        {"v": 1, "session_id": sid, "turn_id": "t-1", "seq": 1, "type": "text_delta", "text": "hi"}
+    )
+    status, body = _request(base, f"/api/sessions/{sid}/pending")
+    assert status == 200
+    assert body["session_id"] == sid
+    assert body["approval"] is None
+    assert body["question"] is None
+    status, body = _request(base, f"/api/sessions/{sid}/events?after_seq=0")
+    assert status == 200
+    assert body["session_id"] == sid
+    assert body["reset_required"] is False
+    assert [event["seq"] for event in body["events"]] == [1]
+    assert body["last_seq"] == 1
+
+
+def test_get_sessions_pending_unknown_is_404(web) -> None:
+    base, _, _ = web
+    status, body = _request(base, "/api/sessions/missing/pending")
+    assert status == 404
+    assert body["error"] == "unknown session"
+
+
+def test_post_cancel_accepts_session_id(web) -> None:
+    base, state, _ = web
+    status, body = _request(base, "/api/cancel", {"session_id": state.session_id})
+    assert status == 200
+    assert body["ok"] is True
+    assert body["session_id"] == state.session_id
+
+
+def test_switch_session_keeps_background_runtime(web) -> None:
+    _, state, _ = web
+    first = state.current_runtime
+    assert first is not None
+    first_loop = state.loop
+    second_id = state.store.create_session(
+        state.workdir, state.cfg.provider.model, title="second"
+    )
+    assert state.switch_session(second_id)
+    assert state.runtime_for(first.session_id) is first
+    assert state.loop is not first_loop
+    assert state.switch_session(first.session_id)
+    assert state.loop is first_loop
+
+
+def test_runtime_event_ring_reports_reset_for_old_cursor() -> None:
+    from spark.web.state import SessionRuntime
+
+    runtime = SessionRuntime(session_id="s", max_events=2)
+    for seq in range(1, 5):
+        runtime.record_event({"seq": seq, "type": "text_delta", "text": str(seq)})
+    assert len(runtime.events) == 2
+    events, reset = runtime.events_after(1)
+    assert reset is True
+    assert events == []
+    events, reset = runtime.events_after(2)
+    assert reset is False
+    assert [event["seq"] for event in events] == [3, 4]
+
+
 def test_post_messages_delete_validation(web) -> None:
     base, _, _ = web
     status, body = _request(base, "/api/messages/delete", {"message_id": "x"})

@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 import weakref
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +84,11 @@ class WebQuestionBridge:
         self._answer = ""
         self._event.set()
 
+    def pending_payload(self) -> dict | None:
+        if not self.pending:
+            return None
+        return self.payload()
+
 
 class WebApprover:
     """Bridges approval prompts from the agent loop thread to HTTP handlers."""
@@ -93,10 +99,20 @@ class WebApprover:
         self._cancel_event = threading.Event()
         self._action: ApprovalAction = "deny"
         self._tool_call_id = ""
+        self._summary = ""
+        self._diff = ""
+        self._tool = ""
+        self._arguments: dict = {}
 
     async def __call__(self, request) -> ApprovalDecision:
         self.pending = True
         self._action = "deny"
+        self._summary = str(getattr(request, "summary", "") or "")
+        self._diff = str(getattr(request, "diff", "") or "")
+        call = getattr(request, "tool_call", None)
+        self._tool = str(getattr(call, "name", "") or "")
+        args = getattr(call, "arguments", {}) or {}
+        self._arguments = args if isinstance(args, dict) else {}
         cancelled = self._cancel_event.is_set()
         if cancelled:
             self._cancel_event.clear()
@@ -130,11 +146,77 @@ class WebApprover:
         self._cancel_event.set()
         self._event.set()
 
+    def pending_payload(self) -> dict | None:
+        if not self.pending:
+            return None
+        return {
+            "summary": self._summary,
+            "diff": self._diff,
+            "tool": self._tool,
+            "arguments": self._arguments,
+            "tool_call_id": self._tool_call_id,
+        }
+
+
+@dataclass
+class SessionRuntime:
+    """Per-session execution state.
+
+    A web process can have several sessions alive at once: a stream keeps
+    running after the user switches to another session, and its approval /
+    question rendezvous must not leak into the new one. The runtime owns the
+    loop, approver, question bridge, turn lock and replay buffer for exactly
+    one session.
+    """
+
+    session_id: str
+    loop: AgentLoop | None = None
+    approver: WebApprover | None = None
+    question_bridge: WebQuestionBridge = field(default_factory=WebQuestionBridge)
+    turn_lock: threading.Lock = field(default_factory=threading.Lock)
+    busy: bool = False
+    events: list[dict] = field(default_factory=list)
+    max_events: int = 512
+    _events_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def record_event(self, envelope: dict) -> None:
+        seq = int(envelope.get("seq") or 0)
+        if seq <= 0:
+            return
+        with self._events_lock:
+            self.events.append(dict(envelope))
+            if len(self.events) > self.max_events:
+                del self.events[: len(self.events) - self.max_events]
+
+    def events_after(self, after_seq: int) -> tuple[list[dict], bool]:
+        """Return (events, reset_required).
+
+        ``reset_required`` is True when the requested cursor predates the
+        retained ring buffer; the client must refetch history instead of
+        pretending it caught up.
+        """
+        with self._events_lock:
+            if not self.events:
+                return [], False
+            first_seq = int(self.events[0].get("seq") or 0)
+            if after_seq and after_seq < first_seq - 1:
+                return [], True
+            return [
+                dict(item)
+                for item in self.events
+                if int(item.get("seq") or 0) > after_seq
+            ], False
+
 
 def _generate_session_meta_async(
-    state: SparkWebState, user_text: str, assistant_text: str
+    state: SparkWebState,
+    user_text: str,
+    assistant_text: str,
+    *,
+    session_id: str | None = None,
 ) -> None:
     """After a turn completes, ask the model for a short title + keywords and store them."""
+    sid = str(session_id or state.session_id or "")
 
     def run() -> None:
         import json as _json
@@ -188,9 +270,9 @@ def _generate_session_meta_async(
                 else []
             )
             if title:
-                state.store.set_title(state.session_id, title)
+                state.store.set_title(sid, title)
             if keywords:
-                state.store.set_keywords(state.session_id, " ".join(keywords))
+                state.store.set_keywords(sid, " ".join(keywords))
         except Exception as exc:
             logger.warning("Failed to update session meta: %s", exc)
 
@@ -204,12 +286,12 @@ class SparkWebState:
         self.store = store
         self.sandbox = WorkdirSandbox(workdir, cfg)
         self.session_id = ""
-        self.loop: AgentLoop | None = None
-        self.turn_lock = threading.Lock()
+        self._runtimes: dict[str, SessionRuntime] = {}
+        self._current_runtime: SessionRuntime | None = None
+        self._fallback_turn_lock = threading.Lock()
+        self._fallback_question_bridge = WebQuestionBridge()
+        self._orphan_loop: AgentLoop | None = None
         self.settings_lock = threading.Lock()
-        self.busy = False
-        self.approver = WebApprover() if cfg.agent.approval != "full-auto" else None
-        self.question_bridge = WebQuestionBridge()
         self.mcp_bridge: McpBridge | None = None
         self.control_token = secrets.token_urlsafe(32)
         self.test_probe_semaphore = threading.BoundedSemaphore(2)
@@ -236,6 +318,135 @@ class SparkWebState:
         with _ACTIVE_STATES_LOCK:
             _ACTIVE_STATES.append(weakref.ref(self))
         self.automations.start()
+
+    @property
+    def current_runtime(self) -> SessionRuntime | None:
+        return self._current_runtime
+
+    @property
+    def loop(self) -> AgentLoop | None:
+        runtime = self._current_runtime
+        if runtime is not None:
+            return runtime.loop
+        return self._orphan_loop
+
+    @loop.setter
+    def loop(self, value: AgentLoop | None) -> None:
+        runtime = self._current_runtime
+        if runtime is not None:
+            runtime.loop = value
+        else:
+            self._orphan_loop = value
+
+    @property
+    def approver(self) -> WebApprover | None:
+        runtime = self._current_runtime
+        return runtime.approver if runtime is not None else None
+
+    @approver.setter
+    def approver(self, value: WebApprover | None) -> None:
+        runtime = self._current_runtime
+        if runtime is not None:
+            runtime.approver = value
+
+    @property
+    def question_bridge(self) -> WebQuestionBridge:
+        runtime = self._current_runtime
+        return runtime.question_bridge if runtime is not None else self._fallback_question_bridge
+
+    @property
+    def turn_lock(self) -> threading.Lock:
+        runtime = self._current_runtime
+        return runtime.turn_lock if runtime is not None else self._fallback_turn_lock
+
+    @property
+    def busy(self) -> bool:
+        runtime = self._current_runtime
+        return bool(runtime.busy) if runtime is not None else False
+
+    @busy.setter
+    def busy(self, value: bool) -> None:
+        runtime = self._current_runtime
+        if runtime is not None:
+            runtime.busy = bool(value)
+
+    def runtime_for(self, session_id: str | None = None) -> SessionRuntime | None:
+        sid = str(session_id or self.session_id or "")
+        if not sid:
+            return None
+        return self._runtimes.get(sid)
+
+    def get_runtime(self, session_id: str, *, create: bool = True) -> SessionRuntime | None:
+        sid = str(session_id or "").strip()
+        if not sid:
+            return None
+        runtime = self._runtimes.get(sid)
+        if runtime is None and create:
+            runtime = SessionRuntime(session_id=sid)
+            self._runtimes[sid] = runtime
+        return runtime
+
+    def switch_session(self, session_id: str) -> bool:
+        """Switch the current pointer without stopping the outgoing session.
+
+        Returns False when the session is unknown. The old runtime stays in the
+        registry and any in-flight stream keeps using its own loop/approver.
+        """
+        sid = str(session_id or "").strip()
+        row = self.store.get_session(sid) if sid else None
+        if not row or row.get("workdir") != str(self.workdir):
+            return False
+        previous = self.session_id
+        runtime = self.get_runtime(sid)
+        if runtime is None:
+            return False
+        if runtime.loop is None:
+            self.rebuild_loop(session_id=sid)
+            return True
+        self._current_runtime = runtime
+        self.session_id = sid
+        if previous and previous != sid:
+            self._notify_hook("session_switch", {"from": previous, "to": sid})
+        return True
+
+    def drop_runtime(self, session_id: str) -> None:
+        sid = str(session_id or "").strip()
+        runtime = self._runtimes.pop(sid, None)
+        if runtime is not None and self._current_runtime is runtime:
+            self._current_runtime = None
+            self.session_id = ""
+
+    def pending_for(self, session_id: str) -> dict:
+        runtime = self.runtime_for(session_id)
+        if runtime is None:
+            return {"session_id": session_id, "approval": None, "question": None}
+        approval = runtime.approver.pending_payload() if runtime.approver else None
+        question = runtime.question_bridge.pending_payload()
+        return {
+            "session_id": runtime.session_id,
+            "approval": approval,
+            "question": question,
+        }
+
+    def events_for(self, session_id: str, after_seq: int = 0) -> dict:
+        runtime = self.runtime_for(session_id)
+        if runtime is None:
+            return {
+                "session_id": session_id,
+                "events": [],
+                "reset_required": False,
+                "last_seq": 0,
+            }
+        events, reset = runtime.events_after(after_seq)
+        last_seq = int(events[-1].get("seq") or 0) if events else int(
+            (runtime.events[-1].get("seq") or 0) if runtime.events else 0
+        )
+        return {
+            "session_id": runtime.session_id,
+            "events": events,
+            "reset_required": reset,
+            "last_seq": last_seq,
+        }
 
     def close(self) -> None:
         """Stop background workers and release owned native resources.
@@ -337,17 +548,7 @@ class SparkWebState:
     def rebuild_loop(
         self, session_id: str | None = None, reuse_latest: bool = False
     ) -> None:
-        tool_ctx = ToolContext(sandbox=self.sandbox, config=self.cfg)
-        tool_ctx.question_asker = self.question_bridge.ask
-        registry = ToolRegistry(tool_ctx)
-        if self.mcp_bridge is not None:
-            self.mcp_bridge.register_into(registry)
-            tool_ctx.mcp_call = self.mcp_bridge.call
-            tool_ctx.mcp_bridge = self.mcp_bridge
-        provider = create_provider(self.cfg)
-        if self.mcp_bridge is not None:
-            # P2：server 反向 sampling 以当前 Provider 为大脑
-            self.mcp_bridge.set_sampling_handler(provider)
+        previous_session = getattr(self, "session_id", "")
         if session_id is None and reuse_latest:
             latest = next(
                 (
@@ -358,42 +559,55 @@ class SparkWebState:
                 None,
             )
             session_id = latest["id"] if latest else None
-        # Capture the outgoing session *before* reassigning: reading it later
-        # always returned the new id, so session_switch hooks never fired and
-        # the fork/switch handlers reported the old session in their response.
-        previous_session = getattr(self, "session_id", "")
         if session_id is None:
-            self.session_id = self.store.create_session(
+            session_id = self.store.create_session(
                 self.workdir, self.cfg.provider.model, title="新对话"
             )
-        else:
-            self.session_id = session_id
-        # The approver is created once (in __init__ only when the startup mode
-        # was not full-auto). Reusing that decision meant switching full-auto →
-        # suggest left approver=None, so every write/shell call was silently
-        # denied: the UI promised approvals that could never appear.
+        runtime = self.get_runtime(session_id)
+        if runtime is None:  # pragma: no cover - get_runtime(create=True) always returns
+            return
+
+        # The approver is per-session: a background stream must keep its own
+        # approval rendezvous after the user switches away. Full-auto removes
+        # it for this runtime only.
         if self.cfg.agent.approval == "full-auto":
-            approver = None
-        else:
-            if self.approver is None:
-                self.approver = WebApprover()
-            approver = self.approver
-        self.loop = AgentLoop(
+            runtime.approver = None
+        elif runtime.approver is None:
+            runtime.approver = WebApprover()
+
+        runtime.loop = self._build_loop(runtime)
+        self._current_runtime = runtime
+        self.session_id = session_id
+        if previous_session and previous_session != session_id:
+            self._notify_hook(
+                "session_switch",
+                {"from": previous_session, "to": session_id},
+            )
+
+    def _build_loop(self, runtime: SessionRuntime) -> AgentLoop:
+        """Build a loop bound to one runtime (no current-pointer side effects)."""
+        tool_ctx = ToolContext(sandbox=self.sandbox, config=self.cfg)
+        tool_ctx.question_asker = runtime.question_bridge.ask
+        registry = ToolRegistry(tool_ctx)
+        if self.mcp_bridge is not None:
+            self.mcp_bridge.register_into(registry)
+            tool_ctx.mcp_call = self.mcp_bridge.call
+            tool_ctx.mcp_bridge = self.mcp_bridge
+        provider = create_provider(self.cfg)
+        if self.mcp_bridge is not None:
+            # P2：server 反向 sampling 以当前 Provider 为大脑
+            self.mcp_bridge.set_sampling_handler(provider)
+        return AgentLoop(
             workdir=self.workdir,
             cfg=self.cfg,
             provider=provider,
             registry=registry,
             store=self.store,
-            session_id=self.session_id,
-            approver=approver,
+            session_id=runtime.session_id,
+            approver=runtime.approver,
             memory=self.memory,
             checkpointer=self._ensure_checkpointer(),
         )
-        if previous_session and previous_session != self.session_id:
-            self._notify_hook(
-                "session_switch",
-                {"from": previous_session, "to": self.session_id},
-            )
 
     def _effective_approval(self) -> str:
         """当前真正生效的审批模式（审批档案可覆盖基线）。
@@ -407,38 +621,49 @@ class SparkWebState:
     def run_due_automations(self) -> list[dict]:
         """执行到期的定时任务；返回本轮结果摘要。
 
-        与用户回合共用 ``turn_lock``：无人值守任务绝不能和正在进行的对话
-        并发跑同一个 loop（会话状态、审批队列、文件快照都会互相踩）。
-        拿不到锁就标记 skipped 并留到下一拍，而不是排队堆积。
+        每个无人值守任务使用独立的 ``SessionRuntime``：不再临时改
+        ``self.session_id`` 欺骗当前 loop，也不会和用户正在跑的会话抢同一个
+        turn_lock。调度线程拿不到该 runtime 的锁就跳过本拍。
         """
         results: list[dict] = []
         for task in self.automations.run_due():
             aid = str(task.get("id") or "")
             if not aid:
                 continue
-            if not self.turn_lock.acquire(blocking=False):
-                self.store.mark_automation_result(
-                    aid, status="skipped (agent busy)", skipped=True
-                )
-                results.append({"id": aid, "status": "skipped"})
-                continue
+            runtime = None
+            acquired = False
             try:
-                if self.loop is None:
+                session_id = self.store.create_session(
+                    self.workdir,
+                    self.cfg.provider.model,
+                    title=f"[auto] {task.get('name') or aid}",
+                )
+                runtime = self.get_runtime(session_id)
+                if runtime is None:
                     self.store.mark_automation_result(
-                        aid, status="failed", error="agent not ready"
+                        aid, status="failed", error="runtime unavailable"
                     )
                     results.append({"id": aid, "status": "failed"})
                     continue
-                session_id = self.store.create_session(
-                    self.workdir, self.cfg.provider.model,
-                    title=f"[auto] {task.get('name') or aid}",
-                )
-                previous = self.session_id
-                self.session_id = session_id
+                if self.cfg.agent.approval == "full-auto":
+                    runtime.approver = None
+                elif runtime.approver is None:
+                    runtime.approver = WebApprover()
+                runtime.loop = self._build_loop(runtime)
+                if not runtime.turn_lock.acquire(blocking=False):
+                    self.store.mark_automation_result(
+                        aid, status="skipped (agent busy)", skipped=True
+                    )
+                    results.append({"id": aid, "status": "skipped"})
+                    continue
+                acquired = True
                 try:
-                    events = list(self.loop.iter_turn_sync(str(task.get("prompt") or "")))
+                    events = list(
+                        runtime.loop.iter_turn_sync(str(task.get("prompt") or ""))
+                    )
                 finally:
-                    self.session_id = previous
+                    runtime.turn_lock.release()
+                    acquired = False
                 text = ""
                 for event in events:
                     if getattr(event, "type", "") == "turn_end":
@@ -455,8 +680,9 @@ class SparkWebState:
                     aid, status="failed", error=str(exc)
                 )
                 results.append({"id": aid, "status": "failed"})
-            finally:
-                self.turn_lock.release()
+                if acquired and runtime is not None:
+                    runtime.turn_lock.release()
+                    acquired = False
         return results
 
     def status(self) -> dict:

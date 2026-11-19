@@ -41,11 +41,19 @@ class _SSESession:
         max_text_chars: int = SSE_TEXT_MAX_CHARS,
         max_queue: int = SSE_MAX_QUEUED_EVENTS,
         secrets: tuple[str, ...] = (),
+        session_id: str = "",
+        turn_id: str = "",
+        on_event=None,
     ) -> None:
         self._wfile = wfile
         self._connection = connection
         self._on_disconnect = on_disconnect
         self._close_connection = close_connection
+        self._on_event = on_event
+        self._session_id = str(session_id or "")
+        self._turn_id = str(turn_id or "")
+        self._envelope_enabled = bool(self._session_id or self._turn_id)
+        self._seq = 0
         self._peer_monitor_disabled = False
         # Linux 上 select+MSG_PEEK 在「刚建连、请求体刚读完」的极短窗口里可能
         # 报告可读且 recv 返回空，被误判成断连 —— 整条 SSE 流还没写出就被 abort
@@ -78,14 +86,10 @@ class _SSESession:
         return self._enqueue(event)
 
     def submit_payload(self, payload: dict) -> bool:
-        data = (
-            b"data: "
-            + json.dumps(
-                sanitize_sse_payload(payload, self._secrets), ensure_ascii=False
-            ).encode("utf-8")
-            + b"\n\n"
-        )
-        return self._enqueue(data)
+        # The envelope (v/session_id/turn_id/seq) is added by the single writer
+        # thread at flush time. Keeping the payload structured here lets text
+        # deltas be merged without losing or reordering seq numbers.
+        return self._enqueue(dict(payload))
 
     def finish(self) -> bool:
         if self._stop.is_set() or self._disconnected.is_set():
@@ -158,14 +162,7 @@ class _SSESession:
             if not pending_text:
                 return
             text = sanitize("".join(pending_text), self._secrets)
-            self._write(
-                b"data: "
-                + json.dumps(
-                    {"type": "text_delta", "text": text},
-                    ensure_ascii=False,
-                ).encode("utf-8")
-                + b"\n\n"
-            )
+            self._write_payload({"type": "text_delta", "text": text})
             pending_text.clear()
             pending_chars = 0
             pending_since = None
@@ -198,11 +195,16 @@ class _SSESession:
                     return
                 if item is _SSE_DONE:
                     flush_pending()
-                    self._write(b'data: {"type": "done"}\n\n')
+                    self._write_payload({"type": "done"})
                     return
                 if isinstance(item, bytes):
                     flush_pending()
                     self._write(item)
+                    last_write = time.monotonic()
+                    continue
+                if isinstance(item, dict):
+                    flush_pending()
+                    self._write_payload(item)
                     last_write = time.monotonic()
                     continue
                 event_type = getattr(item, "type", "")
@@ -226,19 +228,44 @@ class _SSESession:
                             flush_pending()
                     continue
                 flush_pending()
-                self._write(
-                    b"data: "
-                    + json.dumps(
-                        sanitize_sse_payload(_event_payload(item), self._secrets),
-                        ensure_ascii=False,
-                    ).encode("utf-8")
-                    + b"\n\n"
-                )
+                self._write_payload(_event_payload(item))
                 last_write = time.monotonic()
         except SSE_DISCONNECT_ERRORS:
             self._disconnect()
         except (TypeError, ValueError, UnicodeError):
             self._disconnect()
+
+    def _write_payload(self, payload: dict) -> None:
+        """Write one JSON event, optionally wrapped in the v1 envelope.
+
+        Envelope mode is opt-in: production chat streams pass session_id and
+        turn_id, while older unit tests / embedders can keep the legacy bare
+        ``data:`` frames.
+        """
+        if not isinstance(payload, dict):
+            payload = {"type": "message", "data": payload}
+        if self._envelope_enabled:
+            self._seq += 1
+            envelope = {
+                "v": 1,
+                "session_id": self._session_id,
+                "turn_id": self._turn_id,
+                "seq": self._seq,
+            }
+            envelope.update(payload)
+            clean = sanitize_sse_payload(envelope, self._secrets)
+            raw = json.dumps(clean, ensure_ascii=False)
+            frame = f"id: {self._seq}\ndata: {raw}\n\n".encode("utf-8")
+            if self._on_event is not None:
+                try:
+                    self._on_event(dict(clean))
+                except Exception:  # pragma: no cover - replay buffer must not kill stream
+                    logger.debug("SSE on_event callback failed", exc_info=True)
+            self._write(frame)
+            return
+        clean = sanitize_sse_payload(payload, self._secrets)
+        raw = json.dumps(clean, ensure_ascii=False)
+        self._write(b"data: " + raw.encode("utf-8") + b"\n\n")
 
     def _write(self, data: bytes) -> None:
         self._wfile.write(data)

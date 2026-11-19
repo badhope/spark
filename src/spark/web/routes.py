@@ -17,7 +17,7 @@ import json as _json
 import logging
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from spark.web._handlers import (  # noqa: F401  (re-export for backward-compat)
     _handle_agents_md,
@@ -526,6 +526,27 @@ def build_handler_class(html: str):
                 ][:200]
                 self._json(200, {"sessions": sessions, "current": state.session_id})
                 return
+            # P1：按会话查询审批/提问挂起状态与可重放事件。放在 /api/sessions
+            # 精确匹配之后，避免和 /api/sessions/search 抢路由。
+            if path.startswith("/api/sessions/"):
+                parts = path[len("/api/sessions/") :].split("/")
+                if len(parts) == 2 and parts[1] in {"pending", "events"}:
+                    session_id = unquote(parts[0])
+                    row = state.store.get_session(session_id)
+                    if not row or row.get("workdir") != str(state.workdir):
+                        self._json(404, {"error": "unknown session"})
+                        return
+                    if parts[1] == "pending":
+                        self._json(200, state.pending_for(session_id))
+                        return
+                    qs = parse_qs(urlparse(self.path).query)
+                    try:
+                        after_seq = int((qs.get("after_seq", ["0"])[0] or "0").strip())
+                    except ValueError:
+                        after_seq = 0
+                    after_seq = max(0, after_seq)
+                    self._json(200, state.events_for(session_id, after_seq))
+                    return
             if path == "/api/sessions/search":
                 # 全文检索（FTS5 trigram，中文子串友好）。侧栏此前只在已加载的
                 # 会话标题/keywords/model 里过滤，搜不到消息正文；store 里早就有

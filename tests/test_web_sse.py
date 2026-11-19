@@ -37,9 +37,29 @@ class RecordingWriter:
         payloads: list[dict] = []
         for chunk in chunks:
             for block in chunk.split(b"\n\n"):
-                if block.startswith(b"data: "):
-                    payloads.append(json.loads(block[6:].decode("utf-8")))
+                for line in block.splitlines():
+                    if line.startswith(b"data: "):
+                        payloads.append(json.loads(line[6:].decode("utf-8")))
         return payloads
+
+    def frames(self) -> list[dict]:
+        """Return parsed SSE frames including optional ``id:`` lines."""
+        chunks = list(self.chunks)
+        frames: list[dict] = []
+        for chunk in chunks:
+            for block in chunk.split(b"\n\n"):
+                if not block.strip():
+                    continue
+                event_id = ""
+                data = None
+                for line in block.splitlines():
+                    if line.startswith(b"id: "):
+                        event_id = line[4:].decode("utf-8")
+                    elif line.startswith(b"data: "):
+                        data = json.loads(line[6:].decode("utf-8"))
+                if data is not None:
+                    frames.append({"id": event_id, "data": data})
+        return frames
 
 
 class FailingWriter:
@@ -99,6 +119,35 @@ def test_sse_writer_merges_text_and_preserves_event_types() -> None:
         {"type": "tool_start", "tool": {"id": "t", "name": "x", "arguments": {}}},
         {"type": "done"},
     ]
+
+
+def test_sse_envelope_carries_session_turn_and_seq() -> None:
+    writer = RecordingWriter()
+    session = _SSESession(
+        writer,
+        flush_interval=0.02,
+        heartbeat_interval=1.0,
+        max_text_chars=1024,
+        session_id="s-1",
+        turn_id="t-1",
+    )
+    session.start()
+    assert session.submit(TurnEvent(type="text_delta", text="a"))
+    assert session.submit(TurnEvent(type="text_delta", text="b"))
+    assert session.submit_payload({"type": "context", "data": {"used": 1}})
+    assert session.finish()
+
+    frames = writer.frames()
+    assert [frame["data"]["type"] for frame in frames] == [
+        "text_delta",
+        "context",
+        "done",
+    ]
+    assert [frame["data"]["seq"] for frame in frames] == [1, 2, 3]
+    assert [frame["id"] for frame in frames] == ["1", "2", "3"]
+    assert all(frame["data"]["v"] == 1 for frame in frames)
+    assert all(frame["data"]["session_id"] == "s-1" for frame in frames)
+    assert all(frame["data"]["turn_id"] == "t-1" for frame in frames)
 
 
 def test_sse_writer_emits_idle_heartbeat() -> None:
@@ -248,9 +297,10 @@ def test_live_stream_keeps_sse_event_contract(tmp_path, monkeypatch) -> None:
         store.close()
 
     events = [
-        json.loads(frame[6:])
+        json.loads(line[6:])
         for frame in raw.split("\n\n")
-        if frame.startswith("data: ")
+        for line in frame.splitlines()
+        if line.startswith("data: ")
     ]
     assert [event["type"] for event in events] == [
         "context",
@@ -260,6 +310,10 @@ def test_live_stream_keeps_sse_event_contract(tmp_path, monkeypatch) -> None:
         "done",
     ]
     assert events[1]["text"]
+    assert all(event["v"] == 1 for event in events)
+    assert all(event["session_id"] for event in events)
+    assert all(event["turn_id"] for event in events)
+    assert [event["seq"] for event in events] == list(range(1, len(events) + 1))
 
 
 def test_peer_disconnect_is_suppressed_during_connect_grace(monkeypatch) -> None:

@@ -11,6 +11,7 @@ import json as _json
 import logging
 import socket
 import threading
+import uuid
 
 from spark.models import ImageRef
 from spark.slash import handle_test, parse_slash
@@ -343,6 +344,7 @@ def _expand_turn_prompt(state, prompt: str) -> str:
 
 def _dispatch_turn(
     state,
+    runtime,
     stream: _SSESession,
     turn_loop,
     turn_prompt: str,
@@ -354,13 +356,13 @@ def _dispatch_turn(
     """串行执行本轮对话；断连在取锁前后各查一次，退出时复位 busy 与工具门。"""
     if stream.disconnected:
         return
-    with state.turn_lock:
+    with runtime.turn_lock:
         if stream.disconnected:
             return
-        if turn_loop is not state.loop:
+        if turn_loop is not runtime.loop:
             stream.submit_payload({"type": "turn_error", "text": "settings changed; retry the request"})
             return
-        state.busy = True
+        runtime.busy = True
         # Always apply the per-turn gate. It used to be skipped whenever a
         # tool_allowlist was active, so the switch silently did nothing for
         # users running an approval profile with a tool whitelist.
@@ -395,7 +397,7 @@ def _dispatch_turn(
                     if not stream.submit(event):
                         break
         finally:
-            state.busy = False
+            runtime.busy = False
             turn_loop.registry.disabled_tools = set()
 
 
@@ -414,8 +416,16 @@ def _stream_failure_exit(
         stream.abort()
 
 
-def _spawn_memory_recorder(state, prompt: str, turn_text: str, tool_summary: str) -> None:
+def _spawn_memory_recorder(
+    state,
+    prompt: str,
+    turn_text: str,
+    tool_summary: str,
+    *,
+    session_id: str | None = None,
+) -> None:
     """记忆抽取在后台线程执行，失败只告警。"""
+    sid = str(session_id or state.session_id or "")
     if not (
         state.cfg.memory.enabled
         and state.cfg.memory.auto_extract
@@ -430,7 +440,7 @@ def _spawn_memory_recorder(state, prompt: str, turn_text: str, tool_summary: str
                 user_text=prompt,
                 assistant_text=turn_text,
                 tool_summary=tool_summary,
-                session_id=state.session_id,
+                session_id=sid,
             )
         except Exception:  # aqg: top-level boundary
             logger.warning("SSE 后台 memory 写入失败", exc_info=True)
@@ -444,9 +454,11 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
     if not prompt and not body.get("images"):
         handler._json(400, {"error": "prompt required"})
         return
-    if state.loop is None:
+    runtime = state.current_runtime
+    if runtime is None or runtime.loop is None:
         handler._json(500, {"error": "agent not ready"})
         return
+    turn_session_id = runtime.session_id
 
     images = _parse_image_payloads(body)
     image_refs = [ImageRef.model_validate(i) for i in images] or None
@@ -456,8 +468,9 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
     if not _send_sse_headers(handler):
         return
 
-    turn_loop = state.loop
-    approver = state.approver
+    turn_loop = runtime.loop
+    approver = runtime.approver
+    turn_id = f"turn-{uuid.uuid4().hex[:12]}"
 
     def close_stream() -> None:
         handler.close_connection = True
@@ -489,9 +502,7 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
             approver.cancel()
         # ask_user 挂起时断开/取消：不唤醒 asker，turn 协程最长要空等
         # 600s 超时才能退出（loop.cancelled 只在 llm 回合检查）。
-        bridge = getattr(state, "question_bridge", None)
-        if bridge is not None:
-            bridge.cancel()
+        runtime.question_bridge.cancel()
 
     stream = _SSESession(
         handler.wfile,
@@ -499,6 +510,9 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
         on_disconnect=cancel_turn,
         close_connection=close_stream,
         secrets=_sse_secrets(),
+        session_id=turn_session_id,
+        turn_id=turn_id,
+        on_event=runtime.record_event,
     )
     stream.start()
 
@@ -529,7 +543,7 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
 
     try:
         _dispatch_turn(
-            state, stream, turn_loop, turn_prompt, image_refs, slash_result,
+            state, runtime, stream, turn_loop, turn_prompt, image_refs, slash_result,
             collect_event, bool(body.get("web_search", True)),
         )
         if stream.disconnected:
@@ -538,9 +552,15 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
             return
         turn_text = memory_collector["text"]
         if turn_text:
-            _generate_session_meta_async(state, prompt, turn_text)
+            _generate_session_meta_async(
+                state, prompt, turn_text, session_id=turn_session_id
+            )
         _spawn_memory_recorder(
-            state, prompt, turn_text, " | ".join(memory_collector["tools"])
+            state,
+            prompt,
+            turn_text,
+            " | ".join(memory_collector["tools"]),
+            session_id=turn_session_id,
         )
     except SSE_DISCONNECT_ERRORS as exc:
         _stream_failure_exit(stream, exc, cancel_turn, cancel_on_disconnect=True)
