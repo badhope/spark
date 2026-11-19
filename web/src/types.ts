@@ -53,10 +53,22 @@ export interface Status {
     input_tokens: number
     output_tokens: number
     reasoning_tokens: number
+    cache_read_tokens?: number
+    cache_write_tokens?: number
+    cache_hit_rate?: number
+    cache_savings_tokens?: number
     total_tokens: number
     calls: number
+    priced_calls?: number
     cost_usd: number | null
   }
+  session_cost?: {
+    spent_usd: number | null
+    budget_usd: number | null
+    remaining_usd: number | null
+    by_model: CostBreakdownRow[]
+  }
+  routing?: Record<string, unknown>
 }
 
 export interface DisplayFlags {
@@ -107,6 +119,7 @@ export interface FullConfig {
     max_tool_rounds: number
     max_repeat_calls: number
     max_turn_tokens: number
+    max_session_cost_usd: number
     max_output_chars: number
     effort: "low" | "medium" | "high"
     show_thinking: boolean
@@ -204,6 +217,7 @@ export interface SettingsPayload {
     max_tool_rounds: number
     max_repeat_calls?: number
     max_turn_tokens?: number
+    max_session_cost_usd?: number
     max_output_chars: number
     show_thinking?: boolean
     show_tools?: boolean
@@ -343,6 +357,38 @@ export interface ApprovalInfo {
   tool?: string
   /** Exact arguments the tool will run with. */
   arguments?: Record<string, unknown>
+}
+
+export interface ProviderPreset {
+  id: string
+  label: string
+  provider: string
+  base_url: string
+  model: string
+  api_key_env: string
+  native: boolean
+  prompt_cache: boolean
+  tier: string
+  note: string
+}
+
+export interface CostBreakdownRow {
+  model: string
+  provider: string
+  calls: number
+  input_tokens: number
+  output_tokens: number
+  reasoning_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  total_tokens: number
+  cost_usd: number | null
+}
+
+export interface CostReport {
+  session: Status["session_tokens"]
+  by_model: CostBreakdownRow[]
+  budget_usd: number | null
 }
 
 export interface ModelProfile {

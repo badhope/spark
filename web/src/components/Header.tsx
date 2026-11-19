@@ -4,7 +4,7 @@ import { useSessionStore } from "../store/sessionStore"
 import { useUiStore } from "../store/uiStore"
 import { ContextMeter } from "./ContextMeter"
 import { HeaderToolsMenu } from "./HeaderToolsMenu"
-import { IconButton } from "./ui"
+import { IconButton, cls } from "./ui"
 import { IconCommand, IconHelp, IconMenu } from "./icons"
 import { t, type Lang } from "../i18n"
 
@@ -17,6 +17,7 @@ export const Header = memo(function Header() {
   const setPaletteOpen = useUiStore((s) => s.setPaletteOpen)
   const openHelp = useUiStore((s) => s.openHelp)
   const toggleRightPanel = useUiStore((s) => s.toggleRightPanel)
+  const openSettingsAt = useUiStore((s) => s.openSettingsAt)
 
   const sessions = useSessionStore((s) => s.sessions)
   const title = (status && status.session_id && sessionTitle(lang, sessions, status.session_id)) || t("common.newChat", lang)
@@ -54,6 +55,24 @@ export const Header = memo(function Header() {
         >
           <span className="h-1.5 w-1.5 rounded-full bg-err breathe" />
           <span className="hidden sm:inline">{t("common.stop", lang)}</span>
+        </button>
+      )}
+
+      {status?.session_cost?.spent_usd != null && (
+        <button
+          type="button"
+          onClick={() => openSettingsAt("model")}
+          title={lang === "zh"
+            ? `${status.session_tokens?.calls ?? 0} 次调用 · 缓存命中 ${((status.session_tokens?.cache_hit_rate ?? 0) * 100).toFixed(1)}%`
+            : `${status.session_tokens?.calls ?? 0} calls · cache ${((status.session_tokens?.cache_hit_rate ?? 0) * 100).toFixed(1)}%`}
+          className={cls(
+            "mr-1 hidden rounded-full border px-2 py-1 font-mono text-[10.5px] tabular-nums transition-colors sm:inline-flex",
+            status.session_cost.budget_usd && status.session_cost.spent_usd >= status.session_cost.budget_usd
+              ? "border-err/40 bg-err/10 text-err"
+              : "border-line bg-panel2 text-ink2 hover:bg-hover",
+          )}
+        >
+          ${status.session_cost.spent_usd.toFixed(4)}
         </button>
       )}
 

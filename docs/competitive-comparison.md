@@ -35,7 +35,9 @@
 | 功能点 | spark | 竞品代表 |
 |---|---|---|
 | 登录方式 | 配置文件 + 环境变量 + `spark init` 向导 | Qoder/ZCode：账号登录（OAuth）；codex：Sign in with ChatGPT |
-| 多 provider 预设 | ✅ 8 家（DeepSeek/通义/智谱/Kimi/豆包/Agnes/Ollama/自定义） | Qoder 预设 9+；opencode models.dev 全目录 |
+| 多 provider 预设 | ✅ 12 个（5 家原生：Anthropic/OpenAI/Gemini/Azure/Bedrock；5 家国产；Ollama/Mock）+ 自定义 | Qoder 预设 9+；opencode models.dev 全目录 |
+| Prompt caching | ✅ Anthropic system + tools 稳定前缀 `cache_control`；命中/节省 token 可见 | Anthropic 原生缓存；opencode provider 能力 |
+| 模型路由 | ✅ `spark --tier capability\|cost\|offline`、`spark route`、Web `/api/routing/preview`；按任务类型/预算决策，可查降级链 | 多为手动选模型 |
 | 多模型档案切换 | ✅ `[[model_profiles]]` + Web 面板 | codex `--profile`；opencode agent 级 model |
 | 热键循环最近模型 | ✅ `Ctrl+Alt+M` 循环模型档案 | opencode `F2/Shift+F2`；codex `/model` 弹窗 |
 | 推理档（effort/variant） | ✅ effort 低/中/高（Web + 配置） | opencode `ctrl+t` variant 循环；codex `/model` 带 reasoning 档 |

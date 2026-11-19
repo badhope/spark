@@ -8,6 +8,8 @@
 | 能力 | 实现落点 | 怎么用 |
 | --- | --- | --- |
 | 与模型对话（流式） | `providers/openai_compat.py` | Web / TUI / CLI 任一入口输入即可 |
+| 原生/国产模型一键切换 | `providers/presets.py` + 设置→模型 | 12 个预设（5 家原生 + 5 家国产 + Ollama/Mock）；`spark providers` 可列 |
+| 成本与缓存面板 | `store.token_usage` + `GET /api/cost` + 设置→模型 | 每会话 token、cache hit、按模型成本、预算上限；未知价格显示 — |
 | 让模型读写文件 | `tools/fs.py`、`edit/` | 模型自行调用；写入受沙箱与审批约束 |
 | 让模型执行命令 | `tools/shell.py` | 命令先过 `sandbox.check_shell`，再按审批档放行 |
 | 让模型跑测试并自我修正 | `tools/gitops.run_tests` + `core/loop.py` | 模型调用 `run_tests`，失败输出自动回灌 |

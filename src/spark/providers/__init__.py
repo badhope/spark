@@ -5,7 +5,9 @@ from spark.providers.routing import (
     RouteDecision,
     apply_routed_provider,
     decide_tier,
+    describe_decision,
     route_and_build,
+    route_for_cli,
 )
 
 __all__ = [
@@ -14,6 +16,8 @@ __all__ = [
     "decide_tier",
     "apply_routed_provider",
     "route_and_build",
+    "route_for_cli",
+    "describe_decision",
     "RouteDecision",
     "MODEL_REGISTRY",
 ]

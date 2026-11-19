@@ -10,8 +10,8 @@
 | M03 | Agent Loop | `core/loop.py`、`core/context_window.py`、`core/turn_control.py`、`core/tool_runner.py`、`core/subagent_runner.py` | `AgentLoop.iter_turn_sync()` / 事件流 | `test_loop*`、`test_harness_upgrades.py`、`test_agent_runtime.py` | badhope | 演进中（已拆 4 mixin，loop 736 行；待 M0 收口） |
 | M04 | 上下文与 Token | `core/context.py`、`core/tokens.py` | 压缩阈值 / token 估算 | `test_context*`、`test_tokens*` | badhope | 稳定 |
 | M05 | 回合存储与检查点 | `core/turn_store.py`、`core/checkpoints.py` | turn/checkpoint 持久化 | `test_turn_store*`、`test_checkpoints*` | badhope | 稳定 |
-| M06 | Provider 层 | `providers/` | `BaseProvider.stream()` | `test_providers*`、`test_llm*` | badhope | 稳定 |
-| M07 | 模型目录与路由 | `model_catalog.py`、`providers/routing.py` | 模型能力矩阵 / fallback | `test_model_catalog*`、routing 契约 | badhope | 演进中（路由调用方待接） |
+| M06 | Provider 层 | `providers/`（含 `presets.py`） | `BaseProvider.stream()`；8 种 provider；原生 OpenAI Responses / Anthropic prompt cache | `test_providers*`、`test_provider_presets.py` | badhope | 稳定 |
+| M07 | 模型目录与路由 | `model_catalog.py`、`providers/routing.py` | 模型能力矩阵 / `spark --tier` / `spark route` / `/api/routing/preview` / 成本台账 | `test_model_catalog*`、`test_p1_10_routing.py`、`test_cost_accounting.py` | badhope | 稳定 |
 | M08 | 工具注册表 | `tools/registry.py`、`tools/base.py` | 工具 schema / 审批 / 沙箱 | `test_tools*`、`test_policy*` | badhope | 稳定 |
 | M09 | 文件与搜索工具 | `tools/files.py`、`tools/search.py`、`repo_map.py` | read/write/patch/grep/glob | `test_tools_files*`、`test_search*` | badhope | 稳定 |
 | M10 | Shell / PTY / 进程 | `tools/shell.py`、`pty/`、`proc.py` | run_shell / bg_* / pty stream | `test_shell*`、`test_pty*`、`test_proc*` | badhope | 稳定 |

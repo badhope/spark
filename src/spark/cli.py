@@ -24,6 +24,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, keeps CLI startup fast
         SparkConfig,
     )
     from spark.onboard import SetupError
+    from spark.providers.routing import Budget, TaskType
     from spark.sandbox import WorkdirSandbox
     from spark.store import SessionStore
     from spark.tools.mcp_bridge import McpBridge
@@ -52,6 +53,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, keeps CLI startup fast
 
 
 _RUNTIME_IMPORTS_LOADED = False
+#: Set by the root callback. Only a per-process CLI override; never persisted.
+_RUNTIME_ROUTE: dict[str, str] = {}
 _CONFIG_NAMES = (
     "ApprovalMode",
     "ProviderName",
@@ -186,6 +189,16 @@ async def _boot_mcp(cfg: SparkConfig, registry: ToolRegistry) -> McpBridge:
     return bridge
 
 
+def is_native_provider(cfg: object) -> bool:
+    return getattr(getattr(cfg, "provider", None), "name", "") in {
+        "openai",
+        "anthropic",
+        "gemini",
+        "azure",
+        "bedrock",
+    }
+
+
 def _common_cfg(
     workdir: Path,
     config: Path | None,
@@ -210,7 +223,23 @@ def _common_cfg(
         resolved = str(extra.expanduser().resolve())
         if resolved not in cfg.agent.extra_dirs:
             cfg.agent.extra_dirs.append(resolved)
-    if cfg.provider.name == "openai_compat":
+    tier = _RUNTIME_ROUTE.get("tier", "auto")
+    if tier in ("capability", "cost", "offline"):
+        from spark.providers.routing import (
+            apply_routed_provider,
+            describe_decision,
+            route_for_cli,
+        )
+
+        decision = route_for_cli(
+            cfg,
+            tier_class=tier,
+            task_type=cast("TaskType", _RUNTIME_ROUTE.get("task", "code")),
+            budget=cast("Budget", _RUNTIME_ROUTE.get("budget", "medium")),
+        )
+        apply_routed_provider(cfg, decision)
+        cfg.routing_decision = dict(describe_decision(decision))
+    if cfg.provider.name in {"openai_compat"} or is_native_provider(cfg):
         try:
             require_api_key(cfg)
         except ConfigError:
@@ -276,7 +305,23 @@ def main(
         "--sandbox-mode",
         help="sandbox-only | workspace | full-access | unrestricted",
     ),
+    tier: str = typer.Option(
+        "auto",
+        "--tier",
+        help="模型路由档：auto | capability | cost | offline（对全部子命令生效）",
+    ),
+    task: str = typer.Option(
+        "code",
+        "--task",
+        help="路由任务类型：code | debug | chat | plan | review | edit | compact | title",
+    ),
+    budget: str = typer.Option(
+        "medium",
+        "--budget",
+        help="路由预算：low | medium | high",
+    ),
 ) -> None:
+    _RUNTIME_ROUTE.update({"tier": tier, "task": task, "budget": budget})
     if version_flag:
         typer.echo(version_line(_installed_version()))
         raise typer.Exit(0)
@@ -454,6 +499,65 @@ async def _exec_async(
     finally:
         await bridge.close()
         store.close()
+
+
+@app.command("route", help="预览模型路由决策（不发起模型请求）")
+def route_cmd(
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    config: Path | None = typer.Option(None, "--config"),
+    tier: str = typer.Option("auto", "--tier", help="auto | capability | cost | offline"),
+    task: str = typer.Option("code", "--task"),
+    budget: str = typer.Option("medium", "--budget"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show which tier would be chosen and why, including degradation chain."""
+    import json
+
+    from spark.providers.routing import describe_decision, route_for_cli
+
+    try:
+        cfg = _common_cfg(workdir.resolve(), config, None, None, None)
+        decision = route_for_cli(
+            cfg,
+            tier_class=tier,
+            task_type=cast("TaskType", task),
+            budget=cast("Budget", budget),
+        )
+        payload = dict(describe_decision(decision))
+        if as_json:
+            typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+            return
+        typer.echo(f"tier      {payload['class']} / {payload['tier']}")
+        typer.echo(f"model     {payload['model']}")
+        typer.echo(f"provider  {payload['provider']}")
+        typer.echo(f"reason    {payload['reason']}")
+        degraded = payload.get("degraded_from")
+        if isinstance(degraded, list) and degraded:
+            typer.echo(f"degraded  {', '.join(str(x) for x in degraded)}")
+    except SparkError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(exc.exit_code) from exc
+
+
+@app.command("providers", help="列出内置 provider 预设（原生 + 国产兼容入口）")
+def providers_cmd(
+    native_only: bool = typer.Option(False, "--native", help="只显示原生 provider"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    import json
+
+    from spark.providers.presets import presets_payload
+
+    rows = presets_payload(native_only=native_only)
+    if as_json:
+        typer.echo(json.dumps(rows, ensure_ascii=False, indent=2))
+        return
+    for row in rows:
+        marker = "native" if row.get("native") else "compat"
+        typer.echo(
+            f"{row['id']:<10} {marker:<6} {row['provider']:<14} "
+            f"{row['model']}  ({row['api_key_env'] or 'no key'})"
+        )
 
 
 @app.command("wiki", help="从源码结构生成可追溯的本地项目文档（tree-sitter，离线可重复）")
@@ -861,6 +965,21 @@ def acp_cmd(
         None,
         "--sandbox-mode",
         help="sandbox-only | workspace | full-access | unrestricted",
+    ),
+    tier: str = typer.Option(
+        "auto",
+        "--tier",
+        help="模型路由档：auto | capability | cost | offline（对全部子命令生效）",
+    ),
+    task: str = typer.Option(
+        "code",
+        "--task",
+        help="路由任务类型：code | debug | chat | plan | review | edit | compact | title",
+    ),
+    budget: str = typer.Option(
+        "medium",
+        "--budget",
+        help="路由预算：low | medium | high",
     ),
 ) -> None:
     """stdio 上跑 ACP JSON-RPC（stdout 是协议通道，日志只走 stderr）。"""

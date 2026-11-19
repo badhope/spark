@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_provider(cfg: SparkConfig, mock: MockProvider | None = None) -> Provider:
-    valid = ("openai_compat", "ollama", "mock")
+    valid = ("openai_compat", "openai", "anthropic", "gemini", "azure", "bedrock", "ollama", "mock")
     if cfg.provider.name not in valid:
         raise ValueError(
             f"Unknown provider '{cfg.provider.name}'. "
@@ -34,6 +34,7 @@ def create_provider(cfg: SparkConfig, mock: MockProvider | None = None) -> Provi
         if not base or base == "https://api.deepseek.com/v1":
             base = "http://127.0.0.1:11434/v1"
         return OllamaProvider(base, cfg.provider.model, key)
+    native = str(cfg.provider.name) if cfg.provider.name != "openai_compat" else ""
     return OpenAICompatProvider(
         cfg.provider.base_url,
         cfg.provider.model,
@@ -41,4 +42,7 @@ def create_provider(cfg: SparkConfig, mock: MockProvider | None = None) -> Provi
         fallback_models=getattr(cfg.provider, "fallback_models", None),
         api_keys=getattr(cfg.provider, "api_keys", None),
         thinking=getattr(cfg.provider, "thinking", "default"),
+        native=native,
+        prompt_cache=native == "anthropic",
+        responses_api=native == "openai",
     )

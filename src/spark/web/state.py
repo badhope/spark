@@ -746,11 +746,25 @@ class SparkWebState:
                 # usage 查询失败时降级为 0
                 logger.debug("查询 loop usage 失败", exc_info=True)
             plan = list(self.loop.registry.plan)
+        session_tokens = self.store.session_token_usage(
+            self.session_id, model=self.cfg.provider.model
+        )
+        session_cost_usd = session_tokens.get("cost_usd")
+        cost_limit = float(getattr(self.cfg.agent, "max_session_cost_usd", 0) or 0)
         return {
             "session_id": self.session_id,
-            "session_tokens": self.store.session_token_usage(
-                self.session_id, model=self.cfg.provider.model
-            ),
+            "session_tokens": session_tokens,
+            "session_cost": {
+                "spent_usd": session_cost_usd,
+                "budget_usd": cost_limit or None,
+                "remaining_usd": (
+                    round(max(0.0, cost_limit - float(session_cost_usd)), 6)
+                    if cost_limit and isinstance(session_cost_usd, (int, float))
+                    else None
+                ),
+                "by_model": self.store.session_usage_by_model(self.session_id),
+            },
+            "routing": self.cfg.routing_decision,
             "workdir": str(self.workdir),
             "sandbox_mode": self.cfg.agent.sandbox_mode,
             "display": {

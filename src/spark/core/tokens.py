@@ -1,11 +1,9 @@
-"""Token counting backed by tiktoken, with a heuristic fallback.
+"""Token counting: LiteLLM first, tiktoken second, heuristic last.
 
-The old implementation estimated ``CJK chars + non-CJK chars / 4``. That was
-cheap but systematically wrong for compact prompts and for models with a
-different tokenizer. We now use tiktoken's ``o200k_base`` by default (a good
-general-purpose encoding) and ``encoding_for_model`` when the caller knows the
-model. If tiktoken is unavailable or the model is unknown, the old heuristic is
-kept as a last resort so the agent still works in a minimal install.
+LiteLLM owns the model tokenizer registry (including vendor aliases such as
+``deepseek-chat`` / ``claude-sonnet-4-5``), so a known model is counted there.
+tiktoken remains the local fallback for offline/minimal installs, and the old
+CJK heuristic is only used when neither tokenizer is importable.
 """
 from __future__ import annotations
 
@@ -53,6 +51,15 @@ def estimate_tokens(text: str, model: str | None = None) -> int:
     """Count tokens in *text* using the model tokenizer when possible."""
     if not text:
         return 0
+    if model:
+        try:
+            import litellm
+
+            return int(litellm.token_counter(model=model, text=text))
+        except Exception:
+            # Unknown vendor/model or a LiteLLM install without its tokenizer
+            # extra: fall through to the local encoding.
+            pass
     encoding = _encoding_for(model)
     if encoding is None:
         return _heuristic_estimate(text)

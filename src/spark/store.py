@@ -96,7 +96,12 @@ class SessionStore:
                     input_tokens INTEGER NOT NULL DEFAULT 0,
                     output_tokens INTEGER NOT NULL DEFAULT 0,
                     reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+                    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+                    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
                     total_tokens INTEGER NOT NULL DEFAULT 0,
+                    cost_usd REAL,
+                    model TEXT NOT NULL DEFAULT '',
+                    provider TEXT NOT NULL DEFAULT '',
                     source TEXT NOT NULL DEFAULT 'estimated',
                     created_at INTEGER NOT NULL
                 );
@@ -192,7 +197,7 @@ class SessionStore:
             self._conn.commit()
 
     #: Bump when a step in :meth:`_migrate_schema` is added.
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def _migrate_schema(self) -> None:
         """Record/upgrade the schema version on *this* database.
@@ -203,7 +208,7 @@ class SessionStore:
         current = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
         if current >= self.SCHEMA_VERSION:
             return
-        for version, step in ((1, self._migrate_v1),):
+        for version, step in ((1, self._migrate_v1), (2, self._migrate_v2)):
             if current < version:
                 step()
                 current = version
@@ -216,6 +221,21 @@ class SessionStore:
         They are already applied above by :meth:`_init`; this hook exists so the
         version is recorded and future steps have a place to live.
         """
+
+    def _migrate_v2(self) -> None:
+        """v2: cost-ledger columns for model/provider/cache and per-call USD."""
+        for statement in (
+            "ALTER TABLE token_usage ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE token_usage ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE token_usage ADD COLUMN cost_usd REAL",
+            "ALTER TABLE token_usage ADD COLUMN model TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE token_usage ADD COLUMN provider TEXT NOT NULL DEFAULT ''",
+        ):
+            try:
+                self._conn.execute(statement)
+            except sqlite3.OperationalError:
+                # Existing DB already has the column; migration steps are idempotent.
+                pass
 
     def backup_to(self, target: Path | str) -> Path:
         """Write a consistent snapshot of this database to *target*.
@@ -440,7 +460,17 @@ class SessionStore:
                    FROM tool_events WHERE session_id = ? ORDER BY id LIMIT ?""",
                 (session_id, max(1, int(limit))),
             ).fetchall()
-        return [dict(row) for row in rows]
+        result: list[dict] = []
+        for row in rows:
+            item = dict(row)
+            item["cost_usd"] = (
+                round(float(item.get("cost_usd") or 0.0), 6)
+                if int(item.get("priced_calls") or 0) > 0
+                else None
+            )
+            item.pop("priced_calls", None)
+            result.append(item)
+        return result
 
     def set_compact_from(self, session_id: str, message_id: int) -> None:
         with self._lock:
@@ -723,16 +753,53 @@ class SessionStore:
         output_tokens: int,
         reasoning_tokens: int = 0,
         source: str = "estimated",
+        *,
+        model: str = "",
+        provider: str = "",
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
+        cost_usd: float | None = None,
     ) -> None:
-        """Record one LLM call's token spend (estimated unless provider reports)."""
+        """Record one LLM call's token spend and (when priced) its USD cost."""
         now = int(time.time())
-        total = int(input_tokens) + int(output_tokens) + int(reasoning_tokens)
+        input_tokens = int(input_tokens)
+        output_tokens = int(output_tokens)
+        reasoning_tokens = int(reasoning_tokens)
+        cache_read_tokens = int(cache_read_tokens)
+        cache_write_tokens = int(cache_write_tokens)
+        total = input_tokens + output_tokens + reasoning_tokens
+        if cost_usd is None and model:
+            cost_usd = self._estimate_cost(
+                model,
+                {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "cache_read_tokens": cache_read_tokens,
+                    "cache_write_tokens": cache_write_tokens,
+                },
+            )
         with self._lock:
             self._conn.execute(
                 """INSERT INTO token_usage
-                   (session_id, message_id, input_tokens, output_tokens, reasoning_tokens, total_tokens, source, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (session_id, message_id, input_tokens, output_tokens, reasoning_tokens, total, source, now),
+                   (session_id, message_id, input_tokens, output_tokens, reasoning_tokens,
+                    cache_read_tokens, cache_write_tokens, total_tokens, cost_usd, model,
+                    provider, source, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    session_id,
+                    message_id,
+                    input_tokens,
+                    output_tokens,
+                    reasoning_tokens,
+                    cache_read_tokens,
+                    cache_write_tokens,
+                    total,
+                    cost_usd,
+                    model,
+                    provider,
+                    source,
+                    now,
+                ),
             )
             self._conn.commit()
 
@@ -748,8 +815,12 @@ class SessionStore:
                 """SELECT COALESCE(SUM(input_tokens), 0) AS input_tokens,
                           COALESCE(SUM(output_tokens), 0) AS output_tokens,
                           COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
+                          COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+                          COALESCE(SUM(cache_write_tokens), 0) AS cache_write_tokens,
                           COALESCE(SUM(total_tokens), 0) AS total_tokens,
-                          COUNT(*) AS calls
+                          COALESCE(SUM(cost_usd), 0.0) AS cost_usd,
+                          COUNT(*) AS calls,
+                          COUNT(cost_usd) AS priced_calls
                    FROM token_usage WHERE session_id = ?""",
                 (session_id,),
             ).fetchone()
@@ -757,11 +828,59 @@ class SessionStore:
                 "input_tokens": 0,
                 "output_tokens": 0,
                 "reasoning_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
                 "total_tokens": 0,
+                "cost_usd": 0.0,
                 "calls": 0,
+                "priced_calls": 0,
             }
-        usage["cost_usd"] = self._estimate_cost(model, usage) if model else None
+        priced = int(usage.pop("priced_calls", 0) or 0)
+        calls = int(usage.get("calls") or 0)
+        # Older rows have no per-call model/cost. Fall back to the caller's
+        # model for those, but keep the new per-row sum when every call is priced.
+        if calls and priced == calls:
+            usage["cost_usd"] = round(float(usage.get("cost_usd") or 0.0), 6)
+        else:
+            usage["cost_usd"] = self._estimate_cost(model, usage) if model else None
+        input_tokens = int(usage.get("input_tokens") or 0)
+        cache_read = int(usage.get("cache_read_tokens") or 0)
+        usage["cache_hit_rate"] = (
+            round(cache_read / input_tokens, 4) if input_tokens else 0.0
+        )
+        usage["cache_savings_tokens"] = cache_read
         return usage
+
+    def session_usage_by_model(self, session_id: str) -> list[dict]:
+        """Per-model cost breakdown for the cost panel; newest rows first."""
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT COALESCE(NULLIF(model, ''), 'unknown') AS model,
+                          COALESCE(NULLIF(provider, ''), '') AS provider,
+                          COUNT(*) AS calls,
+                          COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                          COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                          COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
+                          COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+                          COALESCE(SUM(cache_write_tokens), 0) AS cache_write_tokens,
+                          COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                          COALESCE(SUM(cost_usd), 0.0) AS cost_usd,
+                          COUNT(cost_usd) AS priced_calls
+                   FROM token_usage WHERE session_id = ?
+                   GROUP BY model, provider ORDER BY MAX(created_at) DESC""",
+                (session_id,),
+            ).fetchall()
+        result: list[dict] = []
+        for row in rows:
+            item = dict(row)
+            item["cost_usd"] = (
+                round(float(item.get("cost_usd") or 0.0), 6)
+                if int(item.get("priced_calls") or 0) > 0
+                else None
+            )
+            item.pop("priced_calls", None)
+            result.append(item)
+        return result
 
     @staticmethod
     def _estimate_cost(model: str | None, usage: dict) -> float | None:
@@ -777,20 +896,23 @@ class SessionStore:
             # yields None; a status call must not add a 20 s HTTP timeout.
             catalog = _load_cache(default_home()) or _FALLBACK_SNAPSHOT
             provider = model.split("/", 1)[0] if "/" in model else ""
-            entry = lookup(catalog, provider, model) if provider else None
+            bare_model = model.split("/", 1)[1] if "/" in model else model
+            entry = lookup(catalog, provider, bare_model) if provider else None
             if entry is None:
                 # Bare model names (deepseek-chat) are listed under their vendor
                 # entry; search every provider for an exact model id.
                 for vendor, data in (catalog or {}).items():
-                    if model in (data.get("models") or {}):
+                    if bare_model in (data.get("models") or {}):
                         provider = vendor
                         break
             return estimate_cost(
                 catalog,
                 provider,
-                model,
+                bare_model,
                 int(usage.get("input_tokens") or 0),
                 int(usage.get("output_tokens") or 0),
+                cache_read_tokens=int(usage.get("cache_read_tokens") or 0),
+                cache_write_tokens=int(usage.get("cache_write_tokens") or 0),
             )
         except Exception:
             return None

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { FullConfig, HookEntry, McpServer, ModelProfile, ProbeResult, SettingsPayload, Status } from "../types"
-import { fetchConfig, fetchAgentsMd, saveAgentsMd, saveSettings, testConnection, listModelProfiles, saveModelProfile, deleteModelProfile, activateModelProfile, fetchDiagnostics, runSelfHeal, savePermissionRules, deletePermissionRule, saveApprovalProfile, deleteApprovalProfile, activateApprovalProfile, type HealthRow } from "../api"
+import type { CostReport, FullConfig, HookEntry, McpServer, ModelProfile, ProbeResult, ProviderPreset, SettingsPayload, Status } from "../types"
+import { fetchConfig, fetchAgentsMd, fetchCostReport, fetchProviderPresets, saveAgentsMd, saveSettings, testConnection, listModelProfiles, saveModelProfile, deleteModelProfile, activateModelProfile, fetchDiagnostics, runSelfHeal, savePermissionRules, deletePermissionRule, saveApprovalProfile, deleteApprovalProfile, activateApprovalProfile, type HealthRow } from "../api"
 import MemorySection from "./MemorySection"
 import SkillsSection from "./SkillsSection"
 import PromptsSection from "./PromptsSection"
@@ -65,17 +65,33 @@ type Tab =
   | "debug"
   | "advanced"
 
-// 预装模型预设：国内可用优先，用户选一个自动填 provider/base_url/model，只需填 API Key
-const MODEL_PRESETS: { labelKey: TranslationKey; provider: string; base_url: string; model: string }[] = [
-  { labelKey: "preset.deepseek", provider: "openai_compat", base_url: "https://api.deepseek.com/v1", model: "deepseek-chat" },
-  { labelKey: "preset.qwen", provider: "openai_compat", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
-  { labelKey: "preset.kimi", provider: "openai_compat", base_url: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" },
-  { labelKey: "preset.glm", provider: "openai_compat", base_url: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash" },
-  { labelKey: "preset.doubao", provider: "openai_compat", base_url: "https://ark.cn-beijing.volces.com/api/v3", model: "doubao-pro-32k" },
-  { labelKey: "preset.agnes", provider: "openai_compat", base_url: "https://api.agnes-ai.cn/v1", model: "agnes-2.5-flash" },
-  { labelKey: "preset.ollama", provider: "ollama", base_url: "http://localhost:11434/v1", model: "qwen2.5-coder" },
-  { labelKey: "preset.mock", provider: "mock", base_url: "http://localhost", model: "mock-model" },
+// Server presets are authoritative; this fallback only keeps the select usable
+// if /api/provider-presets is unreachable during startup.
+const DEFAULT_PRESETS: ProviderPreset[] = [
+  { id: "deepseek", label: "DeepSeek", provider: "openai_compat", base_url: "https://api.deepseek.com/v1", model: "deepseek-chat", api_key_env: "DEEPSEEK_API_KEY", native: false, prompt_cache: false, tier: "cost", note: "" },
+  { id: "qwen", label: "Qwen / 百炼", provider: "openai_compat", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen3-coder-plus", api_key_env: "DASHSCOPE_API_KEY", native: false, prompt_cache: false, tier: "capability", note: "" },
+  { id: "kimi", label: "Kimi / Moonshot", provider: "openai_compat", base_url: "https://api.moonshot.cn/v1", model: "kimi-k2-0905-preview", api_key_env: "MOONSHOT_API_KEY", native: false, prompt_cache: false, tier: "capability", note: "" },
+  { id: "glm", label: "GLM / 智谱", provider: "openai_compat", base_url: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4.5", api_key_env: "ZHIPUAI_API_KEY", native: false, prompt_cache: false, tier: "capability", note: "" },
+  { id: "doubao", label: "豆包 / 方舟", provider: "openai_compat", base_url: "https://ark.cn-beijing.volces.com/api/v3", model: "doubao-seed-code-preview", api_key_env: "ARK_API_KEY", native: false, prompt_cache: false, tier: "cost", note: "" },
+  { id: "anthropic", label: "Anthropic Claude", provider: "anthropic", base_url: "", model: "claude-sonnet-4-5", api_key_env: "ANTHROPIC_API_KEY", native: true, prompt_cache: true, tier: "capability", note: "" },
+  { id: "openai", label: "OpenAI", provider: "openai", base_url: "", model: "gpt-5", api_key_env: "OPENAI_API_KEY", native: true, prompt_cache: false, tier: "capability", note: "" },
+  { id: "gemini", label: "Google Gemini", provider: "gemini", base_url: "", model: "gemini-2.5-pro", api_key_env: "GEMINI_API_KEY", native: true, prompt_cache: false, tier: "capability", note: "" },
+  { id: "azure", label: "Azure OpenAI", provider: "azure", base_url: "https://YOUR-RESOURCE.openai.azure.com", model: "gpt-4.1", api_key_env: "AZURE_OPENAI_API_KEY", native: true, prompt_cache: false, tier: "capability", note: "" },
+  { id: "bedrock", label: "AWS Bedrock", provider: "bedrock", base_url: "", model: "anthropic.claude-3-5-sonnet-20240620-v1:0", api_key_env: "AWS_ACCESS_KEY_ID", native: true, prompt_cache: false, tier: "capability", note: "" },
+  { id: "ollama", label: "Ollama 本地", provider: "ollama", base_url: "http://127.0.0.1:11434/v1", model: "qwen3-coder:latest", api_key_env: "", native: false, prompt_cache: false, tier: "offline", note: "" },
+  { id: "mock", label: "Mock 演示", provider: "mock", base_url: "http://localhost", model: "mock-model", api_key_env: "", native: false, prompt_cache: false, tier: "offline", note: "" },
 ]
+
+const PROVIDER_OPTIONS = [
+  ["openai_compat", "OpenAI 兼容 / 国产"],
+  ["anthropic", "Anthropic"],
+  ["openai", "OpenAI"],
+  ["gemini", "Gemini"],
+  ["azure", "Azure OpenAI"],
+  ["bedrock", "AWS Bedrock"],
+  ["ollama", "Ollama"],
+  ["mock", "Mock"],
+] as const
 
 const TAB_GROUPS: {
   labelKey: TranslationKey
@@ -244,6 +260,8 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
   const [notice, setNotice] = useState("")
   const [busy, setBusy] = useState<"save" | "test" | "profile" | null>(null)
   const [profiles, setProfiles] = useState<ModelProfile[]>([])
+  const [presets, setPresets] = useState<ProviderPreset[]>(DEFAULT_PRESETS)
+  const [costReport, setCostReport] = useState<CostReport | null>(null)
   const [showProfileForm, setShowProfileForm] = useState(false)
   const [profileForm, setProfileForm] = useState({ id: "", name: "", provider: "openai_compat", base_url: "", model: "", api_key: "", api_key_env: "", api_keysText: "", fallbackModelsText: "", small_model: "" })
   const [protectedText, setProtectedText] = useState("")
@@ -392,6 +410,14 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
     return out
   }
 
+  async function refreshCost() {
+    try {
+      setCostReport(await fetchCostReport())
+    } catch {
+      // Cost is informational; a failed read must not block settings edits.
+    }
+  }
+
   async function refreshProfiles() {
     try {
       const data = await listModelProfiles()
@@ -403,6 +429,10 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
 
   useEffect(() => {
     refreshProfiles()
+    fetchProviderPresets()
+      .then((d) => { if (d.presets?.length) setPresets(d.presets) })
+      .catch(() => undefined)
+    fetchCostReport().then(setCostReport).catch(() => undefined)
     fetchConfig()
       .then((data) => {
         if (!dirtyRef.current.cfg) setCfg(data)
@@ -471,6 +501,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
           max_tool_rounds: cfg.agent.max_tool_rounds,
           max_repeat_calls: cfg.agent.max_repeat_calls,
           max_turn_tokens: cfg.agent.max_turn_tokens,
+          max_session_cost_usd: cfg.agent.max_session_cost_usd ?? 0,
           max_output_chars: cfg.agent.max_output_chars,
           show_thinking: cfg.agent.show_thinking,
           show_tools: cfg.agent.show_tools,
@@ -539,6 +570,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
       // Re-base the form on what the backend actually stored, so masked echoes
       // and server-side normalisation are reflected without a reload.
       setCfg(data.config)
+      fetchCostReport().then(setCostReport).catch(() => undefined)
       setProtectedText(data.config.agent.protected_paths?.join("\n") ?? "")
       setHookRows((data.config.hooks || []).map((h) => ({ ...h, args: [...(h.args || [])] })))
       // Saved settings are authoritative: drop per-row raw buffers so a
@@ -865,24 +897,27 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                 </div>
                 <Field label={t("model.provider", lang)}>
                   <Select value={cfg.provider.name} onChange={(e) => { dirtyRef.current.cfg = true; setCfg((c) => (c ? { ...c, provider: { ...c.provider, name: e.target.value } } : c)) }}>
-                    <option value="openai_compat">openai_compat</option>
-                    <option value="ollama">ollama</option>
+                    {PROVIDER_OPTIONS.map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
                   </Select>
                 </Field>
                 <Field label={t("settings.presets", lang)}>
                   <Select
                     value=""
                     onChange={(e) => {
-                      const p = MODEL_PRESETS.find((x) => x.labelKey === e.target.value)
+                      const p = presets.find((x) => x.id === e.target.value)
                       if (!p) return
                       dirtyRef.current.cfg = true
-                      setCfg((c) => (c ? { ...c, provider: { ...c.provider, name: p.provider, base_url: p.base_url, model: p.model } } : c))
-                      setNotice(t("settings.presetFilled", lang, { name: t(p.labelKey, lang) }))
+                      setCfg((c) => (c ? { ...c, provider: { ...c.provider, name: p.provider, base_url: p.base_url, model: p.model, api_key_env: p.api_key_env || c.provider.api_key_env } } : c))
+                      setNotice(lang === "zh"
+                        ? `已填入 ${p.label}${p.native ? "（原生通道）" : ""}，只需补 API Key`
+                        : `Filled ${p.label}${p.native ? " (native)" : ""}; add the API key`)
                     }}
                   >
                     <option value="">{t("settings.selectPreset", lang)}</option>
-                    {MODEL_PRESETS.map((p) => (
-                      <option key={p.labelKey} value={p.labelKey}>{t(p.labelKey, lang)}</option>
+                    {presets.map((p) => (
+                      <option key={p.id} value={p.id}>{p.label}{p.native ? " · native" : ""}</option>
                     ))}
                   </Select>
                 </Field>
@@ -929,6 +964,87 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
               </section>
 
               <section className="flex flex-col gap-2.5 rounded-xl border border-line bg-panel p-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-ink">{lang === "zh" ? "成本与缓存" : "Cost & cache"}</h3>
+                  <Button size="sm" variant="outline" onClick={() => void refreshCost()}>
+                    {lang === "zh" ? "刷新" : "Refresh"}
+                  </Button>
+                </div>
+                {costReport?.session ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                      <div className="rounded-lg border border-line bg-panel2 px-2.5 py-2">
+                        <div className="text-ink3">{lang === "zh" ? "总 token" : "Total tokens"}</div>
+                        <div className="mt-0.5 font-mono text-sm text-ink">{costReport.session.total_tokens.toLocaleString()}</div>
+                      </div>
+                      <div className="rounded-lg border border-line bg-panel2 px-2.5 py-2">
+                        <div className="text-ink3">{lang === "zh" ? "缓存命中" : "Cache hit"}</div>
+                        <div className="mt-0.5 font-mono text-sm text-ink">{((costReport.session.cache_hit_rate ?? 0) * 100).toFixed(1)}%</div>
+                        <div className="text-[10px] text-ink3">{costReport.session.cache_read_tokens ?? 0} cached</div>
+                      </div>
+                      <div className="rounded-lg border border-line bg-panel2 px-2.5 py-2">
+                        <div className="text-ink3">{lang === "zh" ? "调用次数" : "Calls"}</div>
+                        <div className="mt-0.5 font-mono text-sm text-ink">{costReport.session.calls}</div>
+                      </div>
+                      <div className="rounded-lg border border-line bg-panel2 px-2.5 py-2">
+                        <div className="text-ink3">{lang === "zh" ? "本会话成本" : "Session cost"}</div>
+                        <div className="mt-0.5 font-mono text-sm text-ink">
+                          {costReport.session.cost_usd == null ? "—" : `$${costReport.session.cost_usd.toFixed(4)}`}
+                        </div>
+                        {costReport.budget_usd ? (
+                          <div className="text-[10px] text-ink3">
+                            {lang === "zh" ? "预算" : "Budget"} ${costReport.budget_usd.toFixed(2)}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <Field label={lang === "zh" ? "会话成本上限（USD，0 = 不限）" : "Session cost cap (USD, 0 = off)"}>
+                      <TextInput
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={cfg.agent.max_session_cost_usd ?? 0}
+                        onChange={(e) => patchAgent({ max_session_cost_usd: Math.max(0, Number(e.target.value) || 0) })}
+                      />
+                    </Field>
+                    {costReport.by_model.length > 0 && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[11px]">
+                          <thead>
+                            <tr className="border-b border-line text-left text-ink3">
+                              <th className="py-1 pr-2 font-medium">Model</th>
+                              <th className="py-1 pr-2 font-medium">Calls</th>
+                              <th className="py-1 pr-2 font-medium">Tokens</th>
+                              <th className="py-1 font-medium">Cost</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {costReport.by_model.map((row) => (
+                              <tr key={`${row.provider}:${row.model}`} className="border-b border-line/60 last:border-0">
+                                <td className="py-1 pr-2 font-mono text-ink">{row.model}</td>
+                                <td className="py-1 pr-2 text-ink2">{row.calls}</td>
+                                <td className="py-1 pr-2 font-mono text-ink2">{row.total_tokens.toLocaleString()}</td>
+                                <td className="py-1 font-mono text-ink2">
+                                  {row.cost_usd == null ? "—" : `$${row.cost_usd.toFixed(4)}`}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    <p className="text-[11px] leading-relaxed text-ink3">
+                      {lang === "zh"
+                        ? "缓存命中按 provider 返回的 cache read / cached tokens 统计；未知价格显示 —，不会伪造成 0。"
+                        : "Cache hit uses provider-reported cache read / cached tokens; unknown prices show —, never a fake zero."}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-ink3">{lang === "zh" ? "暂无调用记录。" : "No calls yet."}</p>
+                )}
+              </section>
+
+              <section className="flex flex-col gap-2.5 rounded-xl border border-line bg-panel p-4">
                 <h3 className="text-sm font-semibold text-ink">{t("model.resilience", lang)}</h3>
                 <p className="text-xs leading-relaxed text-ink3">{t("model.resilienceDesc", lang)}</p>
                 <Field label={t("model.apiKeys", lang)} hint={cfg.provider.api_keys_count > 0 ? t("model.apiKeysHint", lang, { n: cfg.provider.api_keys_count }) : undefined}>
@@ -960,8 +1076,9 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                     </Field>
                     <Field label={t("model.provider", lang)}>
                       <Select value={profileForm.provider} onChange={(e) => setProfileForm((p) => ({ ...p, provider: e.target.value }))}>
-                        <option value="openai_compat">openai_compat</option>
-                        <option value="ollama">ollama</option>
+                        {PROVIDER_OPTIONS.map(([value, label]) => (
+                          <option key={value} value={value}>{label}</option>
+                        ))}
                       </Select>
                     </Field>
                     <Field label={t("model.baseUrl", lang)}>

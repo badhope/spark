@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import cast
 
-from spark.config import ProviderName, activate_model_profile
+from spark.config import PROVIDER_NAMES, ProviderName, activate_model_profile
 from spark.errors import SparkError
 from spark.web._handlers_common import _save_config
 from spark.web._httpbase import HandlerBase
@@ -39,11 +39,15 @@ def _handle_models_save_locked(handler: HandlerBase, body: dict) -> None:
     model = str(body.get("model") or "").strip()
     provider_name = str(body.get("provider") or "openai_compat").strip()
     api_key = str(body.get("api_key") or "").strip()
-    if provider_name not in {"openai_compat", "ollama", "mock"}:
-        handler._json(400, {"error": "provider must be openai_compat, ollama or mock"})
+    if provider_name not in PROVIDER_NAMES:
+        handler._json(400, {"error": f"provider must be one of: {', '.join(PROVIDER_NAMES)}"})
         return
-    if not base_url or not model:
-        handler._json(400, {"error": "base_url and model are required"})
+    native_without_base = provider_name in {"anthropic", "openai", "gemini", "bedrock"}
+    if not model or (not base_url and not native_without_base):
+        handler._json(
+            400,
+            {"error": "base_url and model are required (native Anthropic/OpenAI/Gemini/Bedrock omit base_url)"},
+        )
         return
     state = _route_state(handler)
     pid = str(body.get("id") or "").strip()

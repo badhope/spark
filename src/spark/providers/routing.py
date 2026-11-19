@@ -47,7 +47,9 @@ TierId = Literal[
     "ollama_local",
 ]
 TierClass = Literal["capability", "cost", "offline"]
-TaskType = Literal["code", "debug", "chat", "offline"]
+TaskType = Literal[
+    "code", "debug", "chat", "offline", "plan", "edit", "review", "compact", "title"
+]
 Budget = Literal["low", "medium", "high"]
 
 
@@ -202,9 +204,11 @@ def _class_for_task(task_type: TaskType, budget: Budget, offline: bool) -> TierC
     """按任务类型 + 预算推导目标档位类。"""
     if offline:
         return "offline"
-    if task_type in ("code", "debug"):
-        # 复杂代码/调试：能力档（debug 尤其需要 thinking）
+    if task_type in ("code", "debug", "plan", "review", "edit"):
+        # 复杂代码/调试/规划/审查：能力档（debug 尤其需要 thinking）
         return "capability"
+    if task_type in ("compact", "title"):
+        return "cost"
     if budget == "low":
         return "cost"
     # chat 类默认成本档；high 预算的简单问答仍走能力档
@@ -300,6 +304,62 @@ def decide_tier(
         offline=True,
         degraded_from=degraded,
         reason="fallback:offline-last-resort",
+    )
+
+
+def describe_decision(decision: RouteDecision) -> dict[str, str | bool | list[str]]:
+    """Machine-readable decision payload for CLI/Web; no secrets included."""
+    return {
+        "tier": decision.tier.id,
+        "class": decision.tier.cls,
+        "label": decision.tier.label,
+        "model": decision.tier.model,
+        "provider": decision.tier.provider,
+        "task_type": decision.task_type,
+        "budget": decision.budget,
+        "offline": decision.offline,
+        "degraded_from": list(decision.degraded_from),
+        "reason": decision.reason,
+        "base_url": decision.tier.base_url,
+    }
+
+
+def route_for_cli(
+    cfg: SparkConfig,
+    *,
+    tier_class: str = "auto",
+    task_type: TaskType = "code",
+    budget: Budget = "medium",
+) -> RouteDecision:
+    """Resolve a ``--tier capability|cost|offline`` override.
+
+    Availability is derived from env plus an inline key whose base_url matches
+    the tier, so a user who pasted a key into config is not forced to export
+    the same key as an environment variable.
+    """
+    env = dict(os.environ)
+    available: set[str] = set()
+    for tier_id, entry in MODEL_REGISTRY.items():
+        if entry.provider == "ollama":
+            available.add(tier_id)
+        elif entry.api_key_env and env.get(entry.api_key_env):
+            available.add(tier_id)
+        elif cfg.provider.api_key and cfg.provider.base_url.rstrip("/") == entry.base_url.rstrip("/"):
+            available.add(tier_id)
+    offline = tier_class == "offline"
+    if tier_class in ("capability", "cost"):
+        # Explicit class: use a task type that maps to that class, without
+        # accidentally upgrading a cost request through high budget.
+        target_task: TaskType = "code" if tier_class == "capability" else "compact"
+        target_budget: Budget = "medium"
+    else:
+        target_task = task_type
+        target_budget = budget
+    return decide_tier(
+        task_type=target_task,
+        budget=target_budget,
+        offline=offline,
+        available=available,
     )
 
 

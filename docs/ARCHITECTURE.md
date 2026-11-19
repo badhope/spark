@@ -63,7 +63,7 @@ AgentLoop 是核心引擎，负责管理整个对话回合：
 | 模块 | 作用 |
 |------|------|
 | AGENTS.md | 注入项目级说明，定义工作流与约定 |
-| Token 估算 | tiktoken（模型已知时用 `encoding_for_model`，否则 `o200k_base`）；不可用时回退启发式 |
+| Token 估算 | `litellm.token_counter`（模型已知时走厂商 tokenizer 注册表）；不可用时回退 tiktoken / 启发式 |
 | 自动压缩 | 85% 阈值触发，保留最近 8 条消息 + 分段摘要 |
 | 记忆检索 | 关键词匹配 → LLM 抽取 → 语义检索（降级关键词） |
 
@@ -76,10 +76,15 @@ class BaseProvider(ABC):
     @abstractmethod
     async def stream(self, messages, schemas) -> AsyncIterator[Delta]: ...
 
-class OpenAICompatProvider(BaseProvider):     # OpenAI 兼容接口
+class OpenAICompatProvider(BaseProvider):     # LiteLLM 统一实现：兼容入口 + 原生前缀
 class OllamaProvider(BaseProvider):           # 本地 Ollama 服务
 class MockProvider(BaseProvider):             # 测试用 mock
 ```
+
+`ProviderName` 共 8 种：`openai_compat`（国产统一入口）、`openai`（Responses bridge）、
+`anthropic`（Messages + prompt cache）、`gemini`、`azure`、`bedrock`、`ollama`、`mock`。
+`providers/presets.py` 是 Web 设置与 `spark providers` 的单一预设源；原生命名只做
+LiteLLM 前缀选择，重试/密钥池/流式解析仍共用一套实现。
 
 ### 4. 工具注册表 (`src/spark/tools/registry.py`)
 

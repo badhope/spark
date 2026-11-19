@@ -137,6 +137,54 @@ def _split_think(text: str, state: dict) -> list[tuple[str, str]]:
 # ---------------------------------------------------------------------------
 
 
+def _apply_anthropic_cache(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Mark the system prefix as an ephemeral Anthropic prompt-cache breakpoint.
+
+    LiteLLM converts OpenAI-shaped messages into Anthropic Messages.  A system
+    message is the only stable prefix that is identical across turns; marking
+    the last user message would create a new cache entry each turn and waste
+    the cache-write premium.
+    """
+    out: list[dict[str, Any]] = []
+    for item in messages:
+        if item.get("role") != "system":
+            out.append(item)
+            continue
+        cloned = dict(item)
+        content = cloned.get("content")
+        if isinstance(content, str) and content:
+            cloned["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+        elif isinstance(content, list):
+            blocks = [dict(block) if isinstance(block, dict) else block for block in content]
+            for block in blocks:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    block["cache_control"] = {"type": "ephemeral"}
+                    break
+            cloned["content"] = blocks
+        out.append(cloned)
+    return out
+
+
+def _apply_anthropic_tool_cache(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Mark the last tool schema as a cache breakpoint.
+
+    Anthropic caches the *entire* tools block up to the last marked tool, so
+    marking the final definition covers every preceding schema.  The input
+    list is copied; callers reuse the registry schema across turns.
+    """
+    if not tools:
+        return tools
+    out = [dict(tool) for tool in tools]
+    out[-1]["cache_control"] = {"type": "ephemeral"}
+    return out
+
+
 def litellm_model_name(name: str) -> tuple[str, str | None]:
     """Return ``(model, custom_llm_provider)`` for a LiteLLM call.
 
@@ -169,12 +217,23 @@ class OpenAICompatProvider:
         fallback_models: list[str] | None = None,
         api_keys: list[str] | None = None,
         thinking: str = "default",
+        native: str = "",
+        prompt_cache: bool = False,
+        responses_api: bool = False,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key = api_key
         self.max_retries = max_retries
         self.thinking = thinking
+        #: Native LiteLLM provider prefix (``anthropic`` / ``openai`` / ``gemini``
+        #: / ``azure`` / ``bedrock``); empty means the OpenAI-compatible path.
+        self.native = native.strip().lower()
+        self.prompt_cache = bool(prompt_cache)
+        #: OpenAI/Azure native requests can use the Responses bridge.  LiteLLM
+        #: converts Responses events back into chat-completion chunks, so the
+        #: AgentLoop/SSE contract stays unchanged.
+        self.responses_api = bool(responses_api)
         # P1：fallback 链（去重，排除主模型）；凭据池（api_key 永远是池首，去重保序）
         self.fallback_models = [m for m in (fallback_models or []) if m and m != model]
         pool: list[str] = []
@@ -198,7 +257,13 @@ class OpenAICompatProvider:
         ``model`` 传入时覆盖 ``self.model``（fallback 目标用）；规则见
         :func:`litellm_model_name`。
         """
-        return litellm_model_name(model or self.model)
+        target = model or self.model
+        if self.responses_api and self.native in {"openai", "azure"} and "/" not in target:
+            # LiteLLM parses provider/responses/<model> and returns chat chunks.
+            return f"{self.native}/responses/{target}", None
+        if self.native and "/" not in target:
+            return f"{self.native}/{target}", None
+        return litellm_model_name(target)
 
     # -- public interface (Provider protocol) ----------------------------------
 
@@ -281,10 +346,15 @@ class OpenAICompatProvider:
     ) -> dict[str, Any]:
         model_arg, provider_hint = self._litellm_model(target)
         request_key = self._next_key()
+        payload_messages = _to_openai(messages)
+        payload_tools = tools
+        if self.prompt_cache:
+            payload_messages = _apply_anthropic_cache(payload_messages)
+            payload_tools = _apply_anthropic_tool_cache(tools)
         completion_kwargs: dict[str, Any] = dict(
             model=model_arg,
-            messages=_to_openai(messages),
-            tools=tools or None,
+            messages=payload_messages,
+            tools=payload_tools or None,
             stream=True,
             # P1：请求流尾 usage 帧（choices 为空、usage 有值）；
             # drop_params=True 兜底不支持该参数的 provider
@@ -510,6 +580,14 @@ def _collect_usage(chunk: Any, reported_usage: dict[str, int]) -> None:
         )
         if reasoning_tok:
             reported_usage["reasoning_tokens"] = int(reasoning_tok)
+        prompt_details = getattr(usage_obj, "prompt_tokens_details", None)
+        cached_tok = getattr(prompt_details, "cached_tokens", None) if prompt_details else None
+        cache_read = getattr(usage_obj, "cache_read_input_tokens", None)
+        cache_write = getattr(usage_obj, "cache_creation_input_tokens", None)
+        if cached_tok or cache_read:
+            reported_usage["cache_read_tokens"] = int(cached_tok or cache_read or 0)
+        if cache_write:
+            reported_usage["cache_write_tokens"] = int(cache_write)
     except (TypeError, ValueError):
         pass
 

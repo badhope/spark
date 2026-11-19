@@ -147,6 +147,9 @@ def _parse_agent_numbers(agent_in: dict, state) -> dict[str, Any] | str:
         token_in = int(
             agent_in.get("max_turn_tokens", state.cfg.agent.max_turn_tokens)
         )
+        cost_in = float(
+            agent_in.get("max_session_cost_usd", state.cfg.agent.max_session_cost_usd)
+        )
     except (TypeError, ValueError):
         return "invalid agent numbers"
     return {
@@ -156,6 +159,7 @@ def _parse_agent_numbers(agent_in: dict, state) -> dict[str, Any] | str:
         "max_output_chars": max_output_chars,
         "repeat_in": repeat_in,
         "token_in": token_in,
+        "cost_in": cost_in,
     }
 
 
@@ -503,6 +507,7 @@ def _apply_validated_settings(
     cfg.agent.max_output_chars = numbers["max_output_chars"]
     cfg.agent.max_repeat_calls = numbers["repeat_in"]
     cfg.agent.max_turn_tokens = numbers["token_in"]
+    cfg.agent.max_session_cost_usd = numbers["cost_in"]
     cfg.agent.system_prompt = system_prompt
     for key, value in display_flags.items():
         setattr(cfg.agent, key, value)

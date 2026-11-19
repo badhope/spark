@@ -9,6 +9,8 @@ import type {
   FullConfig,
   SettingsPayload,
   ModelProfile,
+  ProviderPreset,
+  CostReport,
 } from "./types"
 import { useUiStore } from "./store/uiStore"
 
@@ -63,6 +65,18 @@ export async function fetchStatus(): Promise<Status> {
 
 export async function fetchConfig(): Promise<FullConfig> {
   return readJson<FullConfig>(await fetchWithTimeout("/api/config"))
+}
+
+export async function fetchProviderPresets(): Promise<{ presets: ProviderPreset[]; native: string[] }> {
+  return readJson(await fetchWithTimeout("/api/provider-presets"))
+}
+
+export async function fetchCostReport(): Promise<CostReport> {
+  return readJson(await fetchWithTimeout("/api/cost"))
+}
+
+export async function fetchRoutingPreview(tier: string, task: string, budget: string): Promise<Record<string, unknown>> {
+  return readJson(await fetchWithTimeout(`/api/routing/preview?tier=${encodeURIComponent(tier)}&task=${encodeURIComponent(task)}&budget=${encodeURIComponent(budget)}`))
 }
 
 export async function fetchAgentsMd(): Promise<{

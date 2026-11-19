@@ -95,7 +95,7 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
         self._classification_cache: dict[str, dict[str, Any]] = {}
         self._turn_tokens = 0
         # P2 上下文合同：turn 级 usage 聚合 + 自动检查点 id（replay flush 用）
-        self._turn_usage_totals: dict[str, int | str] | None = None
+        self._turn_usage_totals: dict[str, int | float | str] | None = None
         self._last_checkpoint_id: int | None = None
         self._turn_graph = None  # LangGraph 状态机（首次 iter_turn 编译缓存）
         self._last_round: dict[str, Any] = {"tool_calls": [], "text": "", "error": None}
@@ -257,11 +257,15 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
                 ChatMessage(role="assistant", content="".join(reasoning_parts) or None)
             )
             source = "estimated"
+            cache_read = 0
+            cache_write = 0
             ru = getattr(self, "_reported_usage", None)
             if ru:
                 in_tok = int(ru.get("prompt_tokens") or 0)
                 out_tok = int(ru.get("completion_tokens") or 0)
                 reasoning_tok = int(ru.get("reasoning_tokens") or 0)
+                cache_read = int(ru.get("cache_read_tokens") or 0)
+                cache_write = int(ru.get("cache_write_tokens") or 0)
                 if in_tok or out_tok or reasoning_tok:
                     input_est, output_est, reasoning_est = in_tok, out_tok, reasoning_tok
                     source = "reported"
@@ -272,6 +276,10 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
                 output_est,
                 reasoning_est,
                 source=source,
+                model=self.cfg.provider.model,
+                provider=str(self.cfg.provider.name),
+                cache_read_tokens=cache_read,
+                cache_write_tokens=cache_write,
             )
             # P2 replay：turn 级聚合（replay flush 用，失败不影响主流程）
             totals = getattr(self, "_turn_usage_totals", None)
@@ -280,8 +288,23 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
                     totals["input_tokens"] = int(totals.get("input_tokens", 0)) + int(input_est)
                     totals["output_tokens"] = int(totals.get("output_tokens", 0)) + int(output_est)
                     totals["reasoning_tokens"] = int(totals.get("reasoning_tokens", 0)) + int(reasoning_est)
+                    totals["cache_read_tokens"] = int(totals.get("cache_read_tokens", 0)) + cache_read
+                    totals["cache_write_tokens"] = int(totals.get("cache_write_tokens", 0)) + cache_write
                     if source == "reported":
                         totals["source"] = "reported"
+                    call_cost = self.store._estimate_cost(
+                        self.cfg.provider.model,
+                        {
+                            "input_tokens": input_est,
+                            "output_tokens": output_est,
+                            "cache_read_tokens": cache_read,
+                            "cache_write_tokens": cache_write,
+                        },
+                    )
+                    if call_cost is not None:
+                        totals["cost_usd"] = round(
+                            float(totals.get("cost_usd", 0.0)) + call_cost, 6
+                        )
                 except (TypeError, ValueError):
                     pass
         except Exception:
@@ -289,13 +312,36 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
 
     def _budget_exceeded(self) -> bool:
         limit = getattr(self.cfg.agent, "max_turn_tokens", 0) or 0
-        return limit > 0 and self._turn_tokens >= limit
+        if limit > 0 and self._turn_tokens >= limit:
+            return True
+        cost_limit = float(getattr(self.cfg.agent, "max_session_cost_usd", 0) or 0)
+        if cost_limit > 0:
+            try:
+                cost = self.store.session_token_usage(
+                    self.session_id, model=self.cfg.provider.model
+                ).get("cost_usd")
+            except Exception:
+                cost = None
+            if isinstance(cost, (int, float)) and cost >= cost_limit:
+                return True
+        return False
 
     def _budget_state(self) -> dict:
         limit = getattr(self.cfg.agent, "max_turn_tokens", 0) or 0
+        session_cost = None
+        cost_limit = float(getattr(self.cfg.agent, "max_session_cost_usd", 0) or 0)
+        if cost_limit > 0:
+            try:
+                session_cost = self.store.session_token_usage(
+                    self.session_id, model=self.cfg.provider.model
+                ).get("cost_usd")
+            except Exception:
+                session_cost = None
         return {
             "turn_tokens": self._turn_tokens,
             "turn_token_limit": limit or None,
+            "session_cost_usd": session_cost,
+            "session_cost_limit_usd": cost_limit or None,
         }
 
     async def run(self, user_text: str, images=None) -> list[TurnEvent]:
@@ -461,6 +507,9 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
             "input_tokens": 0,
             "output_tokens": 0,
             "reasoning_tokens": 0,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "cost_usd": 0.0,
             "source": "estimated",
         }
         self._last_checkpoint_id = None
@@ -616,13 +665,20 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
             self._last_round["error"] = "max_rounds"
             return
         if self._budget_exceeded():
-            yield TurnEvent(
-                type="turn_error",
-                text=(
+            budget = self._budget_state()
+            cost_spent = budget.get("session_cost_usd")
+            cost_limit = budget.get("session_cost_limit_usd")
+            if isinstance(cost_limit, (int, float)) and isinstance(cost_spent, (int, float)):
+                message = f"Cost budget exceeded ({cost_spent:.4f}/{cost_limit:.4f} USD)"
+            else:
+                message = (
                     "Token budget exceeded for this turn "
                     f"({self._turn_tokens}/{self.cfg.agent.max_turn_tokens})"
-                ),
-                data=self._budget_state(),
+                )
+            yield TurnEvent(
+                type="turn_error",
+                text=message,
+                data=budget,
             )
             self._last_round["error"] = "budget"
             return

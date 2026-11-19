@@ -50,7 +50,16 @@ ApprovalMode = Literal[
 * ``approve-plan``— 先出计划并等待批准，批准后按 auto-edit 语义自动执行
 * ``manual``      — 写/执行逐条人工确认
 """
-ProviderName = Literal["openai_compat", "ollama", "mock"]
+ProviderName = Literal[
+    "openai_compat",
+    "openai",
+    "anthropic",
+    "gemini",
+    "azure",
+    "bedrock",
+    "ollama",
+    "mock",
+]
 SandboxMode = Literal["sandbox-only", "workspace", "full-access", "unrestricted"]
 # Single source of truth for CLI/config validation — derived from the Literals so
 # a mode can never be added to the type without also being accepted at runtime.
@@ -139,6 +148,8 @@ class AgentConfig(BaseModel):
     max_tool_rounds: int = Field(default=30, ge=1, le=1000)
     max_repeat_calls: int = Field(default=4, ge=0, le=10000)
     max_turn_tokens: int = Field(default=0, ge=0, le=100_000_000)
+    #: 会话成本上限（USD，0 = 不限）。达到后下一轮直接拒绝，避免失控账单。
+    max_session_cost_usd: float = Field(default=0.0, ge=0.0, le=1_000_000.0)
     max_output_chars: int = Field(default=8000, ge=200, le=1_000_000)
     effort: Literal["low", "medium", "high"] = "medium"
     show_thinking: bool = True
@@ -357,6 +368,8 @@ class SparkConfig(BaseSettings):
     #: Self-heal audit trail filled by :func:`load_config` (empty = nothing was
     #: repaired). Runtime-only: never serialised back to TOML.
     recovery_notes: list[str] = Field(default_factory=list)
+    #: Last routing decision (CLI --tier / Web preview), runtime-only.
+    routing_decision: dict[str, object] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -799,9 +812,23 @@ def env_api_key(cfg: SparkConfig) -> str:
 def require_api_key(cfg: SparkConfig) -> str | None:
     if cfg.provider.api_key:
         return cfg.provider.api_key
-    if cfg.provider.name in {"mock", "ollama"}:
-        return env_api_key(cfg) or "ollama"
+    if cfg.provider.name in {"mock", "ollama", "bedrock"}:
+        # Bedrock uses the standard AWS credential chain; an empty key is not
+        # a missing Spark key.
+        return env_api_key(cfg) or ("bedrock" if cfg.provider.name == "bedrock" else "ollama")
     key = env_api_key(cfg)
+    if not key and cfg.provider.name in {
+        "anthropic", "openai", "gemini", "azure"
+    }:
+        # CLI `--provider anthropic` should not require the user to also rename
+        # the env var from the vendor's documented name to SPARK_API_KEY.
+        vendor_env = {
+            "anthropic": "ANTHROPIC_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "gemini": "GEMINI_API_KEY",
+            "azure": "AZURE_OPENAI_API_KEY",
+        }[cfg.provider.name]
+        key = os.environ.get(vendor_env) or ""
     if not key:
         raise ConfigError(
             f"Missing API key: neither config's provider.api_key nor "
@@ -862,6 +889,9 @@ def _agent_table(cfg: SparkConfig) -> tomlkit.items.Table:
     agent.add("max_tool_rounds", cfg.agent.max_tool_rounds)
     agent.add("max_repeat_calls", cfg.agent.max_repeat_calls)
     agent.add("max_turn_tokens", cfg.agent.max_turn_tokens)
+    # Always written: saving 0 must overwrite a previously configured cap,
+    # otherwise a user cannot remove a budget from the UI.
+    agent.add("max_session_cost_usd", cfg.agent.max_session_cost_usd)
     agent.add("max_output_chars", cfg.agent.max_output_chars)
     agent.add("show_thinking", cfg.agent.show_thinking)
     agent.add("show_tools", cfg.agent.show_tools)

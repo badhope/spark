@@ -16,10 +16,13 @@ from __future__ import annotations
 import json as _json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qs, unquote, urlparse
 
 from spark.web.session_stream import serve_session_events
+
+if TYPE_CHECKING:
+    from spark.providers.routing import Budget, TaskType
 from spark.web._handlers import (  # noqa: F401  (re-export for backward-compat)
     _handle_agents_md,
     _handle_approval,
@@ -420,6 +423,50 @@ def build_handler_class(html: str):
             if path == "/api/config":
                 state.ensure_default_profile()
                 self._json(200, state.full_config())
+                return
+            if path == "/api/provider-presets":
+                from spark.providers.presets import presets_payload
+
+                qs = parse_qs(urlparse(self.path).query)
+                native_only = (qs.get("native", ["0"])[0] or "").lower() in {
+                    "1",
+                    "true",
+                    "yes",
+                }
+                self._json(
+                    200,
+                    {
+                        "presets": presets_payload(native_only=native_only),
+                        "native": [p["id"] for p in presets_payload(native_only=True)],
+                    },
+                )
+                return
+            if path == "/api/routing/preview":
+                from spark.providers.routing import describe_decision, route_for_cli
+
+                qs = parse_qs(urlparse(self.path).query)
+                decision = route_for_cli(
+                    state.cfg,
+                    tier_class=(qs.get("tier", ["auto"])[0] or "auto"),
+                    task_type=cast("TaskType", qs.get("task", ["code"])[0] or "code"),
+                    budget=cast("Budget", qs.get("budget", ["medium"])[0] or "medium"),
+                )
+                self._json(200, dict(describe_decision(decision)))
+                return
+            if path == "/api/cost":
+                self._json(
+                    200,
+                    {
+                        "session": state.store.session_token_usage(
+                            state.session_id, model=state.cfg.provider.model
+                        ),
+                        "by_model": state.store.session_usage_by_model(state.session_id),
+                        "budget_usd": float(
+                            getattr(state.cfg.agent, "max_session_cost_usd", 0) or 0
+                        )
+                        or None,
+                    },
+                )
                 return
             if path == "/api/models":
                 from spark.config import mask_secret

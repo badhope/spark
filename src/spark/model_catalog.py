@@ -42,7 +42,59 @@ _FALLBACK_SNAPSHOT: dict[str, Any] = {
                 "limit": {"context": 131072, "output": 65536},
             },
         }
-    }
+    },
+    # Native pricing snapshot (USD / 1M tokens).  It exists so the cost panel
+    # can show a number offline; models.dev's live catalog wins when available.
+    "anthropic": {
+        "models": {
+            "claude-sonnet-4-5": {
+                "name": "Claude Sonnet 4.5",
+                "cost": {"input": 3.0, "output": 15.0, "cache_read": 0.30, "cache_write": 3.75},
+                "limit": {"context": 200000, "output": 8192},
+            }
+        }
+    },
+    "openai": {
+        "models": {
+            "gpt-5": {
+                "name": "GPT-5",
+                "cost": {"input": 1.25, "output": 10.0, "cache_read": 0.125},
+                "limit": {"context": 400000, "output": 16384},
+            },
+            "gpt-4.1": {
+                "name": "GPT-4.1",
+                "cost": {"input": 2.50, "output": 10.0, "cache_read": 0.25},
+                "limit": {"context": 1000000, "output": 32768},
+            },
+        }
+    },
+    "gemini": {
+        "models": {
+            "gemini-2.5-pro": {
+                "name": "Gemini 2.5 Pro",
+                "cost": {"input": 1.25, "output": 5.0},
+                "limit": {"context": 1000000, "output": 8192},
+            }
+        }
+    },
+    "azure": {
+        "models": {
+            "gpt-4.1": {
+                "name": "Azure GPT-4.1",
+                "cost": {"input": 2.50, "output": 10.0},
+                "limit": {"context": 1000000, "output": 32768},
+            }
+        }
+    },
+    "bedrock": {
+        "models": {
+            "anthropic.claude-3-5-sonnet-20240620-v1:0": {
+                "name": "Bedrock Claude 3.5 Sonnet",
+                "cost": {"input": 3.0, "output": 15.0, "cache_read": 0.30},
+                "limit": {"context": 200000, "output": 8192},
+            }
+        }
+    },
 }
 
 
@@ -91,9 +143,21 @@ def fetch_catalog(home: Path, *, force: bool = False) -> dict[str, Any]:
     return _FALLBACK_SNAPSHOT
 
 
+_PROVIDER_ALIASES = {
+    "gemini": ("google", "google-ai"),
+    "bedrock": ("amazon-bedrock", "aws"),
+    "azure": ("azure-openai",),
+    "openai": ("openai",),
+}
+
+
 def lookup(catalog: dict[str, Any], provider: str, model: str) -> dict[str, Any] | None:
     """查供应商下的模型条目；provider 名或模型名不匹配时返回 None。"""
-    entry = catalog.get(provider) or catalog.get(provider.lower())
+    candidates = [provider, provider.lower(), *_PROVIDER_ALIASES.get(provider, ())]
+    entry = next(
+        (catalog[key] for key in candidates if isinstance(catalog.get(key), dict)),
+        None,
+    )
     if not isinstance(entry, dict):
         return None
     models = entry.get("models") or {}
@@ -133,8 +197,17 @@ def estimate_cost(
     model: str,
     input_tokens: int,
     output_tokens: int,
+    *,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
 ) -> float | None:
-    """按目录价格估算成本（USD）；无价格数据返回 None。"""
+    """按目录价格估算成本（USD）；无价格数据返回 None。
+
+    Cached input is billed at ``cache_read`` when the catalog provides it;
+    otherwise it falls back to the normal input rate (never pretend cache is
+    free when pricing is unknown).  ``input_tokens`` is treated as the total
+    prompt count, with cached tokens as a subset.
+    """
     m = lookup(catalog, provider, model)
     if not m:
         return None
@@ -142,12 +215,21 @@ def estimate_cost(
     try:
         in_rate = float(cost.get("input") or 0.0)
         out_rate = float(cost.get("output") or 0.0)
+        cache_read_rate = float(cost.get("cache_read") or in_rate)
+        cache_write_rate = float(cost.get("cache_write") or in_rate)
     except (TypeError, ValueError):
         return None
     if in_rate == 0 and out_rate == 0:
         return None
+    total_input = max(0, int(input_tokens))
+    cached = max(0, min(int(cache_read_tokens), total_input))
+    uncached = total_input - cached
     return round(
-        input_tokens / 1_000_000 * in_rate + output_tokens / 1_000_000 * out_rate, 6
+        uncached / 1_000_000 * in_rate
+        + cached / 1_000_000 * cache_read_rate
+        + max(0, int(cache_write_tokens)) / 1_000_000 * cache_write_rate
+        + int(output_tokens) / 1_000_000 * out_rate,
+        6,
     )
 
 
