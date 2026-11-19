@@ -5,7 +5,15 @@ from pathlib import Path
 import httpx
 
 from spark.config import SparkConfig
-from spark.pr import GitHubClient, RepoRef, build_context, format_context, parse_remote
+from spark.pr import (
+    GitHubClient,
+    RepoRef,
+    build_context,
+    format_context,
+    format_review,
+    parse_remote,
+    review_brief,
+)
 from spark.sandbox import WorkdirSandbox
 from spark.tools.pr_tools import PrNumberArgs, pr_view
 from spark.tools.registry import ToolContext, ToolRegistry
@@ -93,6 +101,10 @@ def test_build_context_with_mock_transport() -> None:
     assert context["checks"]["check_runs"][0]["conclusion"] == "success"
     rendered = format_context(context)
     assert "Add browser tool" in rendered and "## Diff" in rendered
+    brief = review_brief(context)
+    assert brief["stats"]["files"] == 1
+    assert any("测试" in row["title"] for row in brief["findings"])
+    assert "Checklist" in format_review(context, brief)
 
 
 def test_pr_view_respects_network_access(tmp_path: Path) -> None:

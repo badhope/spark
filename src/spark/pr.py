@@ -231,6 +231,8 @@ def build_context(
         "additions": int(pr.get("additions") or 0),
         "deletions": int(pr.get("deletions") or 0),
         "changed_files": int(pr.get("changed_files") or 0),
+        "mergeable": pr.get("mergeable"),
+        "mergeable_state": str(pr.get("mergeable_state") or ""),
         "files": [
             {
                 "filename": str(row.get("filename") or ""),
@@ -246,6 +248,149 @@ def build_context(
         "comments": comments,
         "checks": checks,
     }
+
+
+SECURITY_PATH_HINTS = (
+    "auth",
+    "crypto",
+    "secret",
+    "token",
+    "password",
+    "permission",
+    "sandbox",
+    "migration",
+    "docker",
+    ".github/",
+    "pyproject.toml",
+    "package.json",
+    "lock",
+)
+
+
+def review_brief(context: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic review checklist derived from PR metadata and checks.
+
+    This is not an AI review: it surfaces the facts a reviewer must not miss
+    (CI state, risky paths, test gaps, size) so the model/user can focus on
+    reading the diff. The GitHub text itself stays untrusted.
+    """
+    findings: list[dict[str, str]] = []
+    files = context.get("files") or []
+    names = [str(row.get("filename") or "") for row in files]
+    source_changed = [
+        name
+        for name in names
+        if not name.startswith(("docs/", "tests/"))
+        and not name.endswith((".md", ".rst", ".txt"))
+    ]
+    tests_changed = any(
+        name.startswith("tests/") or "/test_" in name or name.endswith("_test.py")
+        for name in names
+    )
+    risky = [
+        name
+        for name in names
+        if any(hint in name.lower() for hint in SECURITY_PATH_HINTS)
+    ]
+    if source_changed and not tests_changed:
+        findings.append(
+            {
+                "severity": "P1",
+                "title": "源码有改动但没有测试改动",
+                "detail": "至少确认现有测试覆盖；否则要求作者补测试或给出人工验证步骤。",
+            }
+        )
+    if risky:
+        findings.append(
+            {
+                "severity": "P1",
+                "title": "触及权限/密钥/构建类路径",
+                "detail": ", ".join(risky[:8]),
+            }
+        )
+    if int(context.get("changed_files") or 0) > 20 or (
+        int(context.get("additions") or 0) + int(context.get("deletions") or 0) > 1000
+    ):
+        findings.append(
+            {
+                "severity": "P2",
+                "title": "变更面较大",
+                "detail": "建议拆分或按文件分层审查，避免漏掉边界条件。",
+            }
+        )
+    checks = context.get("checks") or {}
+    failed = [
+        row
+        for row in (checks.get("check_runs") or [])
+        if row.get("conclusion") in {"failure", "cancelled", "timed_out", "action_required"}
+    ]
+    failed_statuses = [
+        row
+        for row in (checks.get("statuses") or [])
+        if row.get("state") in {"failure", "error"}
+    ]
+    if failed or failed_statuses:
+        names_bad = [str(row.get("name") or row.get("context") or "check") for row in failed + failed_statuses]
+        findings.append(
+            {
+                "severity": "P1",
+                "title": "CI 未通过",
+                "detail": ", ".join(names_bad[:8]),
+            }
+        )
+    if context.get("draft"):
+        findings.append(
+            {"severity": "P3", "title": "草稿 PR", "detail": "作者尚未标记 ready for review。"}
+        )
+    if context.get("mergeable") is False or context.get("mergeable_state") == "dirty":
+        findings.append(
+            {"severity": "P1", "title": "存在合并冲突", "detail": "先解决冲突再审查。"}
+        )
+    checklist = [
+        "读 diff，逐文件确认行为变化与边界条件",
+        "确认新增/修改逻辑有测试覆盖，失败路径也有断言",
+        "检查权限、密钥、网络、文件路径是否越界",
+        "确认 CI 全部通过且没有跳过的必需检查",
+        "检查 PR 描述是否说明动机、风险和回滚方式",
+    ]
+    return {
+        "findings": findings,
+        "checklist": checklist,
+        "stats": {
+            "files": len(files),
+            "source_files": len(source_changed),
+            "tests_changed": tests_changed,
+            "comments": len(context.get("comments") or []),
+            "diff_truncated": bool(context.get("diff_truncated")),
+        },
+    }
+
+
+def format_review(context: dict[str, Any], brief: dict[str, Any]) -> str:
+    lines = [
+        f"# Review brief: #{context['number']} {context['title']}",
+        f"{context['base']} <- {context['head']} by @{context['author']}",
+    ]
+    findings = brief.get("findings") or []
+    lines.append("\n## Findings")
+    if findings:
+        for row in findings:
+            lines.append(f"- [{row.get('severity')}] {row.get('title')}: {row.get('detail')}")
+    else:
+        lines.append("- 没有自动发现的结构性风险；仍需逐行读 diff。")
+    lines.append("\n## Checklist")
+    for item in brief.get("checklist") or []:
+        lines.append(f"- [ ] {item}")
+    stats = brief.get("stats") or {}
+    lines.append(
+        "\n## Stats\n"
+        f"- files: {stats.get('files', 0)}\n"
+        f"- source files: {stats.get('source_files', 0)}\n"
+        f"- tests changed: {stats.get('tests_changed', False)}\n"
+        f"- comments: {stats.get('comments', 0)}\n"
+        f"- diff truncated: {stats.get('diff_truncated', False)}"
+    )
+    return "\n".join(lines)
 
 
 def format_context(context: dict[str, Any]) -> str:

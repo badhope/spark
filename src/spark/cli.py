@@ -2020,6 +2020,38 @@ def pr_diff_cmd(
         raise typer.Exit(2) from exc
 
 
+@pr_app.command("review", help="生成结构化 review brief（风险、测试缺口、CI 清单）")
+def pr_review_cmd(
+    number: int = typer.Argument(...),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    repo: str = typer.Option("", "--repo"),
+    max_diff: int = typer.Option(20000, "--max-diff"),
+    json_output: bool = typer.Option(False, "--json"),
+    include_diff: bool = typer.Option(False, "--diff", help="同时打印完整 PR 上下文"),
+) -> None:
+    import json
+
+    from spark.pr import build_context, format_context, format_review, review_brief
+
+    try:
+        ref = _pr_repo(repo, workdir)
+        client = _pr_client(ref, number)
+        try:
+            context = build_context(client, number, max_diff_chars=max_diff)
+        finally:
+            client.close()
+    except SparkError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    brief = review_brief(context)
+    if json_output:
+        typer.echo(json.dumps({"review": brief, "context": context}, ensure_ascii=False, indent=2))
+        return
+    typer.echo(format_review(context, brief))
+    if include_diff:
+        typer.echo("\n" + format_context(context))
+
+
 @pr_app.command("checks", help="输出 PR 的 CI 检查")
 def pr_checks_cmd(
     number: int = typer.Argument(...),

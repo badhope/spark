@@ -50,6 +50,7 @@ READONLY_TOOLS = {
     "pr_view",
     "pr_diff",
     "pr_checks",
+    "pr_review",
 }
 # These run code, spawn agents, or reach the network on behalf of the repository
 # being edited, so they are not read-only: ``run_tests`` executes whatever the
