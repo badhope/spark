@@ -1,0 +1,10 @@
+{
+  "name": "ship-checklist",
+  "version": "0.1.0",
+  "description": "Official pre-ship checklist command for tests, docs, version and rollback.",
+  "entry": "",
+  "permissions": [],
+  "tools": [],
+ "commands": ["ship"],
+  "hooks": []
+}

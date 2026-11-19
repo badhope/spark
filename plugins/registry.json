@@ -1,0 +1,26 @@
+{
+  "plugins": [
+    {
+      "name": "review-checklist",
+      "version": "0.1.0",
+      "description": "Official read-only review command.",
+      "url": "https://gitcode.com/badhope/spark.git",
+      "ref": "main",
+      "subdir": "plugins/official/review-checklist"
+    },
+    {
+      "name": "ship-checklist",
+      "version": "0.1.0",
+      "description": "Official pre-ship checklist command.",
+      "url": "https://gitcode.com/badhope/spark.git",
+      "ref": "main",
+      "subdir": "plugins/official/ship-checklist"
+    }
+  ],
+  "bundles": {
+    "official": {
+      "description": "Spark official command-only plugin set.",
+      "plugins": ["review-checklist", "ship-checklist"]
+    }
+  }
+}

@@ -167,7 +167,7 @@ spark plugins disable demo
 spark plugins search demo --registry ./registry.json
 spark plugins install-registry demo --registry ./registry.json
 spark plugins install-bundle official --registry ./registry.json
-spark plugins install-official --registry ./registry.json
+spark plugins install-official --registry plugins/registry.json
 spark plugins updates --registry ./registry.json
 spark plugins upgrade demo --registry ./registry.json
 ```

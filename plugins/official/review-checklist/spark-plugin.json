@@ -1,0 +1,10 @@
+{
+  "name": "review-checklist",
+  "version": "0.1.0",
+  "description": "Official read-only review command: inspect a diff for regressions, tests and security boundaries.",
+  "entry": "",
+  "permissions": [],
+  "tools": [],
+  "commands": ["review"],
+  "hooks": []
+}
