@@ -66,6 +66,9 @@ export const useSessionStore = create<SessionState>((set, get) => {
         set({ approval: null })
       }
       set({ question: pending.question ? { question: pending.question.question, options: pending.question.options } : null })
+      if (pending.busy && !pending.approval && !pending.question) {
+        void useChatStore.getState().resumeSession(sessionId, pending.last_seq ?? 0)
+      }
     } catch {
       /* pending is best-effort; switching/history already succeeded */
     }
@@ -109,7 +112,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
       const sid = get().status?.session_id
       try {
         await answerQuestion(answer, sid)
-        if (sid) useSessionRuntimeStore.getState().setPendingQuestion(sid, null)
+        if (sid) {
+          useSessionRuntimeStore.getState().setPendingQuestion(sid, null)
+          const rt = useSessionRuntimeStore.getState().runtimes[sid]
+          if (!useChatStore.getState().streaming && rt) {
+            void useChatStore.getState().resumeSession(sid, rt.lastSeq)
+          }
+        }
         set({ question: null })
       } catch {
         useUiStore.getState().pushToast("toast.answerFailed", "error")
@@ -167,9 +176,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
         set({ status: data.status, plan: data.status.plan || [] })
         syncVisibleStreaming(id)
         const chat = useChatStore.getState()
-        // Prefer the in-memory cache: a background stream has live text that
-        // history does not contain yet. A never-visited session falls back.
-        const items = chat.itemsBySession[id] ?? historyToItems(data.messages)
+        // Prefer the cache only while this session still has a live turn;
+        // once it is idle, server history is richer (tool blocks, db ids).
+        const runtime = useSessionRuntimeStore.getState().runtimes[id]
+        const live = runtime && (runtime.phase === "streaming" || runtime.phase === "waiting_approval" || runtime.phase === "waiting_question")
+        const cached = chat.itemsBySession[id]
+        const items = live && cached ? cached : historyToItems(data.messages)
         chat.setItems(items)
         // Pick up this session's own draft (empty for a session never typed in).
         chat.setInput(localStorage.getItem(`spark.draft:${id}`) ?? "")
@@ -246,7 +258,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
       const sid = get().status?.session_id
       try {
         await respondApproval(decision, sid)
-        if (sid) useSessionRuntimeStore.getState().setPendingApproval(sid, null)
+        if (sid) {
+          useSessionRuntimeStore.getState().setPendingApproval(sid, null)
+          const rt = useSessionRuntimeStore.getState().runtimes[sid]
+          if (!useChatStore.getState().streaming && rt) {
+            void useChatStore.getState().resumeSession(sid, rt.lastSeq)
+          }
+        }
         set({ approval: null })
       } catch {
         useUiStore.getState().pushToast("toast.approvalFailed", "error")

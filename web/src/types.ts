@@ -16,6 +16,10 @@ export interface SessionPending {
   session_id: string
   approval: PendingApproval | null
   question: PendingQuestion | null
+  /** True while the runtime is executing a turn (survives a page reload). */
+  busy?: boolean
+  /** Monotonic SSE cursor of this session. */
+  last_seq?: number
 }
 
 /** GET /api/sessions/{id}/events：SSE 断线补事件。 */

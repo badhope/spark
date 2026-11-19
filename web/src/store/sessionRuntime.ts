@@ -37,6 +37,7 @@ interface SessionRuntimeState {
   runtimes: Record<string, SessionRuntimeView>
   ensure: (sessionId: string) => SessionRuntimeView
   begin: (sessionId: string, abortController?: AbortController | null, turnId?: string) => void
+  setAbortController: (sessionId: string, abortController: AbortController | null) => void
   applyEvent: (sessionId: string, event: ChatEvent) => void
   finish: (sessionId: string) => void
   fail: (sessionId: string, message: string) => void
@@ -98,6 +99,12 @@ export const useSessionRuntimeStore = create<SessionRuntimeState>((set, get) => 
         pendingQuestion: null,
         abortController,
       }),
+    }))
+  },
+
+  setAbortController: (sessionId, abortController) => {
+    set((s) => ({
+      runtimes: patchRuntime(s.runtimes, sessionId, { abortController }),
     }))
   },
 
@@ -171,16 +178,20 @@ export const useSessionRuntimeStore = create<SessionRuntimeState>((set, get) => 
     const question = pending.question
     set((s) => {
       const current = runtimeOf(s.runtimes, sessionId)
+      const busy = Boolean(pending.busy)
       const phase: RuntimePhase = approval
         ? "waiting_approval"
         : question
           ? "waiting_question"
-          : current.phase === "waiting_approval" || current.phase === "waiting_question"
-            ? "idle"
-            : current.phase
+          : busy
+            ? "streaming"
+            : current.phase === "waiting_approval" || current.phase === "waiting_question"
+              ? "idle"
+              : current.phase
       return {
         runtimes: patchRuntime(s.runtimes, sessionId, {
           phase,
+          lastSeq: Math.max(current.lastSeq, pending.last_seq ?? 0),
           pendingApproval: approval,
           pendingQuestion: question,
         }),

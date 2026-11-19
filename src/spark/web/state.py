@@ -432,13 +432,21 @@ class SparkWebState:
     def pending_for(self, session_id: str) -> dict:
         runtime = self.runtime_for(session_id)
         if runtime is None:
-            return {"session_id": session_id, "approval": None, "question": None}
+            return {
+                "session_id": session_id,
+                "approval": None,
+                "question": None,
+                "busy": False,
+                "last_seq": 0,
+            }
         approval = runtime.approver.pending_payload() if runtime.approver else None
         question = runtime.question_bridge.pending_payload()
         return {
             "session_id": runtime.session_id,
             "approval": approval,
             "question": question,
+            "busy": bool(runtime.busy),
+            "last_seq": runtime.next_seq_start(),
         }
 
     def events_for(self, session_id: str, after_seq: int = 0) -> dict:

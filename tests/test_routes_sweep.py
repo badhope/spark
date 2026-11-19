@@ -239,6 +239,8 @@ def test_get_sessions_pending_and_events(web) -> None:
     assert body["session_id"] == sid
     assert body["approval"] is None
     assert body["question"] is None
+    assert body["busy"] is False
+    assert body["last_seq"] == 1
     status, body = _request(base, f"/api/sessions/{sid}/events?after_seq=0")
     assert status == 200
     assert body["session_id"] == sid
@@ -280,6 +282,21 @@ def test_runtime_seq_is_monotonic_across_turns() -> None:
     assert runtime.next_seq_start() == 3
     runtime.record_event({"seq": 4, "type": "text_delta"})
     assert runtime.next_seq_start() == 4
+
+
+def test_get_sessions_pending_reports_busy_and_cursor(web) -> None:
+    base, state, _ = web
+    sid = state.session_id
+    runtime = state.current_runtime
+    assert runtime is not None
+    runtime.busy = True
+    runtime.record_event(
+        {"v": 1, "session_id": sid, "turn_id": "t-1", "seq": 6, "type": "text_delta", "text": "hi"}
+    )
+    status, body = _request(base, f"/api/sessions/{sid}/pending")
+    assert status == 200
+    assert body["busy"] is True
+    assert body["last_seq"] == 6
 
 
 def test_get_sessions_pending_unknown_is_404(web) -> None:

@@ -83,6 +83,8 @@ export interface TurnGraph {
   edges: GraphEdge[]
 }
 
+const RESUMING = new Set<string>()
+
 function uid(): string {
   try {
     return crypto.randomUUID()
@@ -124,6 +126,8 @@ interface ChatState {
   lastFailedPrompt: { prompt: string; images: string[] } | null
   retryLastFailed: () => Promise<void>
   loadInitialHistory: () => Promise<void>
+  /** Re-attach to a turn that was already running before a reload/switch. */
+  resumeSession: (sessionId: string, afterSeq?: number) => Promise<void>
   cancel: () => void
 }
 
@@ -263,6 +267,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       try {
         const pending = await fetchSessionPending(h.session_id)
         useSessionRuntimeStore.getState().hydratePending(h.session_id, pending)
+        if (pending.busy && !pending.approval && !pending.question) {
+          void get().resumeSession(h.session_id, pending.last_seq ?? 0)
+        }
       } catch {
         /* pending is best-effort; history already rendered */
       }
@@ -270,6 +277,110 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch {
       set({ loading: false })
       useUiStore.getState().pushToast("toast.historyLoadFailed", "error")
+    }
+  },
+
+  resumeSession: async (sessionId, afterSeq = 0) => {
+    if (!sessionId || RESUMING.has(sessionId)) return
+    const runtime = useSessionRuntimeStore.getState().runtimes[sessionId]
+    if (!runtime || runtime.phase === "idle" || runtime.phase === "error") return
+    RESUMING.add(sessionId)
+    const ac = new AbortController()
+    useSessionRuntimeStore.getState().setAbortController(sessionId, ac)
+    const visible = useSessionStore.getState().status?.session_id === sessionId
+    if (visible) set({ streaming: true, abortController: ac })
+
+    const assistantId = `resume-${sessionId}-${runtime.turnId || Date.now()}`
+    let sawDone = false
+    set((s) => {
+      const currentVisible = useSessionStore.getState().status?.session_id === sessionId
+      const cached = s.itemsBySession[sessionId] ?? (currentVisible ? s.items : [])
+      if (cached.some((m) => m.id === assistantId)) return s
+      const next: ChatMsg[] = [
+        ...cached,
+        { id: assistantId, role: "assistant", text: "", streaming: true, segments: [] },
+      ]
+      const itemsBySession = { ...s.itemsBySession, [sessionId]: next }
+      return currentVisible ? { items: next, itemsBySession } : { itemsBySession }
+    })
+
+    const patchResume = (fn: (it: ChatMsg) => ChatMsg) => {
+      set((s) => {
+        const currentVisible = useSessionStore.getState().status?.session_id === sessionId
+        const source = s.itemsBySession[sessionId] ?? (currentVisible ? s.items : [])
+        const idx = source.findIndex((m) => m.id === assistantId)
+        if (idx < 0) return s
+        const next = [...source]
+        next[idx] = fn(next[idx])
+        const itemsBySession = { ...s.itemsBySession, [sessionId]: next }
+        return currentVisible ? { items: next, itemsBySession } : { itemsBySession }
+      })
+    }
+
+    const onEvent = (ev: ChatEvent) => {
+      useSessionRuntimeStore.getState().applyEvent(sessionId, ev)
+      const currentVisible = useSessionStore.getState().status?.session_id === sessionId
+      if (ev.type === "text_delta") {
+        patchResume((it) => {
+          const segs = [...it.segments]
+          const last = segs[segs.length - 1]
+          if (last && last.kind === "text") {
+            segs[segs.length - 1] = { kind: "text", text: last.text + ev.text }
+          } else {
+            segs.push({ kind: "text", text: ev.text })
+          }
+          return { ...it, segments: segs, text: it.text + ev.text, streaming: true }
+        })
+      } else if (ev.type === "reasoning_delta") {
+        patchResume((it) => {
+          const segs = [...it.segments]
+          const last = segs[segs.length - 1]
+          if (last && last.kind === "thinking") {
+            segs[segs.length - 1] = { kind: "thinking", text: last.text + ev.text }
+          } else {
+            segs.push({ kind: "thinking", text: ev.text })
+          }
+          return { ...it, segments: segs }
+        })
+      } else if (ev.type === "question" && currentVisible) {
+        useSessionStore.getState().setQuestion({
+          question: ev.data?.question ?? "",
+          options: ev.data?.options ?? [],
+        })
+      } else if (ev.type === "approval_needed" && currentVisible) {
+        useSessionStore.getState().setApproval({ info: ev.approval, tool: ev.tool })
+      } else if (ev.type === "turn_end") {
+        sawDone = true
+        patchResume((it) => ({
+          ...it,
+          streaming: false,
+          text: ev.text && !it.text ? ev.text : it.text,
+        }))
+      } else if (ev.type === "turn_error") {
+        patchResume((it) => ({ ...it, streaming: false }))
+      } else if (ev.type === "done") {
+        sawDone = true
+        patchResume((it) => ({ ...it, streaming: false }))
+      }
+    }
+
+    try {
+      await followSessionEvents(sessionId, afterSeq, onEvent, ac.signal)
+    } catch {
+      /* the endpoint may have closed; history fallback below is authoritative */
+    } finally {
+      RESUMING.delete(sessionId)
+      patchResume((it) => (it.streaming ? { ...it, streaming: false } : it))
+      useSessionRuntimeStore.getState().setAbortController(sessionId, null)
+      const phase = useSessionRuntimeStore.getState().runtimes[sessionId]?.phase
+      if (sawDone || phase === "idle") {
+        useSessionRuntimeStore.getState().finish(sessionId)
+      }
+      const currentVisible = useSessionStore.getState().status?.session_id === sessionId
+      if (currentVisible) {
+        if (get().abortController === ac) set({ streaming: false, abortController: null })
+        await get().loadInitialHistory()
+      }
     }
   },
 
