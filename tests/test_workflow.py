@@ -97,3 +97,84 @@ def test_two_processes_do_not_lose_updates(tmp_path: Path) -> None:
         process.join(timeout=30)
         assert process.exitcode == 0
     assert target.read_text(encoding="utf-8") == "50"
+
+
+@pytest.mark.asyncio
+async def test_runner_respects_dependencies_and_outputs(tmp_path: Path) -> None:
+    from spark.workflow import RoleSpec, StepSpec, WorkflowSpec, run_workflow
+
+    spec = WorkflowSpec(
+        name="demo",
+        version=1,
+        description="",
+        roles={"r": RoleSpec(name="r")},
+        steps=(
+            StepSpec(id="a", role="r", prompt="a"),
+            StepSpec(id="b", role="r", prompt="b", needs=("a",)),
+            StepSpec(id="c", role="r", prompt="c", needs=("a",)),
+            StepSpec(id="d", role="r", prompt="d", needs=("b", "c")),
+        ),
+    )
+    started: list[str] = []
+
+    async def runner(step, deps):
+        started.append(step.id)
+        await __import__("asyncio").sleep(0.01)
+        return "out-" + step.id + "-" + ",".join(sorted(deps))
+
+    run = await run_workflow(spec, runner, max_parallel=2)
+    assert run.ok
+    assert started[0] == "a"
+    assert set(started[1:3]) == {"b", "c"}
+    assert started[-1] == "d"
+    assert run.outputs["d"].startswith("out-d-b,c")
+
+
+@pytest.mark.asyncio
+async def test_runner_retries_and_blocks_dependents() -> None:
+    from spark.workflow import RoleSpec, StepSpec, WorkflowSpec, run_workflow
+
+    spec = WorkflowSpec(
+        name="retry",
+        version=1,
+        description="",
+        roles={"r": RoleSpec(name="r")},
+        steps=(
+            StepSpec(id="bad", role="r", prompt="bad", max_attempts=2),
+            StepSpec(id="after", role="r", prompt="after", needs=("bad",)),
+            StepSpec(id="independent", role="r", prompt="independent"),
+        ),
+    )
+    calls = {"bad": 0}
+
+    async def runner(step, deps):
+        if step.id == "bad":
+            calls["bad"] += 1
+            raise RuntimeError("boom")
+        return "ok"
+
+    run = await run_workflow(spec, runner)
+    assert calls["bad"] == 2
+    assert run.statuses["bad"] == "failed"
+    assert run.statuses["after"] == "blocked"
+    assert run.statuses["independent"] == "completed"
+    assert not run.ok
+
+
+@pytest.mark.asyncio
+async def test_runner_cancel_marks_pending_cancelled() -> None:
+    from spark.workflow import RoleSpec, StepSpec, WorkflowSpec, run_workflow
+
+    spec = WorkflowSpec(
+        name="cancel",
+        version=1,
+        description="",
+        roles={"r": RoleSpec(name="r")},
+        steps=(StepSpec(id="a", role="r", prompt="a"),),
+    )
+
+    async def runner(step, deps):
+        return "ok"
+
+    run = await run_workflow(spec, runner, cancel=lambda: True)
+    assert run.statuses["a"] == "cancelled"

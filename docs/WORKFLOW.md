@@ -42,5 +42,7 @@ cross-process (`filelock`).
 
 - done: YAML parsing, DAG validation, topological order, ready-step calculation,
   graph output, cross-process path locks, CLI `validate/graph`.
-- next: Lead/Experts/Verifier execution (AgentLoop integration), retries and
-  pause/resume/replay of individual nodes.
+- done: `run_workflow` engine with bounded concurrency, per-step retries,
+  failure -> dependent blocked, cancellation and per-step write locks.
+- next: AgentLoop/Lead/Experts/Verifier wiring, pause/resume/replay of individual
+  nodes and cost budgets.

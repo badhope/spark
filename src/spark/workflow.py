@@ -13,7 +13,7 @@ from collections import deque
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Sequence
 
 import yaml
 from filelock import FileLock, Timeout
@@ -276,7 +276,7 @@ class WorkspaceLocks:
         return rel
 
     @contextmanager
-    def acquire(self, paths: list[str | Path]) -> Iterator[None]:
+    def acquire(self, paths: Sequence[str | Path]) -> Iterator[None]:
         rels = sorted({self._relative(path) for path in paths})
         stack = ExitStack()
         try:
@@ -290,3 +290,126 @@ class WorkspaceLocks:
             yield
         finally:
             stack.close()
+
+
+# ---------------------------------------------------------------------------
+# Execution engine (no model dependency)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class WorkflowRun:
+    spec: WorkflowSpec
+    statuses: dict[str, str] = field(default_factory=dict)
+    outputs: dict[str, str] = field(default_factory=dict)
+    errors: dict[str, str] = field(default_factory=dict)
+    events: list[dict[str, Any]] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.statuses:
+            self.statuses = {step.id: "pending" for step in self.spec.steps}
+
+    @property
+    def completed(self) -> set[str]:
+        return {name for name, state in self.statuses.items() if state == "completed"}
+
+    @property
+    def ok(self) -> bool:
+        return all(state == "completed" for state in self.statuses.values())
+
+    def graph(self) -> dict[str, Any]:
+        return self.spec.graph(self.statuses)
+
+
+async def run_workflow(
+    spec: WorkflowSpec,
+    runner: Any,
+    *,
+    workdir: Path | None = None,
+    max_parallel: int = 2,
+    cancel: Any = None,
+    initial_outputs: dict[str, str] | None = None,
+) -> WorkflowRun:
+    """Execute a validated DAG with bounded concurrency and per-step retries.
+
+    ``runner(step, dependency_outputs)`` may be sync or async and must return
+    text. The engine owns scheduling only: it never imports a provider or the
+    AgentLoop, so it can be tested with fakes and reused by any surface.
+    """
+    import asyncio
+    import inspect
+
+    workers = max(1, min(int(max_parallel), 8))
+    run = WorkflowRun(spec=spec, outputs=dict(initial_outputs or {}))
+    pending = {step.id for step in spec.steps}
+    locks = WorkspaceLocks(workdir) if workdir is not None else None
+    semaphore = asyncio.Semaphore(workers)
+
+    def emit(kind: str, step: StepSpec, **extra: Any) -> None:
+        run.events.append({"type": kind, "step": step.id, **extra})
+
+    def cancelled() -> bool:
+        if cancel is None:
+            return False
+        return bool(cancel() if callable(cancel) else cancel.is_set())
+
+    def deps_outputs(step: StepSpec) -> dict[str, str]:
+        return {
+            name: run.outputs.get(name, "")
+            for name in step.needs
+            if name in run.outputs
+        }
+
+    async def execute(step: StepSpec) -> None:
+        async with semaphore:
+            run.statuses[step.id] = "running"
+            emit("step_started", step)
+            attempt = 0
+            while attempt < step.max_attempts:
+                attempt += 1
+                try:
+                    if step.writes and locks is not None:
+                        with locks.acquire(step.writes):
+                            result = runner(step, deps_outputs(step))
+                            if inspect.isawaitable(result):
+                                result = await result
+                    else:
+                        result = runner(step, deps_outputs(step))
+                        if inspect.isawaitable(result):
+                            result = await result
+                    run.outputs[step.id] = str(result or "")
+                    run.statuses[step.id] = "completed"
+                    emit("step_completed", step, attempt=attempt)
+                    pending.discard(step.id)
+                    return
+                except Exception as exc:  # noqa: BLE001 - reported as step failure
+                    run.errors[step.id] = str(exc)
+                    emit("step_failed", step, attempt=attempt, error=str(exc))
+            run.statuses[step.id] = "failed"
+            pending.discard(step.id)
+
+    while pending:
+        if cancelled():
+            for name in sorted(pending):
+                run.statuses[name] = "cancelled"
+            emit("run_cancelled", spec.steps[0], pending=len(pending))
+            break
+        ready = [
+            step
+            for step in spec.steps
+            if step.id in pending
+            and all(run.statuses.get(dep) == "completed" for dep in step.needs)
+        ]
+        if not ready:
+            for name in sorted(pending):
+                run.statuses[name] = "blocked"
+            break
+        await asyncio.gather(*(execute(step) for step in ready))
+        # A failed node must not leave its dependents runnable.
+        for step in spec.steps:
+            if step.id in pending and any(
+                run.statuses.get(dep) == "failed" for dep in step.needs
+            ):
+                run.statuses[step.id] = "blocked"
+                pending.discard(step.id)
+    return run
