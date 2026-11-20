@@ -78,6 +78,6 @@ def test_feedback_is_scoped_and_toggleable(tmp_path: Path) -> None:
         assert store.list_message_feedback(sid) == {assistant_id: "down"}
         store.set_message_feedback(sid, assistant_id, None)
         assert store.list_message_feedback(sid) == {}
-        assert store.schema_version() == 3
+        assert store.schema_version() == store.SCHEMA_VERSION
     finally:
         store.close()

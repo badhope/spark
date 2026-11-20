@@ -41,7 +41,8 @@ class SessionStore:
                     model TEXT NOT NULL,
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL,
-                    title TEXT NOT NULL
+                    title TEXT NOT NULL,
+                    last_error TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -230,7 +231,7 @@ class SessionStore:
             self._conn.commit()
 
     #: Bump when a step in :meth:`_migrate_schema` is added.
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
 
     def _migrate_schema(self) -> None:
         """Record/upgrade the schema version on *this* database.
@@ -241,7 +242,7 @@ class SessionStore:
         current = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
         if current >= self.SCHEMA_VERSION:
             return
-        for version, step in ((1, self._migrate_v1), (2, self._migrate_v2), (3, self._migrate_v3)):
+        for version, step in ((1, self._migrate_v1), (2, self._migrate_v2), (3, self._migrate_v3), (4, self._migrate_v4)):
             if current < version:
                 step()
                 current = version
@@ -259,6 +260,16 @@ class SessionStore:
         """v3: per-message up/down feedback (created in _init for fresh DBs)."""
         # The table is declared in _init(); this hook records the version for
         # existing databases and gives future feedback columns a migration home.
+
+    def _migrate_v4(self) -> None:
+        """v4: persist the last model failure so a reload still explains it."""
+        try:
+            self._conn.execute(
+                "ALTER TABLE sessions ADD COLUMN last_error TEXT NOT NULL DEFAULT ''"
+            )
+        except sqlite3.OperationalError:
+            # Fresh databases already create the column in _init().
+            pass
 
     def _migrate_v2(self) -> None:
         """v2: cost-ledger columns for model/provider/cache and per-call USD."""
@@ -412,6 +423,33 @@ class SessionStore:
             )
             self._fts_sync_title(session_id, title)
             self._conn.commit()
+
+    def set_session_error(self, session_id: str, error: dict | None) -> None:
+        """Persist (or clear) the latest turn failure for reload/status display."""
+        payload = json.dumps(error, ensure_ascii=False) if error else ""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE sessions SET last_error = ? WHERE id = ?",
+                (payload, session_id),
+            )
+            self._conn.commit()
+
+    def get_session_error(self, session_id: str) -> dict | None:
+        """Return the latest structured turn error, tolerating old/corrupt rows."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT last_error FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+        if not row:
+            return None
+        raw = str(row["last_error"] or "")
+        if not raw:
+            return None
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
 
     def set_keywords(self, session_id: str, keywords: str) -> None:
         with self._lock:

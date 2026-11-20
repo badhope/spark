@@ -30,6 +30,22 @@ export interface SessionEventsPage {
   last_seq: number
 }
 
+/** Structured provider failure shown in chat and on the configuration banner. */
+export interface ModelErrorInfo {
+  code: string
+  title: string
+  message: string
+  hint: string
+  retryable?: boolean
+  action?: "settings" | "retry" | "none"
+  provider?: string
+  model?: string
+  endpoint?: string
+  status_code?: number | null
+  detail?: string
+  params?: Record<string, string>
+}
+
 export interface Status {
   session_id: string
   workdir: string
@@ -69,6 +85,10 @@ export interface Status {
     by_model: CostBreakdownRow[]
   }
   routing?: Record<string, unknown>
+  /** Configuration check computed before the next turn. */
+  model_status?: { ready: boolean; issue?: ModelErrorInfo | null }
+  /** Last failed turn, persisted so reload still explains what happened. */
+  last_error?: ModelErrorInfo | null
 }
 
 export interface DisplayFlags {
@@ -297,7 +317,7 @@ export type ChatEvent = ChatEnvelope &
   | { type: "context"; data: { usage: ContextUsage } }
   | { type: "plan"; data: { steps: PlanStep[] } }
   | { type: "turn_end"; text?: string }
-  | { type: "turn_error"; text?: string }
+  | { type: "turn_error"; text?: string; data?: { error?: ModelErrorInfo } }
   | { type: "done" }
   )
 

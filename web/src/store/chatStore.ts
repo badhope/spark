@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import type { ChatEvent, GoalState, PlanStep, ChatAttachment } from "../types"
+import type { ChatEvent, GoalState, PlanStep, ChatAttachment, ModelErrorInfo } from "../types"
 import { streamChat, fetchHistory, fetchSessionPending, followSessionEvents, deleteMessage as deleteMessageApi, truncateFromMessage as truncateFromMessageApi, runInlineShell, fetchReplays, setMessageFeedback } from "../api"
 import { useSessionStore } from "./sessionStore"
 import { useSessionRuntimeStore } from "./sessionRuntime"
@@ -66,6 +66,8 @@ export interface ChatMsg {
   dbId?: number
   /** 助手消息赞/踩；持久化在 message_feedback。 */
   feedback?: "up" | "down"
+  /** 模型/配置失败的结构化诊断；旧事件只有 text 时为空。 */
+  error?: ModelErrorInfo
   meta?: {
     compacted?: { before: number; after: number; summarized: number }
     /** `!cmd` 内联 shell 的执行结果（本地卡片，不进模型上下文） */
@@ -146,7 +148,7 @@ interface ChatState {
   saveVisibleItems: (sessionId: string) => void
   setLoading: (v: boolean) => void
   setWebSearch: (v: boolean) => void
-  addErrorItem: (text: string) => void
+  addErrorItem: (text: string, error?: ModelErrorInfo) => void
   send: (images?: string[], attachments?: ChatAttachment[]) => Promise<void>
   /** `!cmd` 内联 shell：本地执行并渲染结果卡片，不进入对话历史 */
   runShell: (command: string) => Promise<void>
@@ -252,7 +254,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ webSearch: v })
   },
 
-  addErrorItem: (text) => set((s) => ({ items: [...s.items, { id: uid(), role: "error", text, segments: [] }] })),
+  addErrorItem: (text, error) => set((s) => ({ items: [...s.items, { id: uid(), role: "error", text, segments: [], error }] })),
 
   lastFailedPrompt: null,
   recovering: false,
@@ -294,6 +296,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const h = await fetchHistory()
       const items = await attachReplayDurations(historyToItems(h.messages), h.session_id)
+      const persistedError = useSessionStore.getState().status?.last_error
+      if (persistedError && !items.some((m) => m.role === "error")) {
+        items.push({
+          id: `persisted-error-${persistedError.code}`,
+          role: "error",
+          text: persistedError.message || persistedError.title,
+          segments: [],
+          error: persistedError,
+        })
+      }
       // Draft is keyed per session, and the session id is only known now, so
       // the initial read at module load always used an empty key.
       let draft = ""
@@ -395,6 +407,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
         patchResume((it) => finishTurnMessage({ ...it, text: ev.text && !it.text ? ev.text : it.text }))
       } else if (ev.type === "turn_error") {
         patchResume((it) => finishTurnMessage(it))
+        const text = ev.text || ev.data?.error?.message || "turn error"
+        const info = ev.data?.error
+        set((s) => {
+          const currentVisible = useSessionStore.getState().status?.session_id === sessionId
+          const source = s.itemsBySession[sessionId] ?? (currentVisible ? s.items : [])
+          const last = source[source.length - 1]
+          if (last?.role === "error" && last.text === text) return s
+          const next: ChatMsg[] = [
+            ...source,
+            { id: uid(), role: "error" as const, text, segments: [], error: info },
+          ]
+          const itemsBySession = { ...s.itemsBySession, [sessionId]: next }
+          return currentVisible ? { items: next, itemsBySession } : { itemsBySession }
+        })
       } else if (ev.type === "done") {
         sawDone = true
         patchResume((it) => finishTurnMessage(it))
@@ -461,6 +487,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const buf = { text: "", think: "" }
     let rafPending = false
+    // A structured provider error must survive the trailing `done` frame so the
+    // card can still offer "retry this request".
+    let sawTurnError = false
     // 真实执行轨迹：root → 每个工具调用 → 结果。事件流就是唯一事实来源，
     // 之前执行图渲染的是写死的样例数据（"静态样例（待接 loop 事件流）"）。
     const graphNodes: GraphNode[] = [{ id: "root", label: "Spark", kind: "root", status: "running" }]
@@ -887,10 +916,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
           break
         case "turn_error":
           flush()
+          sawTurnError = true
           graphNodes[0].status = "error"
           pushGraph()
           patchLast((it) => finishTurnMessage(it))
-          set((s) => ({ items: [...s.items, { id: uid(), role: "error", text: ev.text || "turn error", segments: [] }] }))
+          set({ lastFailedPrompt: { prompt, images, attachments } })
+          set((s) => {
+            const items: ChatMsg[] = [
+              ...s.items,
+              {
+                id: uid(),
+                role: "error" as const,
+                text: ev.text || ev.data?.error?.message || "turn error",
+                segments: [],
+                error: ev.data?.error,
+              },
+            ]
+            // Keep the per-session cache aligned: a later `done` frame calls
+            // patchLast(), which rebuilds `items` from itemsBySession and would
+            // otherwise erase the error card that was just appended.
+            return { items, itemsBySession: { ...s.itemsBySession, [turnSessionId]: items } }
+          })
           break
         case "done":
           flush()
@@ -916,7 +962,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       await streamChat(prompt, onEvent, ac.signal, images, get().webSearch, attachments)
       flush()
-      set({ lastFailedPrompt: null })
+      if (!sawTurnError) set({ lastFailedPrompt: null })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       flush()

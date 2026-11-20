@@ -14,14 +14,49 @@ import threading
 import uuid
 
 from spark.models import ImageRef
+from spark.providers.errors import classify_provider_error
 from spark.slash import handle_test, parse_slash
 from spark.web._httpbase import HandlerBase
 from spark.web._routing import _route_state
 from spark.web.sse import SSE_DISCONNECT_ERRORS, _SSESession
 from spark.web.state import _generate_session_meta_async
-from spark.web.utils import _event_payload, inject_attachments, parse_attachments, prepare_attachments
+from spark.web.utils import (
+    _event_payload,
+    inject_attachments,
+    parse_attachments,
+    prepare_attachments,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _remember_turn_error(state, session_id: str, event) -> None:
+    """Persist a structured error so it survives a page reload."""
+    data = getattr(event, "data", None) or {}
+    info = data.get("error") if isinstance(data, dict) else None
+    if not isinstance(info, dict) or not info.get("code"):
+        text = str(getattr(event, "text", "") or "").strip()
+        if not text:
+            return
+        info = {
+            "code": "turn_failed",
+            "title": "请求未完成",
+            "message": text,
+            "hint": "可重试这次请求；如果重复失败，到「设置 → 模型」检查连接。",
+            "retryable": True,
+            "action": "retry",
+        }
+    try:
+        state.store.set_session_error(session_id, info)
+    except Exception:  # pragma: no cover - persistence is best effort
+        logger.debug("persist session error failed", exc_info=True)
+
+
+def _clear_session_error(state, session_id: str) -> None:
+    try:
+        state.store.set_session_error(session_id, None)
+    except Exception:  # pragma: no cover - persistence is best effort
+        logger.debug("clear session error failed", exc_info=True)
 
 
 def _handle_chat(handler: HandlerBase, body: dict) -> None:
@@ -54,6 +89,12 @@ def _handle_chat(handler: HandlerBase, body: dict) -> None:
         if _dispatch_slash(state, sink, slash):  # type: ignore[arg-type]
             handler._json(200, {"events": sink.events})
             return
+    if slash is None:
+        issue = state.model_preflight(runtime.loop)
+        if issue is not None:
+            state.store.set_session_error(runtime.session_id, issue.to_dict())
+            handler._json(503, {"error": issue.text, "diagnostic": issue.to_dict()})
+            return
     try:
         with runtime.turn_lock:
             # Drive the turn on the captured runtime loop: switching sessions
@@ -61,8 +102,13 @@ def _handle_chat(handler: HandlerBase, body: dict) -> None:
             # would break the durable checkpointer's loop affinity.
             events = list(runtime.loop.iter_turn_sync(inject_attachments(prompt, attachments)))
     except Exception as exc:  # aqg: top-level boundary
-        handler._json(500, {"error": str(exc)})
+        info = classify_provider_error(exc, state.cfg, live_provider=runtime.loop.provider)
+        state.store.set_session_error(runtime.session_id, info.to_dict())
+        handler._json(500, {"error": info.text, "diagnostic": info.to_dict()})
         return
+    for event in events:
+        if getattr(event, "type", "") == "turn_error":
+            _remember_turn_error(state, runtime.session_id, event)
     handler._json(200, {"events": [_event_payload(e) for e in events]})
 
 
@@ -365,6 +411,9 @@ def _dispatch_turn(
             stream.submit_payload({"type": "turn_error", "text": "settings changed; retry the request"})
             return
         runtime.busy = True
+        # A new attempt supersedes the previous failure; a fresh error event
+        # will re-populate this if the attempt still cannot reach the model.
+        _clear_session_error(state, runtime.session_id)
         # Allocate the sequence base under the lock: a second queued request
         # must not share the first turn's numbers in the replay ring.
         stream.set_start_seq(runtime.next_seq_start())
@@ -407,15 +456,32 @@ def _dispatch_turn(
 
 
 def _stream_failure_exit(
-    stream: _SSESession, exc: Exception, cancel_turn, *, cancel_on_disconnect: bool
+    stream: _SSESession,
+    exc: Exception,
+    cancel_turn,
+    *,
+    cancel_on_disconnect: bool,
+    state=None,
+    session_id: str = "",
+    live_provider=None,
 ) -> None:
-    """异常/断连收尾：已断连→abort（可选取消本轮）；否则回灌 turn_error。"""
+    """异常/断连收尾：已断连→abort（可选取消本轮）；否则回灌结构化错误。"""
     if stream.disconnected:
         if cancel_on_disconnect:
             cancel_turn()
         stream.abort()
         return
-    if stream.submit_payload({"type": "turn_error", "text": str(exc)}):
+    info = None
+    if state is not None:
+        info = classify_provider_error(exc, state.cfg, live_provider=live_provider)
+        try:
+            state.store.set_session_error(session_id, info.to_dict())
+        except Exception:  # pragma: no cover - best effort
+            logger.debug("persist stream error failed", exc_info=True)
+    payload: dict = {"type": "turn_error", "text": info.text if info else str(exc)}
+    if info is not None:
+        payload["data"] = {"error": info.to_dict()}
+    if stream.submit_payload(payload):
         stream.finish()
     else:
         stream.abort()
@@ -534,8 +600,12 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
     def collect_event(event) -> None:
         if event.type == "text_delta" and event.text:
             memory_collector["text"] += event.text
-        elif event.type == "turn_end" and event.text:
-            memory_collector["text"] = event.text
+        elif event.type == "turn_end":
+            if event.text:
+                memory_collector["text"] = event.text
+            _clear_session_error(state, turn_session_id)
+        elif event.type == "turn_error":
+            _remember_turn_error(state, turn_session_id, event)
         elif event.type == "tool_end" and event.tool_call:
             memory_collector["tools"].append(
                 f"{event.tool_call.name}: {_json.dumps(event.result.payload if event.result else {}, ensure_ascii=False)[:200]}"
@@ -551,6 +621,23 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
             return
     elif slash is not None and _dispatch_slash(state, stream, slash):
         return
+
+    # Configuration failures are knowable before any network call. Stop here
+    # with an actionable diagnostic instead of letting a MockProvider answer
+    # (which used to look like a real model reply) or emitting a raw retry.
+    if slash is None or slash_result is not None:
+        issue = state.model_preflight(turn_loop)
+        if issue is not None:
+            state.store.set_session_error(turn_session_id, issue.to_dict())
+            stream.submit_payload(
+                {
+                    "type": "turn_error",
+                    "text": issue.text,
+                    "data": {"error": issue.to_dict()},
+                }
+            )
+            stream.finish()
+            return
 
     turn_prompt = inject_attachments(_expand_turn_prompt(state, prompt), attachments)
 
@@ -576,9 +663,25 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
             session_id=turn_session_id,
         )
     except SSE_DISCONNECT_ERRORS as exc:
-        _stream_failure_exit(stream, exc, cancel_turn, cancel_on_disconnect=True)
+        _stream_failure_exit(
+            stream,
+            exc,
+            cancel_turn,
+            cancel_on_disconnect=True,
+            state=state,
+            session_id=turn_session_id,
+            live_provider=turn_loop.provider,
+        )
     except Exception as exc:  # aqg: top-level boundary
-        _stream_failure_exit(stream, exc, cancel_turn, cancel_on_disconnect=False)
+        _stream_failure_exit(
+            stream,
+            exc,
+            cancel_turn,
+            cancel_on_disconnect=False,
+            state=state,
+            session_id=turn_session_id,
+            live_provider=turn_loop.provider,
+        )
     finally:
         if stream.disconnected:
             stream.abort()

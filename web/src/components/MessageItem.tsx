@@ -6,8 +6,9 @@ const Markdown = lazy(() => import("./Markdown"))
 import ToolBlock from "./ToolBlock"
 import { ThinkingBlock } from "./ThinkingBlock"
 import { PlanCard } from "./PlanCard"
-import { IconCheck, IconCopy, IconFile, IconPencil, IconRefresh, IconSpark, IconThumbDown, IconThumbUp, IconTrash } from "./icons"
+import { IconCheck, IconChevronDown, IconCopy, IconFile, IconPencil, IconRefresh, IconSettings, IconSpark, IconThumbDown, IconThumbUp, IconTrash } from "./icons"
 import { cls, formatElapsed } from "./ui"
+import { modelErrorCodeLabel, modelErrorText } from "../modelErrors"
 import { useChatStore } from "../store/chatStore"
 import { useSessionStore } from "../store/sessionStore"
 import { useUiStore } from "../store/uiStore"
@@ -345,27 +346,88 @@ const AssistantMessage = memo(function AssistantMessage({ msg, actions }: { msg:
 })
 
 /* ---------------- 错误 / 通知 / 摘要 ---------------- */
-const ErrorMessage = memo(function ErrorMessage({ text }: { text: string }) {
+const ErrorMessage = memo(function ErrorMessage({ msg }: { msg: ChatMsg }) {
   const lang = useUiStore((s) => s.lang)
   const retry = useChatStore((s) => s.retryLastFailed)
   const canRetry = useChatStore((s) => s.lastFailedPrompt !== null)
   const streaming = useChatStore((s) => s.streaming)
+  const openSettingsAt = useUiStore((s) => s.openSettingsAt)
+  const [showDetail, setShowDetail] = useState(false)
+  const info = msg.error
+  const copy = modelErrorText(info, lang, msg.text)
+  const retryable = info?.retryable !== false
+  const wantsSettings = info?.action !== "none" && info?.action !== "retry"
+  const meta = info
+    ? [
+        info.provider,
+        info.model,
+        info.endpoint,
+        info.status_code ? `HTTP ${info.status_code}` : "",
+      ].filter(Boolean)
+    : []
+
   return (
-    <div className="flex justify-center py-3">
-      <div className="anim-msg w-full max-w-2xl rounded-xl border border-err/35 bg-err/8 px-4 py-2.5 text-[13px] text-err">
-        <div className="mb-0.5 font-semibold">{t("common.error", lang)}</div>
-        <p className="whitespace-pre-wrap break-words text-err/90">{text}</p>
-        {canRetry && (
-          // A transport failure used to leave the user with a dead error card:
-          // the prompt was gone and there was no way to resend without retyping.
-          <button
-            type="button"
-            disabled={streaming}
-            onClick={() => void retry()}
-            className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-md border border-err/40 px-2.5 text-[12px] font-medium text-err transition-colors hover:bg-err/10 disabled:opacity-50"
-          >
-            <IconRefresh size={12} /> {t("error.retry", lang)}
-          </button>
+    <div className="flex justify-center py-3" data-testid="model-error">
+      <div className="anim-msg w-full max-w-2xl rounded-xl border border-err/35 bg-err/8 px-4 py-3 text-[13px] text-err">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-err/15 text-[11px] font-bold">
+            !
+          </span>
+          <span className="font-semibold">{copy.title}</span>
+          {info?.code && (
+            <span className="rounded-full border border-err/30 bg-err/5 px-1.5 py-0.5 text-[10px] font-medium text-err/80">
+              {modelErrorCodeLabel(info.code, lang)}
+            </span>
+          )}
+        </div>
+        <p className="mt-1.5 whitespace-pre-wrap break-words text-err/90">{copy.message || msg.text}</p>
+        {copy.hint && (
+          <p className="mt-2 rounded-lg border border-err/20 bg-canvas/50 px-2.5 py-2 text-[12px] leading-relaxed text-ink2">
+            <span className="font-medium text-ink">{lang === "zh" ? "怎么处理：" : "What to do: "}</span>
+            {copy.hint}
+          </p>
+        )}
+        {meta.length > 0 && (
+          <p className="mt-2 break-all font-mono text-[10.5px] text-ink3">
+            {meta.join(" · ")}
+          </p>
+        )}
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          {canRetry && retryable && (
+            <button
+              type="button"
+              disabled={streaming}
+              onClick={() => void retry()}
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-err/40 px-2.5 text-[12px] font-medium text-err transition-colors hover:bg-err/10 disabled:opacity-50"
+            >
+              <IconRefresh size={12} /> {t("error.retry", lang)}
+            </button>
+          )}
+          {wantsSettings && (
+            <button
+              type="button"
+              onClick={() => openSettingsAt("model")}
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-line bg-panel2 px-2.5 text-[12px] font-medium text-ink2 transition-colors hover:bg-hover"
+            >
+              <IconSettings size={12} /> {lang === "zh" ? "打开模型设置" : "Open model settings"}
+            </button>
+          )}
+          {info?.detail && (
+            <button
+              type="button"
+              onClick={() => setShowDetail((v) => !v)}
+              className="ml-auto inline-flex h-7 items-center gap-1 px-1.5 text-[11px] text-ink3 hover:text-ink"
+              aria-expanded={showDetail}
+            >
+              {lang === "zh" ? "技术细节" : "Technical details"}
+              <IconChevronDown size={12} className={cls("transition-transform", showDetail && "rotate-180")} />
+            </button>
+          )}
+        </div>
+        {showDetail && info?.detail && (
+          <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-line bg-code px-2.5 py-2 font-mono text-[10.5px] leading-relaxed text-ink3">
+            {info.detail}
+          </pre>
         )}
       </div>
     </div>
@@ -428,7 +490,7 @@ export default function MessageItem({ msg, actions }: { msg: ChatMsg; actions?: 
     case "assistant":
       return <AssistantMessage msg={msg} actions={actions} />
     case "error":
-      return <ErrorMessage text={msg.text} />
+      return <ErrorMessage msg={msg} />
     case "notice":
     case "summary":
       return <NoticeMessage msg={msg} />

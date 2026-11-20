@@ -25,6 +25,7 @@ from spark.core.loop import AgentLoop
 from spark.memory.service import MemoryService
 from spark.memory.store import MemoryStore
 from spark.models import ApprovalAction, ApprovalDecision
+from spark.providers.errors import provider_preflight
 from spark.providers.factory import create_provider
 from spark.sandbox import WorkdirSandbox
 from spark.task_queue import QueueOutcome, TaskQueue
@@ -893,8 +894,22 @@ class SparkWebState:
             "mcp_errors": list(self.mcp_bridge.errors) if self.mcp_bridge else [],
             "context": usage,
             "plan": plan,
+            "last_error": self.store.get_session_error(sid),
+            "model_status": self.model_status(loop),
             **self._demo_flags(key, loop),
         }
+
+    def model_preflight(self, loop=None):
+        """Return a structured config issue, or None when a real turn can start."""
+        loop = loop or self.loop
+        live = loop.provider if loop is not None else None
+        return provider_preflight(self.cfg, live)
+
+    def model_status(self, loop=None) -> dict:
+        issue = self.model_preflight(loop)
+        if issue is None:
+            return {"ready": True, "issue": None}
+        return {"ready": False, "issue": issue.to_dict()}
 
     def _demo_flags(self, key: str, loop=None) -> dict:
         """Say out loud when the configured provider silently fell back to mock.

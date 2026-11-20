@@ -27,6 +27,7 @@ from spark.models import (
     TurnEvent,
 )
 from spark.providers.base import Provider
+from spark.providers.errors import classify_provider_error
 from spark.store import SessionStore
 from spark.tools.registry import ToolRegistry
 
@@ -756,17 +757,22 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
         except Exception as exc:
             # Distinguish a provider/transport failure from a logic error: the
             # former can be retried with a different model, the latter cannot.
-            self._notify_safe(
-                "provider_error",
-                {
-                    "model": self.cfg.provider.model,
-                    "provider": str(self.cfg.provider.name),
-                    "error": str(exc)[:500],
-                },
+            # The structured payload is what lets the UI explain *why* instead
+            # of showing a raw LiteLLM stack fragment.
+            info = classify_provider_error(
+                exc,
+                self.cfg,
+                stage="llm",
+                live_provider=self.provider,
             )
-            self._notify_safe("turn_error", {"error": str(exc)[:500], "stage": "llm"})
-            yield TurnEvent(type="turn_error", text=str(exc))
-            self._last_round["error"] = str(exc)
+            self._notify_safe("provider_error", info.to_dict())
+            self._notify_safe("turn_error", {"error": info.text, "stage": "llm", "diagnostic": info.to_dict()})
+            yield TurnEvent(
+                type="turn_error",
+                text=info.text,
+                data={"error": info.to_dict()},
+            )
+            self._last_round["error"] = info.text
             return
 
         self._charge_tokens(text_parts, reasoning_parts)
