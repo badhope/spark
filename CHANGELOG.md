@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+- 安全依赖升级：`litellm` 1.106.6 → 1.110.1，`filelock` 3.32.7 → 4.2.12。
+  litellm 1.110.1 已放宽 `filelock<5`，根目录 13 条 filelock 告警随锁文件更新关闭；
+  `pyproject.toml` 下限同步为 `litellm>=1.110.1`、`filelock>=4.2.1`。
+- 清理已删除清单 `api/uv.lock`、`data-agent/uv.lock` 遗留的 50 条 Dependabot 告警，
+  统一以 `not_used` 关闭并记录原因；根目录当前无未处理的依赖告警。
+
 ## [0.15.2] - 2026-11-16
 
 - 补齐 `spark-onefile.spec` 与 `spark-desktop.spec`：两者此前既没有

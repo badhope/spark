@@ -61,11 +61,14 @@
 
 | 告警 | 数量 | 为什么留着 | 解除条件 |
 | --- | --- | --- | --- |
-| `filelock` < 4.2.1（1 high / 9 medium / 3 low） | 13 | `litellm` 硬锁 `filelock>=3.16.1,<4.0`，1.108.2（最新）仍未放宽；强升会破坏 provider 栈 | litellm 放宽约束后随 dependabot 自动升级 |
-| `chromadb` 服务端注入 / RBAC（已关闭并注明理由） | 0 open | 1.5.9 是最新版且无修复版本；spark 只用嵌入式 `PersistentClient`/`EphemeralClient`，从不启动 Chroma HTTP 服务，服务端攻击面不存在 | 上游发布修复版本 |
+| `chromadb` 服务端注入 / RBAC（上游无修复，已登记豁免） | 4 类 advisory | 1.5.9 是最新版且无修复版本；spark 只用嵌入式 `PersistentClient`/`EphemeralClient`，从不启动 Chroma HTTP 服务，服务端攻击面不存在 | 上游发布修复版本 |
 
-> 另：`data-agent/` 与 `api/` 下的 326 条告警对应的清单文件在 v0.9.6 前已从仓库删除，
-> GitHub 不会自动回收，已按 "not_used" 批量关闭并在注释里写明原因。
+> `filelock` 3.32.7 的 13 条告警已在 2026-11-20 关闭：`litellm` 1.110.1 将约束放宽到
+> `filelock>=3.16.1,<5`，根锁升级到 `filelock 4.2.12`，`pyproject.toml` 下限同步到
+> `filelock>=4.2.1`。`tests/test_workflow.py` 与全量测试验证 FileLock API 兼容。
+
+> 另：`data-agent/` 与 `api/` 下清单文件在 v0.9.6 前已从仓库删除，GitHub 不会自动回收；
+> 对应 50 条 open 告警已按 "not_used" 批量关闭并注明陈旧清单原因。
 
 ## 明确不做
 

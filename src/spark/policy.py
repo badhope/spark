@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from types import ModuleType
 from typing import Literal
 
 from spark.config import ApprovalMode, PermissionAction, PermissionRule
 from spark.models import ToolCall
 
+_wc_glob: ModuleType | None
 try:  # optional: minimal installs keep the in-tree matcher below
     from wcmatch import glob as _wc_glob
 except Exception:  # pragma: no cover - optional dependency

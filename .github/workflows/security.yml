@@ -1,9 +1,8 @@
 # P1-9: 安全闭环 — secret 扫描 + 依赖漏洞扫描
 # 独立 workflow，不改动现有 ci.yml / release.yml。
 # * secret-scan：gitleaks + trufflehog，命中真实密钥即失败（阻断合并）。
-# * dependency-audit：uv audit + pip-audit。当前依赖存在已知漏洞（多数无修复
-#   版本，如 chromadb 代码注入类），作为治理看板持续暴露，不阻断合并
-#   （continue-on-error）；可修复的漏洞在依赖升级版本中收敛。
+# * dependency-audit：uv audit + pip-audit。只豁免已登记且上游无修复版本的
+#   ChromaDB 嵌入式客户端告警；其余漏洞会阻断合并，迫使升级或显式登记。
 name: Security
 
 on:
@@ -46,7 +45,6 @@ jobs:
 
   dependency-audit:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -56,10 +54,20 @@ jobs:
       - name: Install project
         run: pip install -e ".[dev]"
       - name: uv audit
-        continue-on-error: true  # 已知漏洞作治理看板，步骤级也不阻断
-        run: uv audit
+        # ChromaDB 只以嵌入式 PersistentClient/EphemeralClient 使用，不启动 HTTP 服务；
+        # 这 4 个 advisory 在 1.5.9 无修复版本，登记到上游发布修复为止。
+        run: |
+          uv audit --locked \
+            --ignore-until-fixed PYSEC-2026-311 \
+            --ignore-until-fixed PYSEC-2026-3813 \
+            --ignore-until-fixed PYSEC-2026-3814 \
+            --ignore-until-fixed PYSEC-2026-3815
       - name: pip-audit
-        continue-on-error: true
+        # 同一组 ChromaDB advisory；一旦上游发布修复版本，请删除对应 ignore 并升级。
         run: |
           pip install pip-audit
-          python3 -m pip_audit --progress-spinner off
+          python3 -m pip_audit --progress-spinner off \
+            --ignore-vuln PYSEC-2026-311 \
+            --ignore-vuln PYSEC-2026-3813 \
+            --ignore-vuln PYSEC-2026-3814 \
+            --ignore-vuln PYSEC-2026-3815
