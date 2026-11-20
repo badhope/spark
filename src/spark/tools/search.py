@@ -5,18 +5,16 @@ import os
 import re
 import time
 from pathlib import Path
-from types import ModuleType
 
 from pydantic import BaseModel
 
 from spark.models import ToolResult
 from spark.sandbox import WorkdirSandbox
 
-_wc_glob: ModuleType | None
 try:  # optional: keep the in-tree matcher for minimal installs
     from wcmatch import glob as _wc_glob
 except Exception:  # pragma: no cover - optional dependency
-    _wc_glob = None
+    _wc_glob = None  # type: ignore[assignment]
 _WC_FLAGS: int | None = (
     _wc_glob.GLOBSTAR | _wc_glob.DOTMATCH if _wc_glob is not None else None
 )
