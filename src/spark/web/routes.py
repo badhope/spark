@@ -591,7 +591,7 @@ def build_handler_class(html: str):
                 )
                 return
             if path == "/api/local-models":
-                self._json(200, state.local_models.snapshot())
+                self._json(200, state.local_models.snapshot(active_path=str(state.cfg.provider.model)))
                 return
             if path == "/api/models":
                 from spark.config import mask_secret

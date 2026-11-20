@@ -146,19 +146,27 @@ class LocalModelManager:
         except OSError:
             return False
 
-    def snapshot(self) -> dict:
+    def snapshot(self, active_path: str | None = None) -> dict:
         models = []
-        active = self.active_path()
+        configured = active_path or self.active_path()
+        configured_file = Path(configured).expanduser() if configured else None
         for spec in CATALOG:
             path = self._path(spec)
             installed = self.installed(spec)
+            active = bool(
+                configured_file
+                and configured_file.is_file()
+                and configured_file.name == spec.filename
+            )
+            if active:
+                installed = True
             job = self._jobs.get(spec.id)
             models.append(
                 {
                     **spec.public(),
-                    "path": str(path),
+                    "path": str(configured_file if active else path),
                     "installed": installed,
-                    "active": installed and active == str(path),
+                    "active": active,
                     "download": (
                         {
                             "status": job.status,
