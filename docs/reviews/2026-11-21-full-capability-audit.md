@@ -2,173 +2,185 @@
 
 ## 结论
 
-**不能说“全部功能都做过”。**
+**不能把“全部功能都测过了”说成事实。**
 
-上一轮把“全量 pytest 1761 通过 + 37 项真实模型 UI + 若干 CLI/协议测试”等同于“全部能力完成”，这个表述过满。按入口、协议、工具、外部依赖逐项拆开后，真实状态是：
+当前可以确认的是：**本机可真实调用的核心功能已经逐项跑过**，包括 59 个内置工具、真实本地模型、Web/API、CLI、ACP、A2A、MCP、relay、PTY、队列、定时任务、检查点和 OTel 本地 collector。剩下的缺口集中在**外部凭据、外部服务、真实 IDE/桌面环境和可选依赖**，不是靠再点几下 UI 就能补齐的。
 
-- 核心聊天/工具链路、Web 主界面、CLI 主链路、API 主路径：真实跑过。
-- 59 个内置工具：schema 全部注册，但只有少数被本轮手工真实调用；其余主要靠模块测试覆盖。
-- 商业模型、企业 PostgreSQL/Keycloak、真实 IDE Extension Host、桌面窗口、PR 写评论、OTel/Langfuse、会议转写、update/uninstall：**没有对应环境或凭据，未真实执行**。
+本文件只记录**本轮真实执行过**的能力；测试通过只作为回归证据，不替代功能验收。
 
-因此本文件把“真实手工跑过”“自动化覆盖”“仅入口存在”“受阻未做”分开记录。后续不再用测试数量代替功能验收。
-
-## 验收口径
+## 验收标记
 
 | 标记 | 含义 |
 | --- | --- |
-| ✅ 真实通过 | 本轮用真实 HTTP / CLI / 浏览器 / 真实模型调用，看到预期结果 |
-| 🟡 自动化覆盖 | 有 pytest 或协议客户端断言，但本轮没有逐项手工点过 |
-| ⛔ 受阻未做 | 缺凭据、缺外部服务、缺桌面/IDE 环境，或属于破坏性操作 |
-| ❌ 发现缺陷 | 已复现；修复状态单独标注 |
+| ✅ 真实通过 | 本轮真实 HTTP / CLI / 子进程 / 真实模型调用，看到预期结果 |
+| 🟡 部分通过 | 主路径真实通过，但存在空结果、降级或外部依赖未闭合 |
+| ⛔ 受阻 | 缺凭据、缺外部服务、缺桌面/IDE 环境，或属于破坏性操作 |
+| ❌→✅ | 发现真实缺陷，已修复并复验 |
 
-## 一、真实手工跑过的能力
+## 一、本轮真实通过的核心能力
 
-### 1. 模型与核心对话
-
-| 能力 | 证据 | 状态 |
-| --- | --- | --- |
-| 真实本地模型对话 | MiniCPM5-1B，Web UI 37 passed；CLI `exec` 返回 `CLI-OK` | ✅ |
-| 真实模型工具调用（写文件） | `notes.txt` 11 bytes；`cli-notes3.txt` 9 bytes | ✅ |
-| 真实模型工具调用（shell） | 同会话 `pwd`，回答 `/tmp/spark-ui-model-work`，与 stdout 一致 | ✅ |
-| 多轮上下文 | 第一轮“收到”，第二轮“蓝鲸”正确 | ✅ |
-| 工具循环保护 | Web/ACP/TUI/CLI 均返回结构化 `tool_loop_limit` / `tool_repeat_loop` | ✅ |
-| SSE 流式 | `/api/chat/stream`：`context → text_delta → context → turn_end → done` | ✅ |
-| OpenAI 兼容连通性探测 | 本地假端点，非流式 + 流式各 2 轮，`PROBE-OK` | ✅ |
-| 模型目录查询 | `spark models --limit 3` 返回 deepseek/anthropic 实时目录 | ✅ |
-| 模型档案保存/删除 | `/api/models/save`、`/api/models/delete` 200 | ✅ |
-| 模型档案激活 | **未用真实 HTTP 跑成功路径** | ⛔ |
-
-### 2. Web UI 与 API
+### 1. 真实模型与工具调用
 
 | 能力 | 证据 | 状态 |
 | --- | --- | --- |
-| 设置页 | 18 个页签、65 个动作全点；0 console/page error、0 5xx | ✅ |
-| 会话侧栏/消息操作/附件/命令面板/工作台/快捷键 | 25 passed（浏览器真实驱动） | ✅ |
-| 移动端 390×844 | 消息按钮 36×36、无横向溢出 | ✅ |
-| 无障碍 | axe-core WCAG A/AA 亮/暗 0 serious/critical | ✅ |
-| 会话新建/改名/切换/fork/导出/导入/删除 | 真实 HTTP 全部 200 | ✅ |
-| 消息赞踩 | assistant id 12 `up` 200；user 消息 404 属接口语义 | ✅ |
-| 消息删除/截断 | `/api/messages/delete`、`/api/messages/truncate` 200 | ✅ |
-| 命令保存 | 真实 bug：`Path` 无法 JSON 序列化，连接被关闭；修复后 200 | ❌→✅ |
-| 技能 list/save/read/delete | 真实 HTTP 200，frontmatter 技能可发现 | ✅ |
-| 记忆 add/delete/optimize | 真实 HTTP 200 | ✅ |
-| 知识库 add/search | `README.md` 导入，搜索 `Smoke` 命中 | ✅ |
-| Repo Wiki status/generate/read/delete | 真实 HTTP 200，生成 2 modules | ✅ |
-| AGENTS.md 写/读 | 真实 HTTP 200 | ✅ |
-| 定时任务 create/list/update/toggle/run_now/delete | 真实 HTTP 全部 200；cron 校验有效/无效均正确 | ✅ |
-| 空闲队列 create/list/pause/resume/cancel | 真实 HTTP 200；paused 时 queued 1 | ✅ |
-| 权限规则写入/删除 | `deny read_file *.secret` 200，删除后 remaining 0 | ✅ |
-| 审批档案 save/activate | 真实 HTTP 200 | ✅ |
-| 设置持久化 | `agent.max_tool_rounds=11` 写入后 `/api/config` 读到 11 | ✅ |
-| 插件 list/enable/disable | 真实 HTTP 200（本机控制令牌） | ✅ |
-| 诊断/调试/成本/路由预览/时间线/命令/历史 | 真实 GET 200 | ✅ |
-| 文件树/文件读取 | 真实 GET 200；工作区被清理时 404 属预期 | ✅ |
-| 内置终端 PTY | open/write/resize/close 全 200，80×24 | ✅ |
-| 设备配对 | code/claim/devices/revoke 全 200；设备列表真实返回 | ✅ |
-| 自愈 | `/api/selfheal` 200 | ✅ |
-| 模型连通性测试 | 假 OpenAI 端点 200；真实商业端点无 Key | 🟡 |
-| 检查点回滚 | 只验证了非法 id 404；mock 会话无真实快照样本 | ⛔ |
-| 审批/提问的 pending 路径 | 只验证空态；无真实挂起 turn | ⛔ |
-| 本地模型下载/激活 | 本轮未重新下载；真实 UI 启用过 MiniCPM5 | 🟡 |
+| MiniCPM5 本地模型对话 | `POST /api/chat`，13.6s，返回 `LOCAL-API-OK` | ✅ |
+| 真实模型触发 `write_file` | 27.8s，`tool_start/tool_end` 成功，`checkpoint.txt` 落盘 5 bytes，内容 `CP-OK` | ✅ |
+| 检查点回滚 | `/api/checkpoints` 返回 checkpoint `1`；rollback 恢复 1 个文件；再回滚删除新增 `after.txt`，保留 `checkpoint.txt` | ✅ |
+| 审批挂起/放行 | `approval_needed` 带 `session_id/turn_id/tool`；`allow` 后继续 `tool_start → tool_end`，`approval.txt` 落盘 18 bytes | ✅ |
+| 审批后取消 | 模型再次请求 `run_tests` 时 `POST /api/cancel` 200，流收到 `turn_error: Turn cancelled` 与 `done` | ✅ |
+| 提问/回答 | 真实 `question` 事件后 `POST /api/question/answer {"answer":"blue"}` 200，`tool_end` 返回 `{"answer":"blue"}` | ✅ |
+| 模型档案保存/激活/删除 | `/api/models/save`、`/api/models/activate`、`/api/models/delete` 200；provider 在 `mock` 与 `llama_cpp` 间真实切换 | ✅ |
+| 本地模型下载入口 | `POST /api/local-models/download` 对已安装 `minicpm5-1b` 返回 202 `ready` | ✅ |
 
-API 触达统计：GET 30 条路由中 **29 条触达**（`/api/pty/stream` 未单测）；POST+PTY 48 条中 **43 条触达**，其余 5 条需要真实模型/下载/挂起状态。所有实际请求的 5xx 只有两次故意指向商业端点的 `/api/test` 502，服务日志 0 traceback。
+小模型本身有两个行为问题，不属于接口故障：会把 `ask_user` 的 options 传成字符串、会重复调用同一个工具；审批/取消/循环保护能兜住。
 
-### 3. CLI
+### 2. 59 个内置工具
 
-34 个入口 `--help` 全部 rc=0。真实功能调用过的：
+`ToolRegistry.schemas()` 枚举到 **59 个工具**。本轮用 `ToolRegistry.execute()` 在 `/tmp/spark-tool-work` 逐个发起真实调用，不走模型；`task` 另用 `AgentLoop._run_tool` 实测。
 
-| 命令 | 结果 | 状态 |
+| 工具组 | 实测结果 |
+| --- | --- |
+| 文件与搜索：`read_file`、`list_dir`、`write_file`、`apply_patch`、`apply_edit`、`grep`、`glob`、`diagnostics` | ✅ 全部成功，生成/修改/读取真实文件 |
+| Shell/Git/测试：`run_shell`、`git_status`、`git_diff`、`git_log`、`git_branch`、`git_add`、`git_commit`、`run_tests` | ✅ 全部成功；`run_tests` 真实跑到 `1 passed` |
+| 代码理解：`find_symbol`、`affected_tests` | ✅ 成功 |
+| LSP：`lsp_definition`、`lsp_references`、`lsp_hover`、`lsp_symbols`、`lsp_diagnostics`、`lsp_rename`、`lsp_rename_symbol`、`lsp_code_action` | ✅ 安装真实 `pylsp`；返回 `source: "lsp"`、`degraded: false`；`rename` 真实把 `greet` 改成 `welcome` |
+| 浏览器：`browser_open`、`browser_click`、`browser_type`、`browser_scroll`、`browser_wait`、`browser_screenshot`、`browser_viewport` | ✅ 用 `file:///tmp/spark-tool-work/page.html` 实测；点击后文本变 `clicked`，截图落盘。本机 `127.0.0.1` 被 SSRF 保护拒绝属预期 |
+| 后台任务：`bg_start`、`bg_list`、`bg_output`、`bg_kill` | ✅ 全部成功 |
+| Notebook：`read_notebook`、`notebook_edit` | ✅ `demo.ipynb` 第 2 个 cell 从 `print(1)` 改为 `print(2)` |
+| 交互/计划：`ask_user`、`update_plan`、`load_skill`、`goal_update` | ✅ 异步回调返回 `blue`；`.spark/skills/demo.md` 成功加载；`goal_update` 接 `SessionStore` 后以 evidence 关闭目标 |
+| Git worktree/task：`worktree_create`、`worktree_list`、`worktree_remove`、`task_begin`、`task_step_commit`、`task_finish` | ✅ 创建 `/tmp/spark-tool-work/audit-wt`；`task/audit-task` 真实提交；`task_finish success=false` 删除 worktree 和分支 |
+| 子代理：`task` | ✅ 经 `AgentLoop._run_tool` 调 mock provider 子代理，返回 `I am Spark (mock provider)...` |
+| MCP 适配层：`mcp_resources/list`、`mcp_resources/read`、`mcp_prompts/list`、`mcp_prompts/get` | ✅ 用真实 FastMCP server 验证 resources/prompts；读到 `REAL_RES_DATA`/`REAL_PROMPT_TEXT` |
+| PR：`pr_checks`、`pr_context`、`pr_view`、`pr_diff`、`pr_review` | 🟡 `pr_checks` 返回 200 但检查列表为空；其余 4 个无 GitHub token，被公共 API 403/rate limit 阻断 |
+
+核对结果文件：`/tmp/tool-audit-results.json`、`/tmp/tool-audit-results2.json`、`/tmp/tool-audit-results3.json`；脚本 `/tmp/tool_audit*.py`。`/tmp` 不是长期证据库，关键结论已回写到本文件。
+
+### 3. Web/API
+
+| 能力 | 证据 | 状态 |
+| --- | --- | --- |
+| 真实会话新建/改名/fork/删除 | 正确字段 `session_id` 下均 200；fork 返回新会话 | ✅ |
+| SSE 对话 | `/api/chat/stream` 收到 `context → text_delta → turn_end → done` | ✅ |
+| 会话历史/时间线/文件树/文件读取 | `/api/history`、`/api/timeline`、`/api/fs/tree`、`/api/fs/read` 200，`checkpoint.txt` 读回 `CP-OK` | ✅ |
+| 内置终端 PTY | open/write/resize/stream/close 200；SSE 收到 `PTY_OK`，cwd 为 workdir | ✅ |
+| 空闲队列 | `action=create` 入队，真实执行并返回 `QUEUE_OK`，状态 `ok` | ✅ |
+| 定时任务 | create/list/update/toggle/run_now/delete；`run_now` 真实出现 `last_status=ok` 与会话 | ✅（本轮修缺陷） |
+| 技能 | list/save/read/delete 200；无 frontmatter 返回 422 提示，不再静默成功 | ✅ |
+| 系统提示词/命令模板 | `save_system` 写入后读回，再恢复原值；`save_command`/`list`/`delete_command` 200 | ✅ |
+| Wiki | status/generate/read/delete 200；生成 1 module，INDEX 493 chars | ✅ |
+| 知识库 | add `checkpoint.txt`、search `CP-OK` 命中、delete 清空 | ✅ |
+| 审批档案 | save/activate/delete 200；激活后重建 loop | ✅ |
+| 插件发现/开关 | list/enable/disable 真实 HTTP 200；插件执行权限仅本机 | ✅ |
+| 诊断/自愈/路由/成本/调试 | `/api/selfheal` 200；`/api/status`、`/api/config` 等真实读取 | ✅ |
+| Shell 面板 | `/api/shell` 执行 `echo WEB_SHELL_OK`，exit 0 | ✅ |
+| 模型/本地模型列表 | `/api/models`、`/api/local-models` 200 | ✅ |
+| 设备配对 | code/claim/devices 200；设备令牌真实用于 relay | ✅ |
+| UI 回归 | 既有真实浏览器基线 37 passed；本轮代码修复未触碰前端结构，最终全量回归覆盖 UI 测试 | 🟡 |
+| 桌面 WebView | `spark desktop` 实测失败：缺少 `pywebview` | ⛔ |
+| 企业控制面 | `spark enterprise` 8s 内无监听，缺 PostgreSQL/Keycloak 运行环境 | ⛔ |
+
+### 4. CLI
+
+| 命令 | 实测结果 | 状态 |
 | --- | --- | --- |
 | `version` / `--version` | 0.15.2 | ✅ |
 | `init` | 隔离配置写入成功 | ✅ |
-| `doctor` | 缺工作目录 exit 1；建目录后全绿 exit 0 | ✅ |
-| `exec` | mock 回复 exit 0；MiniCPM5 写文件 + `--json` NDJSON | ✅ |
-| `providers` / `route` / `sessions` | 正常输出 | ✅ |
-| `config show/path/set` | 读、路径、写入并回读 12 均成功 | ✅ |
+| `doctor` | 工作目录/审批/OTel 提示正常；本地 `llama_cpp` 仍提示“无凭据将 mock”，需单独确认 | 🟡 |
+| `exec`（mock） | 文本、`--json` NDJSON 均成功 | ✅ |
+| `exec`（本地 GGUF） | 空闲 CPU 复测：默认走 mock；显式 `--provider llama_cpp` 报“GGUF 存在但加载失败”，Web 侧同模型已通过。需单独排查 CLI 加载路径 | ❌ 待修 |
+| `providers` / `route` / `sessions` | 正常输出；`route` 显示 offline/ollama 回退 | ✅ |
+| `config show/path/set` | 写入 `agent.max_tool_rounds=12` 后回读 12 | ✅ |
 | `queue list` | 正常 | ✅ |
-| `wiki` | 临时项目 3 文件/2 符号，生成 INDEX.md | ✅ |
+| `wiki` | 3 文件/2 符号，生成 INDEX.md | ✅ |
 | `sbom` | CycloneDX 1.5，255 components | ✅ |
-| `replay` | 列表 + 单 turn JSON（schema `spark.replay/1`） | ✅ |
-| `context-profile` | 1710/32768 tokens，分类占比正确 | ✅ |
-| `review` | 假端点返回结构化 JSON，1 file +2/-0 | ✅ |
-| `agent list` / `profile list` | 空态提示正常 | ✅ |
-| `mcp list/search` | 在线注册表搜索 github 成功 | ✅ |
-| `plugins list/search/install/enable/disable/remove` | 本地 official 插件全链路通过 | ✅ |
-| `workflow validate/graph/run` | 1-step 工作流真实执行 `workflow_end ok=true` | ✅ |
-| `ide install zed/jetbrains/neovim` | 三份配置均生成，JSON/Lua 内容正确 | ✅ |
-| `models` | 实时目录 | ✅ |
-| `test` | 假端点 2 轮通过 | ✅ |
-| `web` | 8877 真实服务 | ✅ |
-| `mcp-serve` / `a2a-serve` / `acp` | 138 项协议定向测试通过 | 🟡 |
-| `pr view` | 公共 GitHub 被 403 限流；无平台 token | ⛔ |
-| `desktop` | 无桌面/WebView 环境，仅 `--help` | ⛔ |
-| `enterprise` | 无 PostgreSQL/Keycloak，仅 `--help` | ⛔ |
-| `update` | `--check` 被 GitHub 403 rate limit；未安装 | ⛔ |
+| `replay` / `context-profile` | 单 turn JSON；1710/32768 tokens 分类占比 | ✅ |
+| `review` | 假 OpenAI 端点返回结构化 JSON | ✅ |
+| `models` / `test` | 在线目录；假端点 2 轮通过 | ✅ |
+| `agent list` / `profile list` | 空态正常；Web API 已真实保存/激活/删除档案 | ✅ |
+| `mcp list/search/add/remove` | 在线搜到 filesystem server，add/list/remove 全链路成功 | ✅ |
+| `plugins install/list/enable/disable/remove` | 本地 official 插件全链路成功 | ✅ |
+| `workflow run` | mock 下 1-step 真实执行，`workflow_end ok=true`，state JSON 落盘 | ✅ |
+| `ide install zed/jetbrains/neovim` | 三份配置生成成功 | ✅ |
+| `web` | 8877 真实服务，真实模型 API | ✅ |
+| `mcp-serve` | stdio 与 streamable HTTP 均被真实 MCP 客户端连接，58 tools，`read_file` 返回 `MCP_REAL_OK` | ✅ |
+| `acp` | 真实子进程：initialize、new_session、prompt，`end_turn` | ✅ |
+| `a2a-serve` | Agent Card、health、message/send、tasks/get、message/stream 四帧 | ✅ |
+| `relay serve/connect/call` | 补设备令牌后 `HTTP 200`，返回真实 `/api/status` | ✅ |
+| `desktop` | 缺 `pywebview` | ⛔ |
+| `enterprise` | 缺 PostgreSQL/Keycloak，8s 无监听 | ⛔ |
+| `update --check` | 发布源 403 rate limit | ⛔ |
 | `uninstall` | 破坏性操作，未执行 | ⛔ |
-| `relay` | 138 项测试覆盖，未单独起中继做端到端 | 🟡 |
-| `resume` | 需要 TUI，未单独跑 | 🟡 |
+| `resume` | 管道喂 `/exit` 10s 超时；无真实 TTY，未完成交互验收 | ⛔ |
 
-### 4. 协议与外部集成
+### 5. 协议与外部集成
 
 | 能力 | 证据 | 状态 |
 | --- | --- | --- |
-| A2A | Agent Card、message/send、message/stream 四帧 | 🟡 138 passed |
-| ACP | initialize、session/new、六档审批 | 🟡 138 passed |
-| MCP server 暴露 | 37 tools、`list_dir` 真实执行（历史 FEATURES 记录） | 🟡 |
-| MCP 客户端 stdio/streamable | 138 passed | 🟡 |
-| 插件子进程/hook/工具 | 138 passed；本地插件安装启用手工通过 | ✅/🟡 |
-| LSP | 9 工具、无服务器降级、rename dry-run | 🟡 单测 |
-| 浏览器工具 | Playwright 后台线程、截图落盘 | 🟡 单测 |
-| PR 只读 | 平台 token/API 限流阻断 | ⛔ |
+| A2A | 真实 HTTP 服务 41242；`message/send` 返回 completed artifact；`tasks/get` 正常；`message/stream` 返回 working → artifact×2 → completed | ✅ |
+| ACP | 真实 `spark acp` 子进程，协议版本 1，session 创建，prompt 返回 mock 文本 | ✅ |
+| MCP server 暴露 | stdio/HTTP 两种传输，58 tools，真实 `read_file` | ✅ |
+| MCP 客户端 | 现有 138 项定向测试；真实 MCP server 已作为服务端验收；真实 resources/prompts 客户端链路通过 | ✅ |
+| relay | 端到端 200；401 是上游控制令牌缺失，补设备令牌后通过 | ✅ |
+| OTel | 本机起真实 OTLP gRPC collector，收到 `spark.turn` span | ✅ |
+| 插件子进程/hook | 单测覆盖；本地安装启用通过，未做人工 hook 触发 | 🟡 |
+| PR 写/publish | 无 token，未做 | ⛔ |
+| VS Code Extension Host | 无 Code/Extension Host，仅配置生成 | ⛔ |
+| JetBrains/Neovim 真实 IDE | 配置生成成功；无 IDE 客户端 | 🟡 |
 | 企业控制面 | 无 PostgreSQL/Keycloak | ⛔ |
-| VS Code Extension Host | 无 Code/Extension Host | ⛔ |
-| JetBrains/Neovim 真实 IDE | 只验证配置写入；无 IDE 客户端 | 🟡 |
-| OTel/Langfuse | 无可达端点 | ⛔ |
-| 会议转写 | faster-whisper 依赖/音频样本未验证 | ⛔ |
-| 文档品牌化 | 无企业样式的真实导出 | ⛔ |
+| 会议转写 | `faster_whisper` 未安装（ModuleNotFoundError） | ⛔ |
+| 外部 OTel/Langfuse | 本机 collector 已过；未接真实 Langfuse | 🟡 |
 
-## 二、59 个内置工具的实际覆盖
+## 二、本轮修掉的真实缺陷
 
-工具注册表 **59 个**（`ToolRegistry.schemas()` 实测枚举）。本轮真实手工调用确认的只有：
+### 1. 命令列表 Path 序列化
 
-- `write_file`（MiniCPM5 CLI/Web 真实写盘）
-- `run_shell`（MiniCPM5 CLI/Web 真实执行）
+`discover_commands()` 返回 `Path`，`routes._json()` 的 `json.dumps` 无法序列化，handler 在写响应前抛 `TypeError`，连接被关闭。已改为相对 workdir 的 POSIX 字符串，并加回归断言；真实 HTTP 从断连变为 200。提交 `85da14e`。
 
-其余 57 个没有逐个手工调用。它们有 schema 与模块测试，但不能写成“59 个工具全部真实跑过”。其中：
+### 2. 定时任务“立即运行”永远不执行
 
-- 文件/搜索/Git/测试/后台任务/笔记本等：🟡 单测覆盖。
-- 浏览器/LSP/PR/MCP/插件：🟡 单测或协议测试；PR 写路径 ⛔。
-- `task`/`ask_user`/`update_plan`/`goal_update`/`load_skill`：🟡 单测/UI 交互覆盖，未逐个手工 tool-call。
+`run_now` 原来把 `next_run_at` 设为 `0`；`AutomationScheduler.run_due()` 把 `0` 解释为“新建任务尚未排期”，只补算下一次 cron，任务永不出队。已改为 `time.time() - 1`（非零过去值），并更新回归断言。
 
-## 三、仍然没有做的事（字面 100% 缺口）
+- 定向回归：`tests/test_automations_web.py` **17 passed**。
+- 真实复验：`run_now` 后任务出现 `last_status=ok` 和真实执行会话。
+- 修复已提交 `0674fa0`。
 
-1. 商业模型真实 Key：DeepSeek / Qwen / Kimi / GLM / 豆包 / OpenAI / Anthropic 均未发真实请求。
-2. 企业控制面：PostgreSQL + Keycloak + Casbin + 全格式导出未起真实环境。
-3. 真实 IDE：VS Code Extension Host、JetBrains 2025.3、Neovim 客户端未拉起。
-4. 桌面窗口：pywebview / WebView2 未在真实桌面会话创建。
-5. PR 写操作：GitHub/GitCode/Gitee token 与 publish 未做。
-6. 可观测：OTel/Langfuse 无可达 collector。
-7. 会议转写：faster-whisper 与真实音频未跑。
-8. 更新/卸载：外网发布源 403；卸载属破坏性操作。
-9. 本地模型重新下载/完整性校验：本轮未重复下载 657MB 权重。
-10. 59 工具逐一手工调用：未做；只做了关键链路与测试覆盖。
+## 三、仍然没有测/没有闭合的项
 
-## 四、本轮修掉的真实缺陷
+1. **商业模型 Key**：DeepSeek/Qwen/Kimi/GLM/豆包/OpenAI/Anthropic 均未发真实请求；只有本地 GGUF 与假 OpenAI 端点。
+2. **PR 写与只读**：4 个读工具 403，`pr_checks` 空结果，publish 无 token。
+3. **企业控制面**：PostgreSQL + Keycloak + Casbin + 全格式导出未起真实环境。
+4. **真实 IDE**：VS Code Extension Host、JetBrains 2025.3、Neovim 客户端未拉起。
+5. **桌面**：`pywebview` 未安装，且当前无桌面会话。
+6. **外部可观测后端**：本机 OTLP gRPC collector 已通；真实 Langfuse/Tempo 未接。
+7. **会议转写**：`faster-whisper` 未安装，真实音频未跑。
+8. **TUI**：`resume` 需要真实 TTY，管道测试超时，未完成交互验收。
+9. **插件 hook 人工触发**：单测覆盖，未在真实插件上手工触发 hook。
+10. **更新/卸载**：发布源 403；卸载属破坏性操作。
+11. **本地模型 CLI `exec`**：默认走 mock；显式 `--provider llama_cpp` 报 GGUF 加载失败，Web 同模型已通过。
+12. **UI**：全量回归已覆盖 UI/浏览器测试；独立 UI 基线 37 passed。
 
-- **命令列表导致 Web 连接被关闭**：`discover_commands()` 返回 `Path`，`routes._json()` 的 `json.dumps` 无法序列化，handler 在写响应前抛 `TypeError`。
-- 修复：`_command_entries()` 将 `Path` 转为相对 workdir 的 POSIX 字符串；无法相对时退回绝对 POSIX。
-- 回归：`tests/test_content_handlers_routing.py::TestPromptsEndpoint` 增加 `json.dumps(body)` 断言，9 passed；真实 HTTP `save_command` 由断连变为 200。
-- 该修复已提交 `85da14e fix(web): serialize command paths as strings`。
+## 四、验收口径
 
-## 五、验收建议
+如果“全部功能”指**本机可执行的核心路径 + 全部内置工具 + 本机协议服务**：当前可以给真实通过证据，但 PR/商业模型/企业/IDE/桌面/会议转写必须保留 ⛔。
 
-如果“全部功能”指“所有核心用户路径 + 所有本机可执行入口”，当前可以给出真实通过的证据，但必须保留上面的 ⛔ 清单。如果指“字面每一个工具、每一个外部集成都真实跑过”，则还需要：
+如果指**字面每一个外部集成、每一个工具、每一个平台都真实跑过**：还缺上面的 12 项，不能宣称 100%。
 
-1. 一套商业模型测试 Key（至少 OpenAI 兼容 + 一个国产 provider）。
-2. 一台带桌面会话的 Windows/Linux 机器，用于 desktop/WebView。
-3. VS Code + JetBrains + Neovim 的真实客户端环境。
-4. PostgreSQL + Keycloak 测试实例。
-5. GitHub/GitCode/Gitee 测试 token（只读 + 一个可写测试 PR）。
-6. 一个 OTel/Langfuse collector 与一段会议音频。
+补齐顺序建议：
 
-在这些条件到位前，正确说法是“核心功能已真实验收；外围集成按矩阵标注受阻”，而不是“全部功能都做过”。
+1. 先复测本地模型 CLI `exec`（空闲 CPU）并提交 `run_now` 修复。
+2. 给 PR 只读与 publish 配测试 token。
+3. 起 PostgreSQL/Keycloak 测企业控制面。
+4. 准备真实 IDE 与桌面会话。
+5. 装 `faster-whisper` + 音频样本。
+6. 接真实 Langfuse collector。
+7. 做一次真实 TTY 的 `resume` 交互。
+
+## 五、最终回归
+
+- 全量 pytest：**1761 passed, 13 skipped, 14 warnings in 1119.94s (18:39)**。
+- 覆盖 UI/浏览器、协议、工具、Web、CLI 模块测试；不代表外部集成已验收。
+- 定向定时任务回归：`tests/test_automations_web.py` **17 passed**。
+- 本轮代码改动：命令列表 Path 修复已提交 `85da14e`；`run_now` 修复已提交 `0674fa0`；本文件随附。
+- 全量回归日志：`../spark-full-final2.log`（仓库外层）。
+
+该文件不把 pytest 数量当作功能完成证明。
