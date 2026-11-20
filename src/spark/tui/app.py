@@ -260,7 +260,7 @@ class SparkApp(App):
     """
     BINDINGS = [
         Binding("ctrl+c", "cancel_turn", "Cancel turn", show=True),
-        Binding("ctrl+d", "quit", "Quit", show=True),
+        Binding("ctrl+d", "quit", "Quit", show=True, priority=True),
         Binding("ctrl+l", "clear_chat", "Clear view", show=True),
         Binding("ctrl+t", "test_model", "Test model", show=True),
         Binding("question_mark", "toggle_help", "Help", show=True),

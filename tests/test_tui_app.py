@@ -116,6 +116,24 @@ def test_tui_composer_accepts_typing(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
+def test_tui_ctrl_d_quits_even_when_composer_focused(tmp_path: Path) -> None:
+    """Input binds ctrl+d to delete_right, which used to swallow the quit key."""
+
+    async def run() -> None:
+        app, store = _build(tmp_path)
+        try:
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                await pilot.click("#composer")
+                await pilot.press("ctrl+d")
+                await pilot.pause()
+                assert not app.is_running
+        finally:
+            store.close()
+
+    asyncio.run(run())
+
+
 def test_tui_quit_binding_is_registered(tmp_path: Path) -> None:
     """The bindings are the only discoverable interface: pin their keys."""
 
