@@ -4,6 +4,7 @@ import MessageItem, { type MessageActions } from "./MessageItem"
 import { EmptyState } from "./EmptyState"
 import { VirtualMessageList } from "./VirtualMessageList"
 import { useChatStore } from "../store/chatStore"
+import { useSessionStore } from "../store/sessionStore"
 import { useUiStore } from "../store/uiStore"
 import { t } from "../i18n"
 
@@ -56,9 +57,11 @@ export const ChatView = memo(function ChatView() {
   const streaming = useChatStore((s) => s.streaming)
   const setInput = useChatStore((s) => s.setInput)
   const deleteMessage = useChatStore((s) => s.deleteMessage)
+  const feedbackMessage = useChatStore((s) => s.feedbackMessage)
   const regenerate = useChatStore((s) => s.regenerate)
   const startEditMessage = useChatStore((s) => s.startEditMessage)
   const lang = useUiStore((s) => s.lang)
+  const status = useSessionStore((s) => s.status)
 
   const actions = useMemo<MessageActions>(
     () => ({
@@ -82,11 +85,15 @@ export const ChatView = memo(function ChatView() {
         if (!m.dbId) return
         void regenerate(m.dbId)
       },
+      onFeedback: (m, rating) => {
+        if (!m.dbId) return
+        void feedbackMessage(m.dbId, rating)
+      },
     }),
-    [deleteMessage, regenerate, startEditMessage, lang],
+    [deleteMessage, regenerate, startEditMessage, feedbackMessage, lang],
   )
 
-  if (loading) {
+  if (loading || !status) {
     return (
       <div className="flex-1 overflow-y-auto">
         <SkeletonList />
@@ -105,6 +112,7 @@ export const ChatView = memo(function ChatView() {
   return (
     <VirtualMessageList
       items={items}
+      resetKey={status.session_id}
       estimateHeight={estimateHeight}
       renderItem={(m) => (
         <div className="mx-auto max-w-[780px] px-3 sm:px-4" lang={lang}>

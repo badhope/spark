@@ -120,7 +120,7 @@
   --accent-soft: rgba(166, 59, 0, 0.1);
   --accent-glow: rgba(232, 98, 12, 0.2);
   --on-accent: #ffffff;
-  --ok: #0f9d58;
+  --ok: #0b7a43;
   --err: #d92d20;
   --warn: #92400e;
   --info: #1d4ed8;
@@ -414,11 +414,16 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto !important; }
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
   }
   .caret::after { display: none; }
 }

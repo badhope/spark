@@ -1,6 +1,6 @@
-import { memo, useCallback, useEffect, useState } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { fetchGitChanges } from "../api"
-import { IconFileDiff, IconRefresh } from "./icons"
+import { IconCheck, IconCopy, IconFileDiff, IconRefresh } from "./icons"
 import { Spinner } from "./ui"
 import { useUiStore } from "../store/uiStore"
 import { t } from "../i18n"
@@ -12,6 +12,10 @@ export const ChangesPanel = memo(function ChangesPanel({ active }: { active: boo
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchGitChanges>> | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState("")
+  const [query, setQuery] = useState("")
+  const [copied, setCopied] = useState(false)
+  const [jumpNotice, setJumpNotice] = useState("")
+  const diffBoxRef = useRef<HTMLDivElement | null>(null)
 
   const refresh = useCallback(async () => {
     setBusy(true)
@@ -29,8 +33,34 @@ export const ChangesPanel = memo(function ChangesPanel({ active }: { active: boo
     if (active) void refresh()
   }, [active, refresh])
 
-  const entries = data?.entries ?? []
+  const entries = useMemo(() => data?.entries ?? [], [data])
+  const visibleEntries = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return q ? entries.filter((e) => e.path.toLowerCase().includes(q)) : entries
+  }, [entries, query])
   const diffLines = (data?.diff ?? "").split("\n")
+
+  const scrollToPath = (path: string) => {
+    setJumpNotice("")
+    const idx = diffLines.findIndex((l) => l.startsWith("diff --git") && (l.includes(`a/${path} `) || l.includes(`b/${path}`)))
+    if (idx < 0) {
+      setJumpNotice(t("changes.notInDiff", lang))
+      window.setTimeout(() => setJumpNotice(""), 2200)
+      return
+    }
+    const row = diffBoxRef.current?.querySelector<HTMLElement>(`[data-line="${idx}"]`)
+    row?.scrollIntoView({ block: "start" })
+  }
+
+  const copyDiff = async () => {
+    try {
+      await navigator.clipboard.writeText(data?.diff ?? "")
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1400)
+    } catch {
+      /* ignore clipboard denial */
+    }
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -40,6 +70,16 @@ export const ChangesPanel = memo(function ChangesPanel({ active }: { active: boo
           {data?.repo === false ? t("changes.notRepo", lang) : data?.branch || "—"}
         </span>
         {entries.length > 0 && <span className="text-[10px] text-ink3">{entries.length}</span>}
+        <button
+          type="button"
+          onClick={() => void copyDiff()}
+          disabled={!data?.diff}
+          title={t("changes.copyDiff", lang)}
+          aria-label={t("changes.copyDiff", lang)}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-hover hover:text-ink disabled:opacity-40"
+        >
+          {copied ? <IconCheck size={12} className="text-ok" /> : <IconCopy size={12} />}
+        </button>
         <button
           type="button"
           onClick={() => void refresh()}
@@ -62,18 +102,34 @@ export const ChangesPanel = memo(function ChangesPanel({ active }: { active: boo
         </div>
       ) : (
         <>
-          <div className="max-h-40 shrink-0 overflow-y-auto border-b border-line p-1.5">
-            {entries.map((e) => (
-              <div key={`${e.code}-${e.path}`} className="flex items-center gap-2 rounded-md px-2 py-1 text-[11px] hover:bg-hover">
+          <div className="max-h-48 shrink-0 overflow-y-auto border-b border-line p-1.5">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("changes.searchPh", lang)}
+              aria-label={t("changes.searchPh", lang)}
+              className="mb-1 w-full rounded-md border border-line bg-panel2 px-2 py-1 text-[11px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+            />
+            {visibleEntries.map((e) => (
+              <button
+                key={`${e.code}-${e.path}`}
+                type="button"
+                onClick={() => scrollToPath(e.path)}
+                title={e.path}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[11px] hover:bg-hover"
+              >
                 <span className="w-5 shrink-0 font-mono text-[10px] font-semibold text-warn">{e.code.trim() || "?"}</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-ink2" title={e.path}>{e.path}</span>
-              </div>
+                <span className="min-w-0 flex-1 truncate font-mono text-ink2">{e.path}</span>
+              </button>
             ))}
+            {visibleEntries.length === 0 && <p className="px-2 py-1 text-[10px] text-ink3">{t("changes.noMatches", lang)}</p>}
+            {jumpNotice && <p className="px-2 py-1 text-[10px] text-warn">{jumpNotice}</p>}
           </div>
-          <div className="min-h-0 flex-1 overflow-auto bg-panel2/40 p-2 font-mono text-[10.5px] leading-[1.55]">
+          <div ref={diffBoxRef} className="min-h-0 flex-1 overflow-auto bg-panel2/40 p-2 font-mono text-[10.5px] leading-[1.55]">
             {diffLines.map((line, i) => (
               <div
                 key={i}
+                data-line={i}
                 className={
                   line.startsWith("+") && !line.startsWith("+++")
                     ? "text-ok"

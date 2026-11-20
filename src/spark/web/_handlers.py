@@ -62,6 +62,7 @@ from spark.web._handlers_sessions import (  # noqa: F401
     _handle_approval,
     _handle_cancel,
     _handle_checkpoints_rollback,
+    _handle_message_feedback,
     _handle_messages_delete,
     _handle_messages_truncate,
     _handle_question_answer,

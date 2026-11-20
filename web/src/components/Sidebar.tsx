@@ -240,6 +240,13 @@ export const Sidebar = memo(function Sidebar() {
   }, [query])
 
   const currentId = status?.session_id
+  const mockModel = status?.provider === "mock"
+  const modelLabel = !status
+    ? t("sidebar.connecting", lang)
+    : mockModel
+      ? t("composer.mockModel", lang)
+      : (status.model || t("sidebar.noModel", lang))
+  const modelInitial = !status ? "…" : mockModel ? "M" : (status.model?.slice(0, 2).toUpperCase() ?? "AI")
   const themeLabel = t(theme === "light" ? "display.light" : theme === "dark" ? "display.dark" : "display.system", lang)
   const width = useSidebarWidth()
 
@@ -323,12 +330,21 @@ export const Sidebar = memo(function Sidebar() {
 
         {/* 会话列表 */}
         <div className="flex-1 overflow-y-auto px-3 pb-3">
-          {groups.length === 0 && (
+          {groups.length === 0 && (!status && !query.trim() ? (
+            <div className="space-y-2 py-2" aria-hidden="true">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="rounded-lg border border-line/60 bg-panel px-2.5 py-2">
+                  <div className="skeleton h-3 w-24" />
+                  <div className="skeleton mt-2 h-2.5 w-16" />
+                </div>
+              ))}
+            </div>
+          ) : (
             <div className="flex flex-col items-center gap-2 py-10 text-center">
               <IconHistory size={22} className="text-ink3" />
               <p className="text-xs text-ink3">{query ? t("sidebar.noMatch", lang) : t("sidebar.empty", lang)}</p>
             </div>
-          )}
+          ))}
           {groups.map((g) => (
             <div key={g.key} className="mt-3">
               <div className="mb-1 px-1 text-[10.5px] font-semibold tracking-wider text-ink3 uppercase">{t(g.key, lang)}</div>
@@ -437,7 +453,7 @@ export const Sidebar = memo(function Sidebar() {
                           )
                         })()}
                         <span className="mt-0.5 block text-[10px] text-ink3">
-                          {timeLabel(s.updated_at, lang)} · {s.model}
+                          {timeLabel(s.updated_at, lang)} · {mockModel ? t("composer.mockModel", lang) : s.model}
                         </span>
                       </button>
                       )}
@@ -451,12 +467,12 @@ export const Sidebar = memo(function Sidebar() {
                             setRenameDraft(s.title && s.title !== "untitled" ? s.title : "")
                           }}
                           className={cls(
-                            "flex h-6 w-6 items-center justify-center rounded-md text-ink3 opacity-0 transition-all hover:bg-hover hover:text-ink focus-visible:opacity-100",
+                            "flex h-7 w-7 items-center justify-center rounded-md text-ink3 opacity-0 transition-all hover:bg-hover hover:text-ink focus-visible:opacity-100",
                             active && "opacity-100",
                             "group-hover:opacity-100",
                           )}
                         >
-                          <IconPencil size={12} />
+                          <IconPencil size={14} />
                         </button>
                         {confirmId === s.id ? (
                           <span className="anim-fade flex items-center gap-1 rounded-md border border-err/40 bg-panel p-0.5 shadow-sm">
@@ -491,12 +507,12 @@ export const Sidebar = memo(function Sidebar() {
                               setConfirmId(s.id)
                             }}
                             className={cls(
-                              "flex h-6 w-6 items-center justify-center rounded-md text-ink3 opacity-0 transition-all hover:bg-err/10 hover:text-err focus-visible:opacity-100",
+                              "flex h-7 w-7 items-center justify-center rounded-md text-ink3 opacity-0 transition-all hover:bg-err/10 hover:text-err focus-visible:opacity-100",
                               active && "opacity-100",
                               "group-hover:opacity-100",
                             )}
                           >
-                            <IconTrash size={12} />
+                            <IconTrash size={14} />
                           </button>
                         )}
                       </div>
@@ -512,7 +528,7 @@ export const Sidebar = memo(function Sidebar() {
         <div className="border-t border-line p-2.5">
           <div className="flex items-center gap-2 rounded-[9px] bg-panel px-2.5 py-2">
             <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-accent-soft text-[9.5px] font-bold text-accent">
-              {status?.model?.slice(0, 2).toUpperCase() ?? "AI"}
+              {modelInitial}
               <span
                 title={status?.demo_mode ? (status.demo_reason ?? "") : t("sidebar.liveModel", lang)}
                 className={cls(
@@ -522,7 +538,7 @@ export const Sidebar = memo(function Sidebar() {
               />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[11.5px] font-semibold text-ink">{status?.model ?? t("sidebar.noModel", lang)}</p>
+              <p className="truncate text-[11.5px] font-semibold text-ink">{modelLabel}</p>
               <p className="truncate text-[10px] text-ink3" title={status?.workdir}>
                 {status?.workdir ?? ""}
               </p>

@@ -338,16 +338,32 @@ export interface SessionRow {
   updated_at: number
 }
 
+export interface ChatAttachment {
+  name: string
+  /** 文本附件正文；二进制附件为空。 */
+  content?: string
+  /** 二进制附件 base64（不含 data: 前缀）。 */
+  data?: string
+  mime?: string
+  size?: number
+  /** 前端展示用：pdf/docx/xlsx/pptx/binary/text。 */
+  kind?: string
+}
+
 export interface HistoryMessage {
   role: "user" | "assistant" | "tool"
   content: string
   name?: string
   images?: string[]
+  /** 用户消息附件文件名（正文已在服务端剥离）。 */
+  attachments?: string[]
   /** Database row id; present when the backend could align rows with history. */
   id?: number
   tool_call_id?: string
   /** Present when an assistant turn only requested tools (no text). */
   tool_calls?: Array<{ id: string; name: string; arguments: unknown }>
+  /** 历史回填的赞/踩状态。 */
+  feedback?: "up" | "down"
 }
 
 export interface ApprovalInfo {

@@ -1,6 +1,6 @@
 import { create } from "zustand"
-import type { ChatEvent, GoalState, PlanStep } from "../types"
-import { streamChat, fetchHistory, fetchSessionPending, followSessionEvents, deleteMessage as deleteMessageApi, truncateFromMessage as truncateFromMessageApi, runInlineShell } from "../api"
+import type { ChatEvent, GoalState, PlanStep, ChatAttachment } from "../types"
+import { streamChat, fetchHistory, fetchSessionPending, followSessionEvents, deleteMessage as deleteMessageApi, truncateFromMessage as truncateFromMessageApi, runInlineShell, fetchReplays, setMessageFeedback } from "../api"
 import { useSessionStore } from "./sessionStore"
 import { useSessionRuntimeStore } from "./sessionRuntime"
 import { useUiStore } from "./uiStore"
@@ -16,6 +16,9 @@ export interface SubtaskTrace {
   prompt?: string
   /** 声明的子代理名（若通过 task(agent=...) 派发）。 */
   agent?: string
+  /** 子任务开始时间与耗时（subtask_trace 到达时冻结）。 */
+  startedAt?: number
+  durationMs?: number
 }
 
 export interface ToolCallState {
@@ -33,7 +36,7 @@ export interface ToolCallState {
 /** 助手消息内部的顺序片段，忠实还原"思考→计划→工具→文本"交错顺序 */
 export type Segment =
   | { kind: "text"; text: string }
-  | { kind: "thinking"; text: string }
+  | { kind: "thinking"; text: string; startedAt?: number; durationMs?: number }
   | { kind: "plan"; steps: PlanStep[] }
   | { kind: "tool"; tool: ToolCallState }
   | { kind: "side"; question: string; answer: string; model: string; ok: boolean }
@@ -45,12 +48,24 @@ export interface ChatMsg {
   /** 全文（复制用），与 segments 中的文本一致 */
   text: string
   images?: string[]
+  /** 非图片附件只保留文件名用于展示；正文已进入本轮 prompt（后端注入）。 */
+  attachments?: { name: string; kind?: string; size?: number }[]
   streaming?: boolean
   segments: Segment[]
+  /** 本轮开始时间；用于生成中的实时计时与结束后的本轮耗时。 */
+  startedAt?: number
+  /** 本轮结束后的总耗时（毫秒）；历史消息没有该字段，不伪造。 */
+  durationMs?: number
+  /** 消息时间（由 replay recorded_at 或本地发送时间提供）；没有就不显示。 */
+  createdAt?: number
+  /** 本轮实际使用的模型（来自 replay 摘要；实时消息取当前会话模型）。 */
+  model?: string
+  /** 本轮 token 用量（来自 replay 摘要；实时消息在完成后回填）。 */
+  usage?: { input_tokens?: number; output_tokens?: number; reasoning_tokens?: number; cache_read_tokens?: number; cache_write_tokens?: number; cost_usd?: number; source?: string }
   /** 后端消息行 id（编辑/删除/重试需要精确锚点）；流式新消息在刷新前没有 */
   dbId?: number
-  /** 时间戳（真实事件流画执行图用） */
-  startedAt?: number
+  /** 助手消息赞/踩；持久化在 message_feedback。 */
+  feedback?: "up" | "down"
   meta?: {
     compacted?: { before: number; after: number; summarized: number }
     /** `!cmd` 内联 shell 的执行结果（本地卡片，不进模型上下文） */
@@ -81,6 +96,8 @@ export interface GraphEdge {
 export interface TurnGraph {
   nodes: GraphNode[]
   edges: GraphEdge[]
+  /** 这张图属于哪个会话；切换会话后不能把上一会话的实时图当成当前会话。 */
+  sessionId?: string
 }
 
 const RESUMING = new Set<string>()
@@ -91,6 +108,23 @@ function uid(): string {
   } catch {
     return `m-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
   }
+}
+
+/** 首个正文/工具事件到来时，把仍在流式的思考段定格；没有 startedAt 的旧段不补造。 */
+function closeThinking(segments: Segment[], now = Date.now()): Segment[] {
+  let changed = false
+  const next = segments.map((seg) => {
+    if (seg.kind !== "thinking" || seg.durationMs !== undefined || seg.startedAt === undefined) return seg
+    changed = true
+    return { ...seg, durationMs: Math.max(0, now - seg.startedAt) }
+  })
+  return changed ? next : segments
+}
+
+/** 统一收尾：关闭思考计时，并把本轮总耗时写进消息（已存在则不覆盖）。 */
+function finishTurnMessage(it: ChatMsg, now = Date.now()): ChatMsg {
+  const durationMs = it.durationMs ?? (it.startedAt ? Math.max(0, now - it.startedAt) : undefined)
+  return { ...it, segments: closeThinking(it.segments, now), streaming: false, durationMs }
 }
 
 interface ChatState {
@@ -113,17 +147,20 @@ interface ChatState {
   setLoading: (v: boolean) => void
   setWebSearch: (v: boolean) => void
   addErrorItem: (text: string) => void
-  send: (images?: string[]) => Promise<void>
+  send: (images?: string[], attachments?: ChatAttachment[]) => Promise<void>
   /** `!cmd` 内联 shell：本地执行并渲染结果卡片，不进入对话历史 */
   runShell: (command: string) => Promise<void>
   /** 删除单条消息（后端持久化 + 本地同步） */
   deleteMessage: (dbId: number) => Promise<void>
+  feedbackMessage: (dbId: number, rating: "up" | "down") => Promise<void>
   /** 重新生成：截断到该助手消息之前，重放它对应的用户消息 */
   regenerate: (assistantDbId: number) => Promise<void>
   /** 编辑重发：截断到该用户消息之前，并把原文放回输入框 */
   startEditMessage: (userDbId: number) => Promise<void>
   /** 传输失败时记住原 prompt，供「重试」按钮一键重发 */
-  lastFailedPrompt: { prompt: string; images: string[] } | null
+  lastFailedPrompt: { prompt: string; images: string[]; attachments?: ChatAttachment[] } | null
+  /** POST 流断开后正在附着会话 SSE 续接本轮；UI 用它显示全局状态条。 */
+  recovering: boolean
   retryLastFailed: () => Promise<void>
   /** ``autoResume=false`` is used by resumeSession itself to avoid a
    *  reconnect loop when a dropped SSE stream leaves the turn busy. */
@@ -218,6 +255,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   addErrorItem: (text) => set((s) => ({ items: [...s.items, { id: uid(), role: "error", text, segments: [] }] })),
 
   lastFailedPrompt: null,
+  recovering: false,
 
   retryLastFailed: async () => {
     const failed = get().lastFailedPrompt
@@ -255,7 +293,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ loading: true })
     try {
       const h = await fetchHistory()
-      const items = historyToItems(h.messages)
+      const items = await attachReplayDurations(historyToItems(h.messages), h.session_id)
       // Draft is keyed per session, and the session id is only known now, so
       // the initial read at module load always used an empty key.
       let draft = ""
@@ -293,6 +331,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (visible) set({ streaming: true, abortController: ac })
 
     const assistantId = `resume-${sessionId}-${runtime.turnId || Date.now()}`
+    const startedAt = runtime.startedAt || Date.now()
     let sawDone = false
     set((s) => {
       const currentVisible = useSessionStore.getState().status?.session_id === sessionId
@@ -300,7 +339,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (cached.some((m) => m.id === assistantId)) return s
       const next: ChatMsg[] = [
         ...cached,
-        { id: assistantId, role: "assistant", text: "", streaming: true, segments: [] },
+        { id: assistantId, role: "assistant", text: "", streaming: true, segments: [], startedAt },
       ]
       const itemsBySession = { ...s.itemsBySession, [sessionId]: next }
       return currentVisible ? { items: next, itemsBySession } : { itemsBySession }
@@ -324,7 +363,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const currentVisible = useSessionStore.getState().status?.session_id === sessionId
       if (ev.type === "text_delta") {
         patchResume((it) => {
-          const segs = [...it.segments]
+          const segs = [...closeThinking(it.segments)]
           const last = segs[segs.length - 1]
           if (last && last.kind === "text") {
             segs[segs.length - 1] = { kind: "text", text: last.text + ev.text }
@@ -337,10 +376,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         patchResume((it) => {
           const segs = [...it.segments]
           const last = segs[segs.length - 1]
-          if (last && last.kind === "thinking") {
-            segs[segs.length - 1] = { kind: "thinking", text: last.text + ev.text }
+          if (last && last.kind === "thinking" && last.durationMs === undefined) {
+            segs[segs.length - 1] = { kind: "thinking", text: last.text + ev.text, startedAt: last.startedAt ?? Date.now() }
           } else {
-            segs.push({ kind: "thinking", text: ev.text })
+            segs.push({ kind: "thinking", text: ev.text, startedAt: Date.now() })
           }
           return { ...it, segments: segs }
         })
@@ -353,16 +392,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         useSessionStore.getState().setApproval({ info: ev.approval, tool: ev.tool })
       } else if (ev.type === "turn_end") {
         sawDone = true
-        patchResume((it) => ({
-          ...it,
-          streaming: false,
-          text: ev.text && !it.text ? ev.text : it.text,
-        }))
+        patchResume((it) => finishTurnMessage({ ...it, text: ev.text && !it.text ? ev.text : it.text }))
       } else if (ev.type === "turn_error") {
-        patchResume((it) => ({ ...it, streaming: false }))
+        patchResume((it) => finishTurnMessage(it))
       } else if (ev.type === "done") {
         sawDone = true
-        patchResume((it) => ({ ...it, streaming: false }))
+        patchResume((it) => finishTurnMessage(it))
       }
     }
 
@@ -376,7 +411,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // A dropped stream is not a finished turn: keep the partial bubble alive
       // so a later switch/reload can reconnect instead of showing stale text.
       if (settled) {
-        patchResume((it) => (it.streaming ? { ...it, streaming: false } : it))
+        patchResume((it) => (it.streaming ? finishTurnMessage(it) : it))
       }
       useSessionRuntimeStore.getState().setAbortController(sessionId, null)
       if (sawDone || phase === "idle") {
@@ -400,10 +435,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  send: async (images: string[] = []) => {
+  send: async (images: string[] = [], attachments: ChatAttachment[] = []) => {
     const { input, streaming, abortController } = get()
     const prompt = input.trim()
-    if ((!prompt && images.length === 0) || streaming) return
+    if ((!prompt && images.length === 0 && attachments.length === 0) || streaming) return
     const turnSessionId = useSessionStore.getState().status?.session_id ?? ""
     if (!turnSessionId) return
 
@@ -415,8 +450,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => {
       const items: ChatMsg[] = [
         ...s.items,
-        { id: uid(), role: "user", text: prompt, images, segments: [] },
-        { id: assistantId, role: "assistant", text: "", streaming: true, segments: [] },
+        { id: uid(), role: "user", text: prompt, images, attachments: attachments.map((f) => ({ name: f.name, kind: f.kind, size: f.size })), segments: [], createdAt: Date.now() },
+        { id: assistantId, role: "assistant", text: "", streaming: true, segments: [], startedAt: Date.now(), createdAt: Date.now(), model: useSessionStore.getState().status?.model },
       ]
       return {
         items,
@@ -433,8 +468,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // The `task` tool is the parent of its sub-agents; remembering it lets the
     // graph draw root -> task -> subtask -> each subtask's own tools.
     let taskToolId: string | null = null
-    set({ turnGraph: { nodes: [...graphNodes], edges: [] } })
-    const pushGraph = () => set({ turnGraph: { nodes: [...graphNodes], edges: [...graphEdges] } })
+    set({ turnGraph: { sessionId: turnSessionId, nodes: [...graphNodes], edges: [] } })
+    const pushGraph = () => set({ turnGraph: { sessionId: turnSessionId, nodes: [...graphNodes], edges: [...graphEdges] } })
 
     /** 修改本轮助手消息：始终写会话缓存；仅当该会话可见时同步视图。 */
     function patchLast(fn: (it: ChatMsg) => ChatMsg) {
@@ -450,9 +485,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       })
     }
 
-    /** 追加文本片段：若末段已是 text 则合并，否则新建 */
+    /** 追加文本片段：若末段已是 text 则合并，否则新建；正文开始即停止思考计时 */
     function appendText(it: ChatMsg, add: string): ChatMsg {
-      const segs = [...it.segments]
+      const segs = [...closeThinking(it.segments)]
       const last = segs[segs.length - 1]
       if (last && last.kind === "text") {
         segs[segs.length - 1] = { kind: "text", text: last.text + add }
@@ -466,10 +501,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     function appendThinking(it: ChatMsg, add: string): ChatMsg {
       const segs = [...it.segments]
       const last = segs[segs.length - 1]
-      if (last && last.kind === "thinking") {
-        segs[segs.length - 1] = { kind: "thinking", text: last.text + add }
+      if (last && last.kind === "thinking" && last.durationMs === undefined) {
+        segs[segs.length - 1] = { kind: "thinking", text: last.text + add, startedAt: last.startedAt ?? Date.now() }
       } else {
-        segs.push({ kind: "thinking", text: add })
+        segs.push({ kind: "thinking", text: add, startedAt: Date.now() })
       }
       return { ...it, segments: segs }
     }
@@ -576,6 +611,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                               thinkingChars: ev.data.thinking_chars,
                               answerChars: ev.data.answer_chars,
                               tools: ev.data.tools,
+                              durationMs: s.startedAt ? Math.max(0, Date.now() - s.startedAt) : undefined,
                             }
                           : s,
                       ),
@@ -607,6 +643,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                           phase: "thinking" as const,
                           prompt: typeof ev.data?.prompt === "string" ? ev.data.prompt : "",
                           agent: typeof ev.data?.agent === "string" ? ev.data.agent : "",
+                          startedAt: Date.now(),
                         },
                       ].sort((a, b) => a.index - b.index),
                     },
@@ -632,6 +669,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
             node.status = "done"
             pushGraph()
           }
+          // subtask_trace 通常先到；若没有 trace（失败/提前结束），这里兜底冻结耗时。
+          patchLast((it) => ({
+            ...it,
+            segments: it.segments.map((seg) =>
+              seg.kind === "tool" && seg.tool.name === "task"
+                ? {
+                    ...seg,
+                    tool: {
+                      ...seg.tool,
+                      subtasks: (seg.tool.subtasks ?? []).map((s) =>
+                        s.index === idx && s.durationMs === undefined
+                          ? {
+                              ...s,
+                              phase: "done" as const,
+                              durationMs: s.startedAt ? Math.max(0, Date.now() - s.startedAt) : undefined,
+                            }
+                          : s,
+                      ),
+                    },
+                  }
+                : seg,
+            ),
+          }))
           break
         }
         case "tool_start": {
@@ -649,7 +709,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           patchLast((it) => ({
             ...it,
             segments: [
-              ...it.segments,
+              ...closeThinking(it.segments),
               {
                 kind: "tool",
                 tool: { id: ev.tool.id, name: ev.tool.name, arguments: ev.tool.arguments, status: "running", startedAt: Date.now() },
@@ -823,38 +883,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
           graphEdges.push({ from: "root", to: "result" })
           pushGraph()
-          patchLast((it) => ({
-            ...it,
-            streaming: false,
-            text: ev.text && !it.text ? ev.text : it.text,
-          }))
+          patchLast((it) => finishTurnMessage({ ...it, text: ev.text && !it.text ? ev.text : it.text }))
           break
         case "turn_error":
           flush()
           graphNodes[0].status = "error"
           pushGraph()
+          patchLast((it) => finishTurnMessage(it))
           set((s) => ({ items: [...s.items, { id: uid(), role: "error", text: ev.text || "turn error", segments: [] }] }))
           break
         case "done":
           flush()
-          patchLast((it) => ({ ...it, streaming: false }))
+          patchLast((it) => finishTurnMessage(it))
           break
       }
     }
 
     /** After a dropped POST stream, attach to the session's replay/tail SSE. */
     async function recoverTurn(sessionId: string, afterSeq: number): Promise<boolean> {
+      set({ recovering: true })
       try {
         await followSessionEvents(sessionId, afterSeq, onEvent, ac.signal)
         const phase = useSessionRuntimeStore.getState().runtimes[sessionId]?.phase
         return phase === "idle" || phase === "error"
       } catch {
         return false
+      } finally {
+        set({ recovering: false })
       }
     }
 
     try {
-      await streamChat(prompt, onEvent, ac.signal, images, get().webSearch)
+      await streamChat(prompt, onEvent, ac.signal, images, get().webSearch, attachments)
       flush()
       set({ lastFailedPrompt: null })
     } catch (e) {
@@ -878,7 +938,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         useSessionRuntimeStore.getState().fail(turnSessionId, msg)
         const visible = useSessionStore.getState().status?.session_id === turnSessionId
         if (visible) {
-          set({ lastFailedPrompt: { prompt, images } })
+          set({ lastFailedPrompt: { prompt, images, attachments } })
           set((s) => ({
             items: s.items.filter((m) => !(m.id === assistantId && !m.text && !m.segments.length)),
           }))
@@ -899,7 +959,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Any termination path ends the stream: an aborted or failed turn used to
       // leave the bubble blinking "generating" forever because only turn_end /
       // done cleared the flag.
-      patchLast((it) => (it.streaming ? { ...it, streaming: false } : it))
+      patchLast((it) => (it.streaming ? finishTurnMessage(it) : it))
       const runtime = useSessionRuntimeStore.getState().runtimes[turnSessionId]
       if (runtime?.phase !== "error") {
         useSessionRuntimeStore.getState().finish(turnSessionId)
@@ -990,11 +1050,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  feedbackMessage: async (dbId: number, rating: "up" | "down") => {
+    const target = get().items.find((it) => it.dbId === dbId)
+    if (!target) return
+    const previous = target.feedback
+    const next = previous === rating ? undefined : rating
+    set((s) => ({ items: s.items.map((it) => (it.dbId === dbId ? { ...it, feedback: next } : it)) }))
+    try {
+      await setMessageFeedback(dbId, next ?? null)
+    } catch (e) {
+      set((s) => ({ items: s.items.map((it) => (it.dbId === dbId ? { ...it, feedback: previous } : it)) }))
+      useUiStore.getState().pushToast("toast.feedbackFailed", "error")
+      console.error(e)
+    }
+  },
+
   deleteMessage: async (dbId: number) => {
     if (get().streaming) return
     try {
       const data = await deleteMessageApi(dbId)
-      set({ items: historyToItems(data.messages) })
+      set({ items: await attachReplayDurations(historyToItems(data.messages)) })
       useSessionStore.getState().setStatus(data.status)
       await useSessionStore.getState().refreshSessions()
       useUiStore.getState().pushToast("toast.messageDeleted", "success")
@@ -1010,7 +1085,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       // 真删而不是"只回填输入框"：否则用户改完发送后会变成同一句话的两条记录。
       const data = await truncateFromMessageApi(userDbId)
-      set({ items: historyToItems(data.messages), input: msg.text })
+      set({ items: await attachReplayDurations(historyToItems(data.messages)), input: msg.text })
       useSessionStore.getState().setStatus(data.status)
       await useSessionStore.getState().refreshSessions()
     } catch {
@@ -1040,7 +1115,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // 删除该轮用户消息及其后全部内容，再用同一 prompt 重跑：后端每轮都会
       // 重新落一条 user 行，因此必须先截断而不是"只删助手回复"。
       const data = await truncateFromMessageApi(user.dbId)
-      set({ items: historyToItems(data.messages) })
+      set({ items: await attachReplayDurations(historyToItems(data.messages)) })
       useSessionStore.getState().setStatus(data.status)
       set({ input: user.text })
       await get().send(user.images ?? [])
@@ -1050,6 +1125,62 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 }))
 
+/**
+ * 历史消息本身不带耗时；从当前会话的 replay 摘要里按“用户 prompt + 助手
+ * 文本前缀”回填本轮 duration_ms。刷新后仍能看到“耗时 3.1s”，但没匹配上
+ * 的轮次宁可不显示，也不猜一个数字。
+ */
+export async function attachReplayDurations(items: ChatMsg[], sessionId?: string): Promise<ChatMsg[]> {
+  if (!items.some((m) => m.role === "assistant" && m.text)) return items
+  try {
+    const data = await fetchReplays()
+    if (sessionId && data.session_id && data.session_id !== sessionId) return items
+    const turns = data.turns ?? []
+    if (turns.length === 0) return items
+    const used = new Set<number>()
+    const pendingUserTimes = new Map<number, number>()
+    let prompt = ""
+    let lastUserIndex = -1
+    const out = items.map((it, index) => {
+      if (it.role === "user") {
+        prompt = it.text.trim()
+        lastUserIndex = index
+        return it
+      }
+      if (it.role !== "assistant" || !it.text || !prompt) return it
+      const candidates = turns.filter(
+        (t) => !used.has(t.index) && t.duration_ms !== undefined && t.prompt.trim() === prompt,
+      )
+      const match =
+        candidates.find((t) => {
+          const preview = (t.text_preview ?? "").trim()
+          return !preview || it.text.startsWith(preview)
+        }) ?? candidates[0]
+      if (!match || match.duration_ms === undefined) return it
+      used.add(match.index)
+      const createdAt = it.createdAt ?? (match.recorded_at ? match.recorded_at * 1000 : undefined)
+      // 不能在这里读 out：map 还在构造 out，访问会触发 TDZ 并让整个回填被 catch。
+      if (lastUserIndex >= 0 && createdAt && !items[lastUserIndex].createdAt) {
+        pendingUserTimes.set(lastUserIndex, createdAt)
+      }
+      return {
+        ...it,
+        durationMs: match.duration_ms,
+        model: match.model || it.model,
+        usage: match.usage || it.usage,
+        createdAt,
+      }
+    })
+    for (const [index, createdAt] of pendingUserTimes) {
+      out[index] = { ...out[index], createdAt }
+    }
+    return out
+  } catch {
+    // replay 是增强信息，读取失败不影响历史正文。
+    return items
+  }
+}
+
 /** 后端 history（user/assistant/tool 平铺）→ 前端分组 + 顺序片段模型 */
 export function historyToItems(
   msgs: Array<{
@@ -1057,9 +1188,11 @@ export function historyToItems(
     content: string
     name?: string
     images?: string[]
+    attachments?: string[]
     id?: number
     tool_call_id?: string
     tool_calls?: Array<{ id: string; name: string; arguments: unknown }>
+    feedback?: "up" | "down"
   }>,
 ): ChatMsg[] {
   const out: ChatMsg[] = []
@@ -1104,9 +1237,17 @@ export function historyToItems(
         segs.push({ kind: "tool", tool })
         pending.set(tool.id, tool)
       }
-      out.push({ id: msgId, role: "assistant", text: m.content, segments: segs, dbId: m.id })
+      out.push({ id: msgId, role: "assistant", text: m.content, segments: segs, dbId: m.id, feedback: m.feedback })
     } else if (m.role === "user") {
-      out.push({ id: uid(), role: "user", text: m.content, images: m.images, segments: [], dbId: m.id })
+      out.push({
+        id: uid(),
+        role: "user",
+        text: m.content,
+        images: m.images,
+        attachments: (m.attachments ?? []).map((name) => ({ name })),
+        segments: [],
+        dbId: m.id,
+      })
     } else {
       out.push({
         id: uid(),
@@ -1114,6 +1255,7 @@ export function historyToItems(
         text: m.content,
         segments: [{ kind: "text", text: m.content }],
         dbId: m.id,
+        feedback: m.feedback,
       })
     }
   }

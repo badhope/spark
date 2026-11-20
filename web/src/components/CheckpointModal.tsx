@@ -9,7 +9,7 @@ import {
   type TimelineMessageBrief,
 } from "../api"
 import { Button, cls, IconButton, Spinner } from "./ui"
-import { IconClock, IconHistory, IconX } from "./icons"
+import { IconClock, IconHistory, IconRefresh, IconSearch, IconX } from "./icons"
 import { historyToItems } from "../store/chatStore"
 import { t, type Lang } from "../i18n"
 
@@ -40,6 +40,7 @@ export const CheckpointModal = memo(function CheckpointModal() {
   const [undoing, setUndoing] = useState<number | null>(null)
   /** 消息级 undo 是否连带把工作区恢复到该消息之前的快照 */
   const [restoreFiles, setRestoreFiles] = useState(false)
+  const [query, setQuery] = useState("")
 
   const load = useCallback(async () => {
     setBusy(true)
@@ -116,20 +117,52 @@ export const CheckpointModal = memo(function CheckpointModal() {
   }
 
   if (!open) return null
+  const q = query.trim().toLowerCase()
+  const visibleRows = q ? rows.filter((r) => (r.label || "").toLowerCase().includes(q)) : rows
+  const visibleMessages = q
+    ? messages.filter((m) => `${m.role} ${m.name || ""} ${m.preview || ""}`.toLowerCase().includes(q))
+    : messages
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]" onClick={close}>
       <aside
         className="anim-fade flex h-[min(84vh,640px)] w-[min(94vw,600px)] flex-col overflow-hidden rounded-2xl border border-line bg-canvas shadow-[var(--shadow)]"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label={t("sidebar.checkpoint", lang)}
       >
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
           <IconHistory size={16} className="text-ink2" />
           <span className="text-sm font-semibold text-ink">{t("sidebar.checkpoint", lang)}</span>
-          <IconButton title={t("common.close", lang)} onClick={close} className="ml-auto">
+          <IconButton title={t("common.refresh", lang)} onClick={() => void load()} disabled={busy} className="ml-auto">
+            <IconRefresh size={14} />
+          </IconButton>
+          <IconButton title={t("common.close", lang)} onClick={close}>
             <IconX size={15} />
           </IconButton>
+        </div>
+
+        <div className="border-b border-line px-4 py-2.5">
+          <div className="relative">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("checkpoint.searchPh", lang)}
+              aria-label={t("checkpoint.searchPh", lang)}
+              className="h-8 w-full rounded-lg border border-line bg-panel pl-8 pr-8 text-xs text-ink outline-none placeholder:text-ink3 focus:border-accent"
+            />
+            <IconSearch size={13} className="pointer-events-none absolute left-2.5 top-2 text-ink3" />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="absolute right-2 top-1.5 rounded p-1 text-ink3 hover:bg-hover hover:text-ink"
+                aria-label={t("common.clear", lang)}
+              >
+                <IconX size={12} />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3">
@@ -139,14 +172,14 @@ export const CheckpointModal = memo(function CheckpointModal() {
             </div>
           ) : (
             <>
-              {rows.length === 0 ? (
+              {visibleRows.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 py-8 text-center">
                   <IconClock size={22} className="text-ink3" />
-                  <p className="px-6 text-xs leading-relaxed text-ink3">{t("checkpoint.empty", lang)}</p>
+                  <p className="px-6 text-xs leading-relaxed text-ink3">{q ? t("checkpoint.noMatches", lang) : t("checkpoint.empty", lang)}</p>
                 </div>
               ) : (
                 <ul className="flex flex-col gap-1.5">
-                  {rows.map((r) => (
+                  {visibleRows.map((r) => (
                     <li key={r.id} className={cls("rounded-xl border bg-panel p-3", confirmId === r.id ? "border-err/40" : "border-line")}>
                       <div className="flex items-center gap-2">
                         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-hover text-ink2">
@@ -191,11 +224,11 @@ export const CheckpointModal = memo(function CheckpointModal() {
                   <span className="text-[10px] leading-snug text-ink3">{t("timeline.restoreFilesHint", lang)}</span>
                 </span>
               </label>
-              {messages.length === 0 ? (
-                <p className="px-1 pb-4 text-xs text-ink3">{t("timeline.messagesEmpty", lang)}</p>
+              {visibleMessages.length === 0 ? (
+                <p className="px-1 pb-4 text-xs text-ink3">{q ? t("checkpoint.noMatches", lang) : t("timeline.messagesEmpty", lang)}</p>
               ) : (
                 <ul className="flex flex-col gap-1">
-                  {messages.map((m) => (
+                  {visibleMessages.map((m) => (
                     <li key={m.id} className={cls("rounded-xl border bg-panel px-3 py-2", confirmMsgId === m.id ? "border-err/40" : "border-line")}>
                       <div className="flex items-center gap-2">
                         <span className="w-12 shrink-0 font-mono text-[10px] uppercase text-ink3">

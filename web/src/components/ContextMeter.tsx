@@ -9,6 +9,7 @@ export const ContextMeter = memo(function ContextMeter() {
   const context = useSessionStore((s) => s.status?.context)
   const show = useSessionStore((s) => s.status?.display?.show_context ?? true)
   const lang = useUiStore((s) => s.lang)
+  const openSettingsAt = useUiStore((s) => s.openSettingsAt)
   if (!show || !context) return null
 
   const { used, limit, percent } = context
@@ -22,7 +23,9 @@ export const ContextMeter = memo(function ContextMeter() {
   return (
     <button
       type="button"
+      onClick={() => openSettingsAt("project")}
       title={t("context.meterTitle", lang, { used: Math.round(used / 1000), limit: Math.round(limit / 1000), percent: pct })}
+      aria-label={t("context.meterTitle", lang, { used: Math.round(used / 1000), limit: Math.round(limit / 1000), percent: pct })}
       className="group flex items-center gap-1.5 rounded-full px-1.5 py-1 transition-colors hover:bg-hover"
     >
       <span className="relative flex h-5.5 w-5.5 items-center justify-center">

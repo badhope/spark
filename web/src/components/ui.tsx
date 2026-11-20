@@ -10,6 +10,13 @@ export function cls(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ")
 }
 
+/** 统一耗时展示：1.2s / 1m 05s，避免每个组件各写一套。 */
+export function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, ms) / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)}s`
+  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`
+}
+
 export function Spinner({ size = 14, className }: { size?: number; className?: string }) {
   return (
     <span

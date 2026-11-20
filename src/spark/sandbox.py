@@ -489,9 +489,16 @@ class WorkdirSandbox:
         self._check_protected(path)
         return path
 
-    def _protected_effective(self) -> list[str]:
+    def _protected_effective(self, *, for_ui: bool = False) -> list[str]:
         if self.unrestricted:
             return self.protected_paths
+        if for_ui:
+            # The built-in file viewer is a read-only local UI, not an agent
+            # tool. Spark's own package must stay previewable when the user
+            # opens Spark's repository as the workdir; user-configured
+            # protected paths, credential files and .git control surfaces
+            # remain blocked by _check_protected.
+            return self.protected_paths + DEFAULT_PROTECTED + list(RELATIVE_PROTECTED)
         return self.protected_paths + DEFAULT_PROTECTED + self_protected() + list(
             RELATIVE_PROTECTED
         )
@@ -503,7 +510,7 @@ class WorkdirSandbox:
             return Path("/") / path.relative_to(path.anchor)
         return path
 
-    def _check_protected(self, path: Path) -> None:
+    def _check_protected(self, path: Path, *, for_ui: bool = False) -> None:
         if not self.unrestricted and _is_sensitive_file(path):
             from spark import audit
 
@@ -537,7 +544,7 @@ class WorkdirSandbox:
                 tool=getattr(self, "current_tool", ""),
             )
             raise SandboxPolicyError(f"Blocked protected path: {hit}")
-        for raw in self._protected_effective():
+        for raw in self._protected_effective(for_ui=for_ui):
             p = Path(raw)
             base = p if (p.is_absolute() or raw[:1] in ("/", "\\")) else (self.root / p)
             try:
@@ -546,10 +553,14 @@ class WorkdirSandbox:
                 continue
             raise SandboxPolicyError(f"Blocked protected path: {raw}")
 
-    def is_path_allowed(self, path: Path) -> bool:
-        """True 当 *path* 未命中保护路径清单（供只读遍历工具过滤候选文件）。"""
+    def is_path_allowed(self, path: Path, *, for_ui: bool = False) -> bool:
+        """True 当 *path* 未命中保护路径清单（供只读遍历工具过滤候选文件）。
+
+        ``for_ui=True`` 仅供 Web 文件预览使用：跳过 Spark 自身代码的内置保护，
+        但仍拒绝用户配置的保护路径、凭据文件与 .git 控制面。
+        """
         try:
-            self._check_protected(path)
+            self._check_protected(path, for_ui=for_ui)
         except SandboxPolicyError:
             return False
         return True

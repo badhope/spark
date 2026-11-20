@@ -69,6 +69,7 @@ export const McpRegistryModal = memo(function McpRegistryModal({ onClose, onPick
         className="anim-fade flex h-[min(84vh,640px)] w-[min(96vw,760px)] flex-col overflow-hidden rounded-2xl border border-line bg-canvas shadow-[var(--shadow)]"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label={t("mcpRegistry.title", lang)}
       >
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">

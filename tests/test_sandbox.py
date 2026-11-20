@@ -34,6 +34,27 @@ def test_self_source_is_not_readable(tmp_path: Path) -> None:
     assert box.check_shell("cat src/spark/config.py") is not None
 
 
+def test_ui_read_can_preview_self_source_but_keeps_protected_paths(tmp_path: Path) -> None:
+    """Web 文件预览只跳过 Spark 自身源码保护，用户保护路径与凭据仍拦截。"""
+    repo = Path(__file__).resolve().parents[1]
+    target = repo / "src" / "spark" / "config.py"
+    box = WorkdirSandbox(repo, _cfg())
+    assert box.is_path_allowed(target) is False
+    assert box.is_path_allowed(target, for_ui=True) is True
+
+    cfg = _cfg()
+    cfg.agent.protected_paths = ["src/spark/config.py"]
+    box = WorkdirSandbox(repo, cfg)
+    assert box.is_path_allowed(target, for_ui=True) is False
+
+    env = repo / ".env"
+    env.write_text("SPARK_API_KEY=secret", encoding="utf-8")
+    try:
+        assert box.is_path_allowed(env, for_ui=True) is False
+    finally:
+        env.unlink()
+
+
 def test_secret_files_are_blocked_but_examples_allowed(tmp_path: Path) -> None:
     box = WorkdirSandbox(tmp_path, _cfg())
     (tmp_path / ".env").write_text("SPARK_API_KEY=secret", encoding="utf-8")

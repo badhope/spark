@@ -13,6 +13,7 @@ from typing import Literal, cast
 from spark.models import ApprovalAction
 from spark.web._httpbase import HandlerBase
 from spark.web._routing import _route_state
+from spark.web.utils import remove_session_attachments, split_attachments
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,30 @@ def _handle_approval(handler: HandlerBase, body: dict) -> None:
     handler._json(200, {"ok": True})
 
 
+def _handle_message_feedback(handler: HandlerBase, body: dict) -> None:
+    state = _route_state(handler)
+    try:
+        message_id = int(body.get("message_id") or 0)
+    except (TypeError, ValueError):
+        handler._json(400, {"error": "message_id must be an integer"})
+        return
+    if message_id <= 0:
+        handler._json(400, {"error": "message_id required"})
+        return
+    raw_rating = body.get("rating")
+    rating = None if raw_rating in {None, "", "none", "clear"} else str(raw_rating)
+    if rating not in {None, "up", "down"}:
+        handler._json(400, {"error": "rating must be up, down or null"})
+        return
+    feedback = state.store.set_message_feedback(
+        state.session_id, message_id, rating, str(body.get("comment") or "")
+    )
+    if feedback is None:
+        handler._json(404, {"error": "assistant message not found in current session"})
+        return
+    handler._json(200, {"ok": True, "feedback": feedback})
+
+
 def _handle_sessions_new(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)
     if bool(body.get("isolated")):
@@ -105,6 +130,7 @@ def _handle_sessions_delete(handler: HandlerBase, body: dict) -> None:
         return
     deleting_active = session_id == state.session_id
     state.store.delete_session(session_id)
+    remove_session_attachments(state.workdir, session_id)
     state.drop_runtime(session_id)
     if deleting_active:
         remaining = [
@@ -208,14 +234,27 @@ def _history_messages(state) -> list[dict]:
     except Exception:  # pragma: no cover - ids are a convenience, never a blocker
         logger.debug("load_message_ids failed", exc_info=True)
     aligned = len(ids) == len(history)
+    try:
+        feedback = state.store.list_message_feedback(state.session_id)
+    except Exception:  # pragma: no cover - feedback is additive metadata
+        logger.debug("list_message_feedback failed", exc_info=True)
+        feedback = {}
     for index, msg in enumerate(history):
         row_id = ids[index] if aligned else None
         if msg.role in {"user", "assistant"} and msg.content and not (
             msg.role == "assistant" and msg.tool_calls
         ):
-            entry: dict = {"role": msg.role, "content": msg.content}
+            display_content = msg.content
+            attachment_names: list[str] = []
+            if msg.role == "user":
+                display_content, attachment_names = split_attachments(msg.content)
+            entry: dict = {"role": msg.role, "content": display_content}
+            if attachment_names:
+                entry["attachments"] = attachment_names
             if row_id is not None:
                 entry["id"] = row_id
+                if feedback.get(row_id):
+                    entry["feedback"] = feedback[row_id]
             if msg.role == "user" and msg.images:
                 entry["images"] = [
                     f"data:{i.media_type};base64,{i.data}" for i in msg.images
@@ -247,6 +286,8 @@ def _history_messages(state) -> list[dict]:
             }
             if row_id is not None:
                 entry["id"] = row_id
+                if feedback.get(row_id):
+                    entry["feedback"] = feedback[row_id]
             messages.append(entry)
     return messages
 

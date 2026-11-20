@@ -1,7 +1,7 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import { browseUrl, fetchFsRead, fetchFsTree, type FsEntry } from "../api"
 import { ChangesPanel } from "./ChangesPanel"
-import { IconChevronRight, IconFile, IconFileDiff, IconFolder, IconGlobe, IconSpark, IconTerminal, IconX } from "./icons"
+import { IconCheck, IconChevronRight, IconCopy, IconDownload, IconExternal, IconFile, IconFileDiff, IconFolder, IconGlobe, IconSearch, IconSpark, IconTerminal, IconX } from "./icons"
 import { cls } from "./ui"
 import { t } from "../i18n"
 import { useSessionStore } from "../store/sessionStore"
@@ -26,6 +26,7 @@ export const RightPanel = () => {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [stack, setStack] = useState<string[]>([])
   const [entries, setEntries] = useState<FsEntry[] | null>(null)
+  const [fileQuery, setFileQuery] = useState("")
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState("")
   const [file, setFile] = useState<{ name: string; content: string; truncated?: boolean; binary?: boolean } | null>(null)
@@ -33,6 +34,13 @@ export const RightPanel = () => {
   const [browseUrlValue, setBrowseUrlValue] = useState("")
   const [page, setPage] = useState<{ title?: string; url?: string; content?: string; error?: string } | null>(null)
   const [browseBusy, setBrowseBusy] = useState(false)
+  const [copied, setCopied] = useState("")
+
+  const visibleEntries = useMemo(() => {
+    const q = fileQuery.trim().toLowerCase()
+    if (!q) return entries ?? []
+    return (entries ?? []).filter((e) => e.name.toLowerCase().includes(q))
+  }, [entries, fileQuery])
 
   const loadDir = useCallback(async (dir: string) => {
     setBusy(true)
@@ -46,6 +54,16 @@ export const RightPanel = () => {
       setEntries(null)
     } finally {
       setBusy(false)
+    }
+  }, [])
+
+  const copyText = useCallback(async (text: string, kind: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(kind)
+      window.setTimeout(() => setCopied((v) => (v === kind ? "" : v)), 1400)
+    } catch {
+      /* ignore clipboard denial */
     }
   }, [])
 
@@ -96,6 +114,11 @@ export const RightPanel = () => {
     void loadDir(next.join("/"))
   }
 
+  // 工作台宽度有限，标题只显示 `~` 相对路径；完整路径放在 title 里。
+  // 之前这里固定渲染 workdir，进入 src/ 后看起来仍像仓库根目录，容易误判。
+  const displayPath = `~${stack.length ? `/${stack.join("/")}` : ""}`
+  const fullPath = stack.length ? `${workdir}/${stack.join("/")}` : workdir
+
   async function doBrowse() {
     const url = browseUrlValue.trim()
     if (!url) return
@@ -112,14 +135,21 @@ export const RightPanel = () => {
   }
 
   return (
-    <aside
-      data-testid="workbench"
-      aria-label={t("rightPanel.title", lang)}
-      className={cls(
-        "flex max-w-[72vw] shrink-0 flex-col border-l border-line bg-panel",
-        tab === "run" || tab === "trace" ? "w-[min(72vw,540px)]" : "w-[340px]",
-      )}
-    >
+    <>
+      {/* 窄屏工作台必须以抽屉覆盖，否则 340–540px 的侧栏会把聊天区挤到不可用。 */}
+      <div
+        className="fixed inset-0 z-30 bg-black/50 backdrop-blur-[1px] lg:hidden"
+        onClick={() => setOpen(false)}
+        aria-hidden="true"
+      />
+      <aside
+        data-testid="workbench"
+        aria-label={t("rightPanel.title", lang)}
+        className={cls(
+          "fixed inset-y-0 right-0 z-40 flex max-w-[92vw] shrink-0 flex-col border-l border-line bg-panel shadow-2xl lg:static lg:z-auto lg:max-w-[72vw] lg:shadow-none",
+          tab === "run" || tab === "trace" ? "w-[min(92vw,540px)] lg:w-[min(72vw,540px)]" : "w-[min(92vw,380px)] lg:w-[340px]",
+        )}
+      >
       {/* 面板头：tab 切换 + 关闭 */}
       <div className="flex items-center gap-1 border-b border-line px-2 py-2">
         <div className="flex flex-1 items-center gap-1">
@@ -162,12 +192,34 @@ export const RightPanel = () => {
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-2 border-b border-line px-3 py-2">
             <IconFolder size={11} className="shrink-0 text-ink3" />
-            <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-ink3" title={workdir}>
-              {workdir || "—"}
+            <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-ink3" title={fullPath}>
+              {displayPath}
             </span>
             {entries !== null && (
               <span className="shrink-0 text-[10px] text-ink3">{entries.length}</span>
             )}
+          </div>
+          <div className="border-b border-line px-2 py-1.5">
+            <div className="relative">
+              <IconSearch size={11} className="pointer-events-none absolute top-2 left-2 text-ink3" />
+              <input
+                value={fileQuery}
+                onChange={(e) => setFileQuery(e.target.value)}
+                placeholder={t("rightPanel.searchPh", lang)}
+                aria-label={t("rightPanel.searchPh", lang)}
+                className="h-7 w-full rounded-md border border-line bg-panel2 pr-7 pl-6 text-[11px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+              />
+              {fileQuery && (
+                <button
+                  type="button"
+                  onClick={() => setFileQuery("")}
+                  title={t("common.clear", lang)}
+                  className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded text-ink3 hover:bg-hover hover:text-ink"
+                >
+                  <IconX size={11} />
+                </button>
+              )}
+            </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {stack.length > 0 && (
@@ -193,8 +245,13 @@ export const RightPanel = () => {
                 <IconFolder size={20} className="text-ink3 opacity-60" />
                 <p className="text-[11px] text-ink3">{t("rightPanel.emptyDir", lang)}</p>
               </div>
+            ) : visibleEntries.length === 0 ? (
+              <div className="flex flex-col items-center gap-1.5 px-2 py-10 text-center">
+                <IconSearch size={20} className="text-ink3 opacity-60" />
+                <p className="text-[11px] text-ink3">{t("rightPanel.noMatches", lang)}</p>
+              </div>
             ) : (
-              (entries ?? []).map((e) =>
+              visibleEntries.map((e) =>
                 e.type === "dir" ? (
                   <button
                     key={e.name}
@@ -243,6 +300,37 @@ export const RightPanel = () => {
             </span>
             {file?.truncated && <span className="shrink-0 text-[10px] text-warn">{t("rightPanel.truncated", lang)}</span>}
             {file?.binary && <span className="shrink-0 text-[10px] text-warn">{t("rightPanel.binary", lang)}</span>}
+            {file && !file.binary && (
+              <>
+                <button
+                  type="button"
+                  title={t("files.copyPath", lang)}
+                  aria-label={t("files.copyPath", lang)}
+                  onClick={() => void copyText(stack.length ? [...stack, file.name].join("/") : file.name, "path")}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink3 hover:bg-hover hover:text-ink"
+                >
+                  {copied === "path" ? <IconCheck size={12} className="text-ok" /> : <IconCopy size={12} />}
+                </button>
+                <button
+                  type="button"
+                  title={t("rightPanel.copyContent", lang)}
+                  aria-label={t("rightPanel.copyContent", lang)}
+                  onClick={() => void copyText(file.content, "content")}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink3 hover:bg-hover hover:text-ink"
+                >
+                  {copied === "content" ? <IconCheck size={12} className="text-ok" /> : <IconCopy size={12} />}
+                </button>
+                <button
+                  type="button"
+                  title={t("rightPanel.download", lang)}
+                  aria-label={t("rightPanel.download", lang)}
+                  onClick={() => downloadFile(file.name, file.content)}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink3 hover:bg-hover hover:text-ink"
+                >
+                  <IconDownload size={12} />
+                </button>
+              </>
+            )}
           </div>
           <div className="min-h-0 flex-1 overflow-auto p-2">
             {fileBusy ? (
@@ -287,7 +375,30 @@ export const RightPanel = () => {
               <p className="text-[12px] text-err">{page.error}</p>
             ) : page ? (
               <div className="flex flex-col gap-2">
-                {page.title && <h3 className="text-[13px] font-semibold text-ink">{page.title}</h3>}
+                <div className="flex items-center gap-1">
+                  {page.title && <h3 className="min-w-0 flex-1 text-[13px] font-semibold text-ink">{page.title}</h3>}
+                  {page.content && (
+                    <button
+                      type="button"
+                      title={t("browser.copy", lang)}
+                      onClick={() => void copyText(page.content ?? "", "page")}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink3 hover:bg-hover hover:text-ink"
+                    >
+                      {copied === "page" ? <IconCheck size={12} className="text-ok" /> : <IconCopy size={12} />}
+                    </button>
+                  )}
+                  {page.url && (
+                    <a
+                      href={page.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={t("browser.openOriginal", lang)}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink3 hover:bg-hover hover:text-ink"
+                    >
+                      <IconExternal size={12} />
+                    </a>
+                  )}
+                </div>
                 {page.url && <span className="break-all font-mono text-[10px] text-ink3">{page.url}</span>}
                 <div className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-ink2">{page.content}</div>
               </div>
@@ -311,12 +422,22 @@ export const RightPanel = () => {
           <ExecutionGraph embedded />
         </Suspense>
       )}
-    </aside>
+      </aside>
+    </>
   )
 }
 
 function PanelLoading() {
   return <div className="flex flex-1 items-center justify-center p-4 text-[11px] text-ink3">…</div>
+}
+
+function downloadFile(name: string, content: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }))
+  const a = document.createElement("a")
+  a.href = url
+  a.download = name
+  a.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 /** 行号 + 高亮的精简文件预览（与文件查看器一致） */

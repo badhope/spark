@@ -52,6 +52,17 @@ class SessionStore:
                     payload_json TEXT,
                     FOREIGN KEY(session_id) REFERENCES sessions(id)
                 );
+                CREATE TABLE IF NOT EXISTS message_feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    message_id INTEGER NOT NULL,
+                    rating TEXT NOT NULL CHECK (rating IN ('up', 'down')),
+                    comment TEXT NOT NULL DEFAULT '',
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    UNIQUE(session_id, message_id),
+                    FOREIGN KEY(session_id) REFERENCES sessions(id)
+                );
                 CREATE TABLE IF NOT EXISTS tool_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     session_id TEXT NOT NULL,
@@ -219,7 +230,7 @@ class SessionStore:
             self._conn.commit()
 
     #: Bump when a step in :meth:`_migrate_schema` is added.
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def _migrate_schema(self) -> None:
         """Record/upgrade the schema version on *this* database.
@@ -230,7 +241,7 @@ class SessionStore:
         current = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
         if current >= self.SCHEMA_VERSION:
             return
-        for version, step in ((1, self._migrate_v1), (2, self._migrate_v2)):
+        for version, step in ((1, self._migrate_v1), (2, self._migrate_v2), (3, self._migrate_v3)):
             if current < version:
                 step()
                 current = version
@@ -243,6 +254,11 @@ class SessionStore:
         They are already applied above by :meth:`_init`; this hook exists so the
         version is recorded and future steps have a place to live.
         """
+
+    def _migrate_v3(self) -> None:
+        """v3: per-message up/down feedback (created in _init for fresh DBs)."""
+        # The table is declared in _init(); this hook records the version for
+        # existing databases and gives future feedback columns a migration home.
 
     def _migrate_v2(self) -> None:
         """v2: cost-ledger columns for model/provider/cache and per-call USD."""
@@ -1012,8 +1028,55 @@ class SessionStore:
                 "DELETE FROM tool_events WHERE session_id = ? AND message_id >= ?",
                 (session_id, message_id),
             )
+            self._conn.execute(
+                "DELETE FROM message_feedback WHERE session_id = ? AND message_id >= ?",
+                (session_id, message_id),
+            )
             self._conn.commit()
         return self.load_messages(session_id)
+
+    def set_message_feedback(
+        self, session_id: str, message_id: int, rating: str | None, comment: str = ""
+    ) -> dict | None:
+        """设置/切换/取消某条消息的赞踩；消息不属于会话时返回 None。"""
+        if rating not in {None, "up", "down"}:
+            raise ValueError("rating must be up, down or null")
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM messages WHERE session_id = ? AND id = ? AND role = 'assistant'",
+                (session_id, message_id),
+            ).fetchone()
+            if row is None:
+                return None
+            if rating is None:
+                self._conn.execute(
+                    "DELETE FROM message_feedback WHERE session_id = ? AND message_id = ?",
+                    (session_id, message_id),
+                )
+                self._conn.commit()
+                return {"message_id": message_id, "rating": None}
+            now = int(time.time())
+            self._conn.execute(
+                """INSERT INTO message_feedback
+                     (session_id, message_id, rating, comment, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(session_id, message_id) DO UPDATE SET
+                     rating = excluded.rating,
+                     comment = excluded.comment,
+                     updated_at = excluded.updated_at""",
+                (session_id, message_id, rating, comment[:2000], now, now),
+            )
+            self._conn.commit()
+            return {"message_id": message_id, "rating": rating, "comment": comment[:2000]}
+
+    def list_message_feedback(self, session_id: str) -> dict[int, str]:
+        """会话内所有消息的赞踩状态（message_id -> up/down）。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT message_id, rating FROM message_feedback WHERE session_id = ?",
+                (session_id,),
+            ).fetchall()
+        return {int(row["message_id"]): str(row["rating"]) for row in rows}
 
     def delete_message(self, session_id: str, message_id: int) -> list[ChatMessage] | None:
         """删除单条消息（持久生效）。返回剩余消息；消息不存在返回 None。"""
@@ -1030,6 +1093,10 @@ class SessionStore:
             )
             self._conn.execute(
                 "DELETE FROM tool_events WHERE session_id = ? AND message_id = ?",
+                (session_id, message_id),
+            )
+            self._conn.execute(
+                "DELETE FROM message_feedback WHERE session_id = ? AND message_id = ?",
                 (session_id, message_id),
             )
             try:

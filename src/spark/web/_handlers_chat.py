@@ -19,7 +19,7 @@ from spark.web._httpbase import HandlerBase
 from spark.web._routing import _route_state
 from spark.web.sse import SSE_DISCONNECT_ERRORS, _SSESession
 from spark.web.state import _generate_session_meta_async
-from spark.web.utils import _event_payload
+from spark.web.utils import _event_payload, inject_attachments, parse_attachments, prepare_attachments
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +27,15 @@ logger = logging.getLogger(__name__)
 def _handle_chat(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)
     prompt = str(body.get("prompt") or "").strip()
-    if not prompt:
+    attachments = parse_attachments(body.get("attachments"))
+    if not prompt and not attachments:
         handler._json(400, {"error": "prompt required"})
         return
     runtime = state.current_runtime
     if runtime is None or runtime.loop is None:
         handler._json(500, {"error": "agent not ready"})
         return
+    attachments = prepare_attachments(state.workdir, runtime.session_id, attachments)
     slash = parse_slash(prompt)
     if slash is not None and slash.name != "test":
         # 非流式端点的 plan/build/side/goal：鸭子类型一个 Sink 复用流式分发。
@@ -57,7 +59,7 @@ def _handle_chat(handler: HandlerBase, body: dict) -> None:
             # Drive the turn on the captured runtime loop: switching sessions
             # only moves the current pointer, and a per-request asyncio.run()
             # would break the durable checkpointer's loop affinity.
-            events = list(runtime.loop.iter_turn_sync(prompt))
+            events = list(runtime.loop.iter_turn_sync(inject_attachments(prompt, attachments)))
     except Exception as exc:  # aqg: top-level boundary
         handler._json(500, {"error": str(exc)})
         return
@@ -454,7 +456,8 @@ def _spawn_memory_recorder(
 def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)
     prompt = str(body.get("prompt") or "").strip()
-    if not prompt and not body.get("images"):
+    attachments = parse_attachments(body.get("attachments"))
+    if not prompt and not body.get("images") and not attachments:
         handler._json(400, {"error": "prompt required"})
         return
     requested_session = str(body.get("session_id") or "").strip()
@@ -466,6 +469,7 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
         handler._json(500, {"error": "agent not ready"})
         return
     turn_session_id = runtime.session_id
+    attachments = prepare_attachments(state.workdir, turn_session_id, attachments)
 
     images = _parse_image_payloads(body)
     image_refs = [ImageRef.model_validate(i) for i in images] or None
@@ -548,7 +552,7 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
     elif slash is not None and _dispatch_slash(state, stream, slash):
         return
 
-    turn_prompt = _expand_turn_prompt(state, prompt)
+    turn_prompt = inject_attachments(_expand_turn_prompt(state, prompt), attachments)
 
     try:
         _dispatch_turn(

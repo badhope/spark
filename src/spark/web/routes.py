@@ -45,6 +45,7 @@ from spark.web._handlers import (
     handle_debug_client_log,
     _handle_knowledge,
     _handle_memory,
+    _handle_message_feedback,
     _handle_messages_delete,
     _handle_messages_truncate,
     _handle_models_activate,
@@ -168,11 +169,11 @@ _MAX_READ_CHARS = 100_000
 _MAX_READ_BYTES = _MAX_READ_CHARS * 4
 
 
-def _fs_read(workdir: str, rel: str, sandbox: Any = None) -> dict[str, Any]:
+def _fs_read(workdir: str, rel: str, sandbox: Any = None, *, for_ui: bool = False) -> dict[str, Any]:
     target = _resolve_in_workdir(workdir, rel)
     if target is None:
         return {"error": "path outside workdir"}
-    if sandbox is not None and not sandbox.is_path_allowed(target):
+    if sandbox is not None and not sandbox.is_path_allowed(target, for_ui=for_ui):
         return {"error": "path protected by sandbox policy"}
     if not target.exists() or not target.is_file():
         return {"error": "not found"}
@@ -763,6 +764,7 @@ def build_handler_class(html: str):
                             "resumed": t.get("resumed", False),
                             "text_preview": (t.get("text") or "")[:160],
                             "usage": t.get("usage"),
+                            "model": record.get("model"),
                             "recorded_at": record.get("recorded_at"),
                         }
                     )
@@ -836,7 +838,7 @@ def build_handler_class(html: str):
             if path == "/api/fs/read":
                 query = parse_qs(urlparse(self.path).query)
                 rel = (query.get("path", [""])[0] or "").strip()
-                self._json(200, _fs_read(str(state.workdir), rel, state.sandbox))
+                self._json(200, _fs_read(str(state.workdir), rel, state.sandbox, for_ui=True))
                 return
             if path == "/api/browse":
                 query = parse_qs(urlparse(self.path).query)
@@ -925,6 +927,7 @@ _POST_HANDLERS: dict[str, Any] = {
     "/api/checkpoints/rollback": _handle_checkpoints_rollback,
     "/api/messages/truncate": _handle_messages_truncate,
     "/api/messages/delete": _handle_messages_delete,
+    "/api/messages/feedback": _handle_message_feedback,
     "/api/approval": _handle_approval,
     "/api/question/answer": _handle_question_answer,
     "/api/sessions/new": _handle_sessions_new,

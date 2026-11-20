@@ -12,6 +12,7 @@ import type {
   ProviderPreset,
   CostReport,
   WorkflowGraphState,
+  ChatAttachment,
 } from "./types"
 import { useUiStore } from "./store/uiStore"
 
@@ -460,6 +461,20 @@ export async function deleteMessage(messageId: number): Promise<{
   )
 }
 
+export async function setMessageFeedback(
+  messageId: number,
+  rating: "up" | "down" | null,
+  comment = "",
+): Promise<{ ok: boolean; feedback: { message_id: number; rating: "up" | "down" | null } }> {
+  return readJson(
+    await fetchWithTimeout("/api/messages/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message_id: messageId, rating, comment }),
+    }),
+  )
+}
+
 export interface HealthRow {
   level: "ok" | "warn" | "bad"
   kind: string
@@ -759,7 +774,8 @@ export interface ReplayTurnSummary {
   tools: number
   resumed?: boolean
   text_preview?: string
-  usage?: { input_tokens?: number; output_tokens?: number; reasoning_tokens?: number; source?: string }
+  usage?: { input_tokens?: number; output_tokens?: number; reasoning_tokens?: number; cache_read_tokens?: number; cache_write_tokens?: number; cost_usd?: number; source?: string }
+  model?: string
   recorded_at?: number
 }
 
@@ -949,6 +965,7 @@ export async function streamChat(
   signal?: AbortSignal,
   images: string[] = [],
   webSearch = true,
+  attachments: ChatAttachment[] = [],
 ): Promise<void> {
   if (signal?.aborted) {
     throw new DOMException("Aborted", "AbortError")
@@ -967,7 +984,7 @@ export async function streamChat(
         {
           method: "POST",
           headers,
-          body: JSON.stringify({ prompt, images, web_search: webSearch }),
+          body: JSON.stringify({ prompt, images, web_search: webSearch, attachments }),
           signal,
         },
         60000,

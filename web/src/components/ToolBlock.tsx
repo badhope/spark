@@ -1,10 +1,20 @@
 import { memo, useState } from "react"
 import type { SubtaskTrace, ToolCallState } from "../store/chatStore"
-import { cls, Spinner } from "./ui"
-import { IconCheck, IconChevronRight, IconCommand, IconFile, IconFolder, IconGlobe, IconSearch, IconTerminal, IconX } from "./icons"
+import { cls, formatElapsed, Spinner } from "./ui"
+import { IconCheck, IconChevronRight, IconCommand, IconCopy, IconFile, IconFolder, IconGlobe, IconSearch, IconTerminal, IconX } from "./icons"
 import { DiffView } from "./DiffView"
 import { useUiStore } from "../store/uiStore"
 import { t } from "../i18n"
+
+function useCopy(text: string) {
+  const [copied, setCopied] = useState(false)
+  function copy() {
+    navigator.clipboard?.writeText(text).catch(() => {})
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1400)
+  }
+  return { copied, copy }
+}
 
 /** 工具 → 卡片类型分发（IDE 工件语义） */
 type CardKind = "diff" | "terminal" | "subagent" | "web" | "default"
@@ -106,6 +116,11 @@ function SubtaskTraceList({ traces }: { traces: SubtaskTrace[] }) {
                 <span title={t("subtask.toolCount", lang, { n: s.tools })}>
                   {t("subtask.toolShort", lang, { n: s.tools })}
                 </span>
+                {s.durationMs !== undefined && (
+                  <span className="text-ok" title={t("subtask.duration", lang)}>
+                    {formatElapsed(s.durationMs)}
+                  </span>
+                )}
               </span>
             </div>
             {s.prompt && (
@@ -148,6 +163,7 @@ export const ToolBlock = memo(function ToolBlock({ tool }: { tool: ToolCallState
   const running = status === "running"
   const resultText = resultTextOf(tool)
   const kind = toolKind(name, resultText)
+  const { copied, copy } = useCopy(resultText)
 
   return (
     <div
@@ -204,8 +220,20 @@ export const ToolBlock = memo(function ToolBlock({ tool }: { tool: ToolCallState
 
           {resultText && (
             <>
-              <div className="mt-2 mb-1 text-[10px] font-semibold tracking-wider text-ink3 uppercase">
-                {t("tool.result", lang)}{resultText.length > 6000 ? t("tool.truncated", lang, { n: resultText.length }) : ""}
+              <div className="mt-2 mb-1 flex items-center gap-2">
+                <div className="flex-1 text-[10px] font-semibold tracking-wider text-ink3 uppercase">
+                  {t("tool.result", lang)}{resultText.length > 6000 ? t("tool.truncated", lang, { n: resultText.length }) : ""}
+                </div>
+                <button
+                  type="button"
+                  onClick={copy}
+                  title={copied ? t("common.copied", lang) : t("common.copy", lang)}
+                  aria-label={copied ? t("common.copied", lang) : t("common.copy", lang)}
+                  className="flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[9.5px] text-ink3 transition-colors hover:bg-hover hover:text-ink"
+                >
+                  {copied ? <IconCheck size={11} /> : <IconCopy size={11} />}
+                  <span>{copied ? t("common.copied", lang) : t("common.copy", lang)}</span>
+                </button>
               </div>
 
               {kind === "diff" ? (

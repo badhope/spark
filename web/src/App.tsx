@@ -3,6 +3,7 @@ import { Sidebar } from "./components/Sidebar"
 import { RightPanel } from "./components/RightPanel"
 import { Header } from "./components/Header"
 import { ChatView } from "./components/ChatView"
+import { Spinner } from "./components/ui"
 import { Composer } from "./components/Composer"
 import { ApprovalModal } from "./components/ApprovalModal"
 import { ShortcutsHelp } from "./components/ShortcutsHelp"
@@ -18,6 +19,8 @@ import { useSessionStore } from "./store/sessionStore"
 import { useUiStore } from "./store/uiStore"
 import { loadBindings, matchesBinding } from "./shortcuts"
 import { installNotificationWatcher } from "./notify"
+import { t } from "./i18n"
+import { useGlobalFocusTrap } from "./focusTrap"
 import { activateModelProfile, listModelProfiles } from "./api"
 
 // Heavy, rarely-first-action surfaces are split out of the initial bundle:
@@ -161,6 +164,9 @@ export default function App() {
     useSessionStore.getState().setPlan(s.plan || [])
   }, [setStatus])
 
+  useGlobalFocusTrap()
+  const recovering = useChatStore((s) => s.recovering)
+  const lang = useUiStore((s) => s.lang)
   const settingsOpen = useUiStore((s) => s.settingsOpen)
   const paletteOpen = useUiStore((s) => s.paletteOpen)
   const checkpointsOpen = useUiStore((s) => s.checkpointsOpen)
@@ -180,6 +186,12 @@ export default function App() {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Header />
+        {recovering && (
+          <div className="flex items-center justify-center gap-2 border-b border-line bg-accent-soft/40 px-3 py-1.5 text-[11.5px] text-ink2">
+            <Spinner size={12} className="text-accent" />
+            {t("chat.recovering", lang)}
+          </div>
+        )}
         <ChatView />
         <Composer />
       </div>

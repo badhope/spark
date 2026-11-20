@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useCallback, useState } from "react"
+import { lazy, memo, Suspense, useCallback, useEffect, useState } from "react"
 import type { ChatMsg, Segment } from "../store/chatStore"
 // Markdown + highlight.js are only needed once an assistant message with text
 // exists, so they are not part of the first paint (saves ~112 KB gzip).
@@ -6,8 +6,8 @@ const Markdown = lazy(() => import("./Markdown"))
 import ToolBlock from "./ToolBlock"
 import { ThinkingBlock } from "./ThinkingBlock"
 import { PlanCard } from "./PlanCard"
-import { IconCheck, IconCopy, IconPencil, IconRefresh, IconSpark, IconTrash } from "./icons"
-import { cls } from "./ui"
+import { IconCheck, IconCopy, IconFile, IconPencil, IconRefresh, IconSpark, IconThumbDown, IconThumbUp, IconTrash } from "./icons"
+import { cls, formatElapsed } from "./ui"
 import { useChatStore } from "../store/chatStore"
 import { useSessionStore } from "../store/sessionStore"
 import { useUiStore } from "../store/uiStore"
@@ -17,6 +17,7 @@ export interface MessageActions {
   onEdit?: (msg: ChatMsg) => void
   onDelete?: (msg: ChatMsg) => void
   onRegenerate?: (msg: ChatMsg) => void
+  onFeedback?: (msg: ChatMsg, rating: "up" | "down") => void
 }
 
 function MessageAction({
@@ -24,12 +25,14 @@ function MessageAction({
   onClick,
   disabled,
   danger,
+  active,
   children,
 }: {
   title: string
   onClick: () => void
   disabled?: boolean
   danger?: boolean
+  active?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -37,10 +40,14 @@ function MessageAction({
       type="button"
       title={title}
       aria-label={title}
+      aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
       className={cls(
-        "flex h-6 w-6 items-center justify-center rounded-md text-ink3 transition-colors hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-35",
+        // 移动端 36px 触控目标；桌面 28px，仍紧凑但更容易点中。
+        "flex h-9 w-9 items-center justify-center rounded-lg text-ink3 transition-colors [&_svg]:h-4 [&_svg]:w-4 sm:h-7 sm:w-7 sm:rounded-md sm:[&_svg]:h-3.5 sm:[&_svg]:w-3.5",
+        "hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-35",
+        active && "bg-accent/10 text-accent hover:bg-accent/15 hover:text-accent",
         danger && "hover:text-err",
       )}
     >
@@ -59,6 +66,28 @@ function useCopy(text: string) {
   return { copied, copy }
 }
 
+/** 消息时间：只显示本地时刻，没有真实时间就不显示。 */
+function formatMessageTime(ms: number, lang: "zh" | "en"): string {
+  return new Date(ms).toLocaleTimeString(lang === "zh" ? "zh-CN" : "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function formatTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+}
+
+/** 生成中的秒表；结束后由固定的 durationMs 取代，不再跳动。 */
+const Elapsed = memo(function Elapsed({ since, className }: { since: number; className?: string }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const id = window.setInterval(() => tick((n) => n + 1), 500)
+    return () => window.clearInterval(id)
+  }, [since])
+  return <span className={className}>{formatElapsed(Date.now() - since)}</span>
+})
+
 /* ---------------- 用户消息：右侧气泡 ---------------- */
 const UserMessage = memo(function UserMessage({ msg, actions }: { msg: ChatMsg; actions?: MessageActions }) {
   const lang = useUiStore((s) => s.lang)
@@ -66,6 +95,16 @@ const UserMessage = memo(function UserMessage({ msg, actions }: { msg: ChatMsg; 
   return (
     <div className="group flex justify-end gap-3 py-3">
       <div className="max-w-[86%] sm:max-w-[70%]">
+        {msg.attachments && msg.attachments.length > 0 && (
+          <div className="mb-1.5 flex flex-wrap justify-end gap-1.5">
+            {msg.attachments.map((file, i) => (
+              <span key={`${file.name}-${i}`} className="inline-flex max-w-[220px] items-center gap-1 rounded-md border border-line bg-panel px-2 py-1 text-[10.5px] text-ink2">
+                <IconFile size={11} className="shrink-0 text-accent" />
+                <span className="truncate font-mono">{file.name}</span>
+              </span>
+            ))}
+          </div>
+        )}
         {msg.images && msg.images.length > 0 && (
           <div className="mb-2 flex flex-wrap justify-end gap-2">
             {msg.images.map((src, i) => (
@@ -82,6 +121,9 @@ const UserMessage = memo(function UserMessage({ msg, actions }: { msg: ChatMsg; 
           {msg.text}
         </div>
         <div className="mt-1 flex justify-end gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
+          {msg.createdAt !== undefined && (
+            <span className="mr-1 self-center font-mono text-[10px] text-ink3">{formatMessageTime(msg.createdAt, lang)}</span>
+          )}
           <MessageAction title={t("common.copy", lang)} onClick={copy}>
             {copied ? <IconCheck size={12} className="text-ok" /> : <IconCopy size={12} />}
           </MessageAction>
@@ -163,7 +205,7 @@ function GoalCard({ seg }: { seg: Extract<Segment, { kind: "goal" }> }) {
 function SegmentRenderer({ seg, streaming }: { seg: Segment; streaming?: boolean }) {
   switch (seg.kind) {
     case "thinking":
-      return <ThinkingBlock text={seg.text} streaming={streaming} />
+      return <ThinkingBlock text={seg.text} streaming={streaming} startedAt={seg.startedAt} durationMs={seg.durationMs} />
     case "plan":
       return <PlanCard steps={seg.steps} />
     case "tool":
@@ -189,6 +231,7 @@ const AssistantMessage = memo(function AssistantMessage({ msg, actions }: { msg:
   const lang = useUiStore((s) => s.lang)
   const lastTextStreaming = msg.streaming && msg.segments.some((s) => s.kind === "text" && s.text.length > 0)
   const d = useSessionStore((s) => s.status?.display)
+  const statusModel = useSessionStore((s) => s.status?.model)
   const show = {
     thinking: d?.show_thinking ?? true,
     tools: d?.show_tools ?? true,
@@ -217,13 +260,49 @@ const AssistantMessage = memo(function AssistantMessage({ msg, actions }: { msg:
                 ))}
               </span>
               {t("chat.working", lang)}
+              {msg.startedAt !== undefined && <Elapsed since={msg.startedAt} className="font-mono text-[10px] text-accent/80" />}
             </span>
+          )}
+          {!msg.streaming && msg.durationMs !== undefined && (
+            <span className="text-[10px] text-ink3" title={t("chat.elapsed", lang)}>
+              {t("chat.elapsedShort", lang)} <span className="font-mono">{formatElapsed(msg.durationMs)}</span>
+            </span>
+          )}
+          {(msg.model || statusModel) && (
+            <span className="rounded bg-hover px-1.5 py-0.5 font-mono text-[9.5px] text-ink3">{msg.model || statusModel}</span>
+          )}
+          {msg.usage && (
+            <span className="hidden text-[10px] text-ink3 sm:inline" title={t("chat.usage", lang)}>
+              in <span className="font-mono">{formatTokens(msg.usage.input_tokens ?? 0)}</span> · out{" "}
+              <span className="font-mono">{formatTokens(msg.usage.output_tokens ?? 0)}</span>
+            </span>
+          )}
+          {msg.createdAt !== undefined && (
+            <span className="font-mono text-[10px] text-ink3">{formatMessageTime(msg.createdAt, lang)}</span>
           )}
           <div className="ml-auto flex items-center gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
             {msg.text && !msg.streaming && (
               <MessageAction title={t("chat.copyAll", lang)} onClick={copy}>
                 {copied ? <IconCheck size={12} className="text-ok" /> : <IconCopy size={12} />}
               </MessageAction>
+            )}
+            {!msg.streaming && msg.dbId && actions?.onFeedback && (
+              <>
+                <MessageAction
+                  title={t("msg.feedbackUp", lang)}
+                  active={msg.feedback === "up"}
+                  onClick={() => actions.onFeedback?.(msg, "up")}
+                >
+                  <IconThumbUp size={12} />
+                </MessageAction>
+                <MessageAction
+                  title={t("msg.feedbackDown", lang)}
+                  active={msg.feedback === "down"}
+                  onClick={() => actions.onFeedback?.(msg, "down")}
+                >
+                  <IconThumbDown size={12} />
+                </MessageAction>
+              </>
             )}
             {!msg.streaming && (
               <MessageAction

@@ -3,8 +3,8 @@ import { Terminal as XTerm } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import "@xterm/xterm/css/xterm.css"
 import { ptyClose, ptyOpen, ptyResize, ptyWrite, streamPty } from "../api"
-import { Button, IconButton, Spinner } from "./ui"
-import { IconTerminal, IconX } from "./icons"
+import { Button, IconButton, Spinner, cls } from "./ui"
+import { IconCopy, IconExternal, IconRefresh, IconTerminal, IconX } from "./icons"
 import { useUiStore } from "../store/uiStore"
 import { t } from "../i18n"
 
@@ -27,12 +27,17 @@ export const Terminal = memo(function Terminal({ embedded = false }: { embedded?
   const fitRef = useRef<FitAddon | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const [ready, setReady] = useState(false)
+  const [hasSelection, setHasSelection] = useState(false)
   const exitedRef = useRef(false)
   const [cwd, setCwd] = useState("")
+  /** 重启 shell 通过递增 epoch 重建 xterm 与 SSE，而不是复用旧 PTY 的残流。 */
+  const [epoch, setEpoch] = useState(0)
+  const [maximized, setMaximized] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setReady(false)
+    setHasSelection(false)
     exitedRef.current = false
     const el = containerRef.current
     if (!el) return
@@ -108,6 +113,7 @@ export const Terminal = memo(function Terminal({ embedded = false }: { embedded?
       void ptyWrite(TAB_ID, d).catch(() => undefined)
     })
 
+    const onSelection = term.onSelectionChange(() => setHasSelection(Boolean(term.getSelection())))
     const onResize = () => {
       try {
         fit.fit()
@@ -122,13 +128,45 @@ export const Terminal = memo(function Terminal({ embedded = false }: { embedded?
       cancelled = true
       window.removeEventListener("resize", onResize)
       onDataSub.dispose()
+      onSelection.dispose()
       abortRef.current?.abort()
       abortRef.current = null
       try { term.dispose() } catch { /* ignore */ }
       xtermRef.current = null
       fitRef.current = null
     }
-  }, [open])
+  }, [open, epoch])
+
+  function copySelection() {
+    const selected = xtermRef.current?.getSelection() ?? ""
+    if (!selected) return
+    navigator.clipboard?.writeText(selected).catch(() => {})
+  }
+
+  function clearScreen() {
+    xtermRef.current?.clear()
+    setHasSelection(false)
+  }
+
+  function copyAll() {
+    const term = xtermRef.current
+    if (!term) return
+    const lines: string[] = []
+    const buffer = term.buffer.active
+    for (let i = 0; i < buffer.length; i += 1) {
+      const line = buffer.getLine(i)?.translateToString(true) ?? ""
+      // 只裁掉尾部空白，保留代码缩进。
+      lines.push(line.replace(/\s+$/g, ""))
+    }
+    while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop()
+    navigator.clipboard?.writeText(lines.join("\n")).catch(() => {})
+  }
+
+  function restartShell() {
+    void ptyClose(TAB_ID)
+      .catch(() => undefined)
+      .then(() => setEpoch((value) => value + 1))
+  }
 
   if (!open) return null
 
@@ -144,6 +182,25 @@ export const Terminal = memo(function Terminal({ embedded = false }: { embedded?
             size="sm"
             variant="ghost"
             className="ml-auto"
+            onClick={copySelection}
+            disabled={!hasSelection}
+            title={t("terminal.copy", lang)}
+          >
+            <IconCopy size={12} />
+            {t("terminal.copy", lang)}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={clearScreen} title={t("terminal.clear", lang)}>
+            {t("terminal.clear", lang)}
+          </Button>
+          <IconButton title={t("terminal.copyAll", lang)} onClick={copyAll} disabled={!ready}>
+            <IconCopy size={12} />
+          </IconButton>
+          <IconButton title={t("terminal.restart", lang)} onClick={restartShell}>
+            <IconRefresh size={13} />
+          </IconButton>
+          <Button
+            size="sm"
+            variant="ghost"
             onClick={() => {
               void ptyClose(TAB_ID).then(() => {
                 exitedRef.current = true
@@ -162,9 +219,13 @@ export const Terminal = memo(function Terminal({ embedded = false }: { embedded?
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 backdrop-blur-[2px]" onClick={close}>
       <div
-        className="anim-fade flex h-[82vh] w-full sm:w-[min(94vw,980px)] flex-col overflow-hidden border-t border-line bg-[#0d1117] sm:rounded-2xl sm:border shadow-[var(--shadow)]"
+        className={cls(
+          "anim-fade flex w-full flex-col overflow-hidden border-t border-line bg-[#0d1117] shadow-[var(--shadow)]",
+          maximized ? "h-screen sm:h-[96vh] sm:w-[96vw] sm:rounded-2xl sm:border" : "h-[82vh] sm:w-[min(94vw,980px)] sm:rounded-2xl sm:border",
+        )}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label={t("terminal.title", lang)}
       >
         <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
@@ -173,6 +234,28 @@ export const Terminal = memo(function Terminal({ embedded = false }: { embedded?
           {cwd && <span className="ml-1 hidden font-mono text-[11px] text-ink3 sm:inline">{cwd}</span>}
           {!ready && <Spinner size={12} className="ml-2 text-ink3" />}
           <div className="ml-auto flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={copySelection}
+              disabled={!hasSelection}
+              title={t("terminal.copy", lang)}
+            >
+              <IconCopy size={12} />
+              {t("terminal.copy", lang)}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={clearScreen} title={t("terminal.clear", lang)}>
+              {t("terminal.clear", lang)}
+            </Button>
+            <IconButton title={t("terminal.copyAll", lang)} onClick={copyAll} disabled={!ready}>
+              <IconCopy size={12} />
+            </IconButton>
+            <IconButton title={t("terminal.restart", lang)} onClick={restartShell}>
+              <IconRefresh size={13} />
+            </IconButton>
+            <IconButton title={maximized ? t("terminal.restore", lang) : t("terminal.maximize", lang)} onClick={() => setMaximized((v) => !v)}>
+              <IconExternal size={13} className={maximized ? "rotate-180" : ""} />
+            </IconButton>
             <Button
               size="sm"
               variant="ghost"

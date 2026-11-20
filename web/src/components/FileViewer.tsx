@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from "react"
 import { fetchFsRead, fetchFsTree, type FsEntry } from "../api"
 import { cls, IconButton, Spinner } from "./ui"
-import { IconChevronRight, IconFile, IconFolder, IconX } from "./icons"
+import { IconCheck, IconChevronRight, IconCopy, IconDownload, IconFile, IconFolder, IconSearch, IconX } from "./icons"
 import { useUiStore } from "../store/uiStore"
 import { useSessionStore } from "../store/sessionStore"
 import { t } from "../i18n"
@@ -64,10 +64,15 @@ export const FileViewer = memo(function FileViewer() {
 
   const [stack, setStack] = useState<string[]>([]) // 相对路径栈（[] = 工作目录根）
   const [entries, setEntries] = useState<FsEntry[] | null>(null)
+  const [query, setQuery] = useState("")
+  const [copiedPath, setCopiedPath] = useState(false)
+  const [copiedContent, setCopiedContent] = useState(false)
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
   const [file, setFile] = useState<{ name: string; content: string; truncated?: boolean; binary?: boolean } | null>(null)
   const [fileBusy, setFileBusy] = useState(false)
+
+  const visibleEntries = entries?.filter((e) => e.name.toLowerCase().includes(query.trim().toLowerCase())) ?? []
 
   async function loadDir(dir: string) {
     setBusy(true)
@@ -120,6 +125,7 @@ export const FileViewer = memo(function FileViewer() {
         className="anim-fade flex h-[min(88vh,640px)] w-[min(96vw,980px)] flex-col overflow-hidden rounded-2xl border border-line bg-canvas shadow-[var(--shadow)]"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label={t("files.title", lang)}
       >
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
@@ -166,6 +172,29 @@ export const FileViewer = memo(function FileViewer() {
               ))}
             </div>
 
+            <div className="border-b border-line px-2 py-1.5">
+              <div className="relative">
+                <IconSearch size={11} className="pointer-events-none absolute top-2 left-2 text-ink3" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={t("files.searchPh", lang)}
+                  aria-label={t("files.searchPh", lang)}
+                  className="h-7 w-full rounded-md border border-line bg-panel2 pr-7 pl-6 text-[11px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    title={t("common.clear", lang)}
+                    className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded text-ink3 hover:bg-hover hover:text-ink"
+                  >
+                    <IconX size={11} />
+                  </button>
+                )}
+              </div>
+            </div>
+
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {busy ? (
                 <div className="flex justify-center py-10">
@@ -175,7 +204,7 @@ export const FileViewer = memo(function FileViewer() {
                 <p className="px-2 py-4 text-xs text-err">{err}</p>
               ) : (
                 <ul className="flex flex-col gap-0.5">
-                  {entries?.map((e) =>
+                  {visibleEntries.map((e) =>
                     e.type === "dir" ? (
                       <li key={e.name}>
                         <button
@@ -209,7 +238,11 @@ export const FileViewer = memo(function FileViewer() {
                       </li>
                     ),
                   )}
-                  {entries?.length === 0 && <p className="px-2 py-6 text-center text-xs text-ink3">{t("files.emptyDir", lang)}</p>}
+                  {entries?.length === 0 ? (
+                    <p className="px-2 py-6 text-center text-xs text-ink3">{t("files.emptyDir", lang)}</p>
+                  ) : visibleEntries.length === 0 ? (
+                    <p className="px-2 py-6 text-center text-xs text-ink3">{t("files.noMatches", lang)}</p>
+                  ) : null}
                 </ul>
               )}
             </div>
@@ -226,8 +259,49 @@ export const FileViewer = memo(function FileViewer() {
                 <div className="flex items-center gap-2 border-b border-line px-4 py-2">
                   <IconFile size={13} className="text-ink3" />
                   <span className="truncate font-mono text-[12px] font-medium text-ink">{file.name}</span>
+                  <button
+                    type="button"
+                    title={copiedPath ? t("common.copied", lang) : t("files.copyPath", lang)}
+                    aria-label={copiedPath ? t("common.copied", lang) : t("files.copyPath", lang)}
+                    onClick={() => {
+                      const rel = stack.length ? [...stack, file.name].join("/") : file.name
+                      navigator.clipboard?.writeText(rel).catch(() => {})
+                      setCopiedPath(true)
+                      window.setTimeout(() => setCopiedPath(false), 1400)
+                    }}
+                    className="flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[10px] text-ink3 transition-colors hover:bg-hover hover:text-ink"
+                  >
+                    {copiedPath ? <IconCheck size={11} /> : <IconCopy size={11} />}
+                    <span>{copiedPath ? t("common.copied", lang) : t("common.copy", lang)}</span>
+                  </button>
                   {file.binary && <span className="rounded bg-hover px-1.5 py-0.5 text-[10px] text-ink3">{t("files.binary", lang)}</span>}
                   {file.truncated && <span className="rounded bg-hover px-1.5 py-0.5 text-[10px] text-warn">{t("files.truncated", lang)}</span>}
+                  {!file.binary && (
+                    <div className="ml-auto flex shrink-0 items-center gap-0.5">
+                      <button
+                        type="button"
+                        title={t("rightPanel.copyContent", lang)}
+                        aria-label={t("rightPanel.copyContent", lang)}
+                        onClick={() => {
+                          navigator.clipboard?.writeText(file.content).catch(() => {})
+                          setCopiedContent(true)
+                          window.setTimeout(() => setCopiedContent(false), 1400)
+                        }}
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-ink3 hover:bg-hover hover:text-ink"
+                      >
+                        {copiedContent ? <IconCheck size={12} className="text-ok" /> : <IconCopy size={12} />}
+                      </button>
+                      <button
+                        type="button"
+                        title={t("rightPanel.download", lang)}
+                        aria-label={t("rightPanel.download", lang)}
+                        onClick={() => downloadFile(file.name, file.content)}
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-ink3 hover:bg-hover hover:text-ink"
+                      >
+                        <IconDownload size={12} />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="min-h-0 flex-1 overflow-auto p-3">
                   {file.binary ? (
@@ -249,6 +323,15 @@ export const FileViewer = memo(function FileViewer() {
     </div>
   )
 })
+
+function downloadFile(name: string, content: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }))
+  const a = document.createElement("a")
+  a.href = url
+  a.download = name
+  a.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
 
 function fmtSize(n: number): string {
   if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`

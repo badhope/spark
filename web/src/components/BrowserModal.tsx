@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from "react"
 import { browseUrl } from "../api"
 import { Button, cls, IconButton, Spinner } from "./ui"
-import { IconGlobe, IconX } from "./icons"
+import { IconCheck, IconChevronRight, IconCopy, IconExternal, IconGlobe, IconRefresh, IconX } from "./icons"
 import { useUiStore } from "../store/uiStore"
 import { t } from "../i18n"
 
@@ -13,20 +13,37 @@ export const BrowserModal = memo(function BrowserModal() {
   const [url, setUrl] = useState("")
   const [busy, setBusy] = useState(false)
   const [page, setPage] = useState<{ title?: string; url?: string; content?: string; error?: string } | null>(null)
+  const [copied, setCopied] = useState(false)
+  /** 阅读模式自己的 URL 历史：后端只返回正文，不维护浏览器会话历史。 */
+  const [history, setHistory] = useState<string[]>([])
+  const [historyIndex, setHistoryIndex] = useState(-1)
 
-  async function openUrl(target?: string) {
+  async function openUrl(target?: string, push = true) {
     const u = (target ?? url).trim()
     if (!u) return
+    setUrl(u)
     setBusy(true)
     setPage(null)
     try {
       const data = await browseUrl(u)
       setPage(data)
+      if (push && data.url && data.url !== history[historyIndex]) {
+        const next = [...history.slice(0, historyIndex + 1), data.url]
+        setHistory(next)
+        setHistoryIndex(next.length - 1)
+      }
     } catch (e) {
       setPage({ error: e instanceof Error ? e.message : String(e) })
     } finally {
       setBusy(false)
     }
+  }
+
+  function goHistory(step: -1 | 1) {
+    const next = historyIndex + step
+    if (next < 0 || next >= history.length) return
+    setHistoryIndex(next)
+    void openUrl(history[next], false)
   }
 
   useEffect(() => {
@@ -45,18 +62,51 @@ export const BrowserModal = memo(function BrowserModal() {
         className="anim-fade flex h-[min(84vh,620px)] w-[min(96vw,860px)] flex-col overflow-hidden rounded-2xl border border-line bg-canvas shadow-[var(--shadow)]"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label={t("browser.title", lang)}
       >
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
           <IconGlobe size={15} className="text-accent" />
           <span className="text-sm font-semibold text-ink">{t("browser.title", lang)}</span>
-          <IconButton title={t("common.close", lang)} onClick={close} className="ml-auto">
+          {page?.url && (
+            <div className="ml-auto flex items-center gap-0.5">
+              <IconButton
+                title={copied ? t("common.copied", lang) : t("browser.copy", lang)}
+                onClick={() => {
+                  navigator.clipboard?.writeText(page.content ?? "").catch(() => {})
+                  setCopied(true)
+                  window.setTimeout(() => setCopied(false), 1400)
+                }}
+              >
+                {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+              </IconButton>
+              <IconButton title={t("browser.refresh", lang)} onClick={() => void openUrl(page.url)} disabled={busy}>
+                <IconRefresh size={14} />
+              </IconButton>
+              <a
+                href={page.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={t("browser.openOriginal", lang)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] text-ink2 transition-colors hover:bg-hover hover:text-ink"
+              >
+                <IconExternal size={14} />
+              </a>
+            </div>
+          )}
+          <IconButton title={t("common.close", lang)} onClick={close} className={page?.url ? "" : "ml-auto"}>
             <IconX size={15} />
           </IconButton>
         </div>
 
         {/* 地址栏 */}
-        <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
+        <div className="flex items-center gap-1 border-b border-line px-3 py-2.5">
+          <IconButton title={t("browser.back", lang)} onClick={() => goHistory(-1)} disabled={busy || historyIndex <= 0}>
+            <IconChevronRight size={15} className="rotate-180" />
+          </IconButton>
+          <IconButton title={t("browser.forward", lang)} onClick={() => goHistory(1)} disabled={busy || historyIndex >= history.length - 1}>
+            <IconChevronRight size={15} />
+          </IconButton>
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}

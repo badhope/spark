@@ -1,7 +1,7 @@
 import { create } from "zustand"
 import type { ApprovalInfo, PlanStep, SessionRow, Status, ToolCall } from "../types"
 import { listSessions, newSession, switchSession, deleteSession, cancelTurn, respondApproval, forkSession, answerQuestion, fetchSessionPending } from "../api"
-import { useChatStore, historyToItems, setDraftSession, type ChatMsg } from "./chatStore"
+import { useChatStore, historyToItems, attachReplayDurations, setDraftSession, type ChatMsg } from "./chatStore"
 import { useSessionRuntimeStore } from "./sessionRuntime"
 import { useUiStore } from "./uiStore"
 
@@ -181,7 +181,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
         const runtime = useSessionRuntimeStore.getState().runtimes[id]
         const live = runtime && (runtime.phase === "streaming" || runtime.phase === "waiting_approval" || runtime.phase === "waiting_question")
         const cached = chat.itemsBySession[id]
-        const items = live && cached ? cached : historyToItems(data.messages)
+        const items =
+          live && cached ? cached : await attachReplayDurations(historyToItems(data.messages), id)
         chat.setItems(items)
         // Pick up this session's own draft (empty for a session never typed in).
         chat.setInput(localStorage.getItem(`spark.draft:${id}`) ?? "")

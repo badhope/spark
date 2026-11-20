@@ -1,13 +1,41 @@
-import { memo, useState } from "react"
-import { Spinner, cls } from "./ui"
+import { memo, useEffect, useState } from "react"
+import { Spinner, cls, formatElapsed } from "./ui"
 import { IconChevronRight } from "./icons"
 import { useUiStore } from "../store/uiStore"
 import { t } from "../i18n"
 
 /** 思维链折叠块（reasoning） */
-export const ThinkingBlock = memo(function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
+export const ThinkingBlock = memo(function ThinkingBlock({
+  text,
+  streaming,
+  startedAt,
+  durationMs,
+}: {
+  text: string
+  streaming?: boolean
+  startedAt?: number
+  durationMs?: number
+}) {
   const [open, setOpen] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
   const lang = useUiStore((s) => s.lang)
+
+  useEffect(() => {
+    if (!streaming || startedAt === undefined) return
+    const tick = () => setElapsed(Date.now() - startedAt)
+    tick()
+    const id = window.setInterval(tick, 500)
+    return () => window.clearInterval(id)
+  }, [streaming, startedAt])
+
+  const shownMs = durationMs ?? (streaming && startedAt !== undefined ? elapsed : undefined)
+  const meta =
+    shownMs !== undefined
+      ? `${formatElapsed(shownMs)} · ${streaming ? t("common.thinking", lang) : t("common.charCount", lang, { n: text.length })}`
+      : streaming
+        ? t("common.thinking", lang)
+        : t("common.charCount", lang, { n: text.length })
+
   return (
     <div className="my-1 overflow-hidden rounded-lg border border-line bg-panel">
       <button
@@ -21,7 +49,7 @@ export const ThinkingBlock = memo(function ThinkingBlock({ text, streaming }: { 
         </span>
         {streaming ? <Spinner size={11} className="text-accent" /> : <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warn" />}
         <span className="text-xs font-medium text-ink2">{t("common.thinkingProcess", lang)}</span>
-        <span className="ml-auto text-[10px] text-ink3">{streaming ? t("common.thinking", lang) : t("common.charCount", lang, { n: text.length })}</span>
+        <span className="ml-auto font-mono text-[10px] text-ink3">{meta}</span>
       </button>
       {open && (
         <div className="anim-fade border-t border-line px-3 py-2">

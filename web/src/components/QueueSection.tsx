@@ -5,6 +5,32 @@ import { IconClock, IconRefresh, IconSend, IconStop, IconTrash } from "./icons"
 import { useUiStore } from "../store/uiStore"
 import { t } from "../i18n"
 
+function queueTime(ts: number | null | undefined, lang: "zh" | "en", now = Date.now()): string {
+  if (!ts) return ""
+  const date = new Date(ts * 1000)
+  const current = new Date(now)
+  const time = date.toLocaleTimeString(lang === "zh" ? "zh-CN" : "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+  if (date.toDateString() === current.toDateString()) return time
+  const day = `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`
+  return date.getFullYear() === current.getFullYear() ? `${day} ${time}` : `${date.getFullYear()}/${day} ${time}`
+}
+
+function queueDuration(start: number | null | undefined, end: number | null | undefined): string {
+  if (!start || !end) return ""
+  const seconds = Math.max(0, end - start)
+  return seconds < 60 ? `${seconds.toFixed(1)}s` : `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`
+}
+
+function queueStatusLabel(task: QueueTask, lang: "zh" | "en"): string {
+  const known = ["queued", "running", "ok", "failed", "cancelled", "blocked"]
+  return known.includes(task.status)
+    ? t(`queue.status.${task.status}` as "queue.status.queued", lang)
+    : task.status
+}
+
 /** Settings → System → Queue: local idle-task queue. */
 export function QueueSection() {
   const lang = useUiStore((s) => s.lang)
@@ -13,6 +39,7 @@ export function QueueSection() {
   const [title, setTitle] = useState("")
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState("")
+  const [now, setNow] = useState(() => Date.now())
 
   const load = useCallback(async () => {
     try {
@@ -50,6 +77,12 @@ export function QueueSection() {
   }
 
   const tasks = state?.tasks || []
+  const running = tasks.some((task) => task.status === "running")
+  useEffect(() => {
+    if (!running) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [running])
   const queued = (state?.counts?.queued || 0)
 
   return (
@@ -94,9 +127,17 @@ export function QueueSection() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-[12px] font-medium text-ink2">{task.title || task.prompt.slice(0, 60)}</span>
-                    <span className={task.status === "ok" ? "text-[10px] text-ok" : task.status === "failed" ? "text-[10px] text-err" : "text-[10px] text-ink3"}>{task.status}</span>
+                    <span className={task.status === "ok" ? "text-[10px] text-ok" : task.status === "failed" || task.status === "blocked" ? "text-[10px] text-err" : "text-[10px] text-ink3"}>{queueStatusLabel(task, lang)}</span>
                     <span className="text-[10px] text-ink3">#{task.attempts}</span>
                   </div>
+                  <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-ink3">
+                    <span>{t("queue.created", lang)} {queueTime(task.created_at, lang, now)}</span>
+                    {task.started_at && <span>· {t("queue.started", lang)} {queueTime(task.started_at, lang, now)}</span>}
+                    {task.finished_at && <span>· {t("queue.finished", lang)} {queueTime(task.finished_at, lang, now)}</span>}
+                    {task.started_at && (task.finished_at || task.status === "running") && (
+                      <span>· {t("queue.elapsed", lang)} {queueDuration(task.started_at, task.finished_at ?? now / 1000)}</span>
+                    )}
+                  </p>
                   {task.error && <p className="mt-0.5 line-clamp-2 text-[10px] text-err">{task.error}</p>}
                 </div>
                 {task.status === "queued" && (

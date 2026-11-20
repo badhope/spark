@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { CostReport, FullConfig, HookEntry, McpServer, ModelProfile, ProbeResult, ProviderPreset, SettingsPayload, Status } from "../types"
 import { fetchConfig, fetchAgentsMd, fetchCostReport, fetchProviderPresets, saveAgentsMd, saveSettings, testConnection, listModelProfiles, saveModelProfile, deleteModelProfile, activateModelProfile, fetchDiagnostics, runSelfHeal, savePermissionRules, deletePermissionRule, saveApprovalProfile, deleteApprovalProfile, activateApprovalProfile, type HealthRow } from "../api"
 import MemorySection from "./MemorySection"
@@ -16,7 +16,7 @@ import { McpRegistryModal } from "./McpRegistryModal"
 import type { McpRegistryItem } from "../api"
 import { PALETTES, type Palette, type Theme } from "../theme"
 import { Badge, Button, Field, IconButton, Select, Spinner, TextArea, TextInput, Toggle, cls } from "./ui"
-import { IconBrain, IconBug, IconCheck, IconClock, IconCommand, IconFile, IconFolder, IconGlobe, IconKey, IconLayers, IconMoon, IconPlus, IconRefresh, IconSettings, IconSpark, IconStethoscope, IconSun, IconTerminal, IconTrash, IconWrench, IconX } from "./icons"
+import { IconBrain, IconBug, IconCheck, IconClock, IconCommand, IconFile, IconFolder, IconGlobe, IconKey, IconLayers, IconMoon, IconPlus, IconRefresh, IconSearch, IconSettings, IconSpark, IconStethoscope, IconSun, IconTerminal, IconTrash, IconWrench, IconX } from "./icons"
 import { useSessionStore } from "../store/sessionStore"
 import { useUiStore } from "../store/uiStore"
 import { t, type TranslationKey } from "../i18n"
@@ -272,7 +272,23 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
   const setLang = useUiStore((s) => s.setLang)
   const requestedTab = useUiStore((s) => s.settingsTab)
   const [tab, setTab] = useState<Tab>((requestedTab as Tab) || "model")
+  const [settingsQuery, setSettingsQuery] = useState("")
   const activeGroup = TAB_GROUPS.find((group) => group.tabs.some((item) => item.key === tab)) ?? TAB_GROUPS[0]
+  const settingsGroups = useMemo(() => {
+    const q = settingsQuery.trim().toLowerCase()
+    if (!q) return TAB_GROUPS
+    return TAB_GROUPS.map((group) => {
+      const labelMatch = t(group.labelKey, lang).toLowerCase().includes(q)
+      return labelMatch ? group : { ...group, tabs: group.tabs.filter((item) => t(item.labelKey, lang).toLowerCase().includes(q)) }
+    }).filter((group) => group.tabs.length > 0)
+  }, [settingsQuery, lang])
+  useEffect(() => {
+    if (!settingsQuery.trim() || settingsGroups.length === 0) return
+    if (!settingsGroups.some((group) => group.key === activeGroup.key)) {
+      setTab(settingsGroups[0].tabs[0].key)
+    }
+  }, [settingsQuery, settingsGroups, activeGroup.key])
+  const activeTabs = settingsGroups.find((group) => group.key === activeGroup.key)?.tabs ?? activeGroup.tabs
   const [cfg, setCfg] = useState<FullConfig | null>(null)
   const [mcpRows, setMcpRows] = useState<McpServer[]>([])
   const [agentsMd, setAgentsMd] = useState<{ filename: string; content: string; chars: number; max_fragment_chars: number } | null>(null)
@@ -313,6 +329,10 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
   const palette = useUiStore((s) => s.palette)
   const setPalette = useUiStore((s) => s.setPalette)
   const pushToast = useUiStore((s) => s.pushToast)
+  const setWorkbenchTab = useUiStore((s) => s.setWorkbenchTab)
+  const setRightPanelOpen = useUiStore((s) => s.setRightPanelOpen)
+  const setSidebarOpen = useUiStore((s) => s.setSidebarOpen)
+  const requestConfirm = useUiStore((s) => s.requestConfirm)
   // 注意：hook 必须全部在 `if (!cfg)` 早退之前，否则首次渲染（cfg 仍是 null）
   // 与数据到达后的渲染 hook 数量不一致，React 直接抛 #310 白屏。
   const [notifyOn, setNotifyOn] = useState(() => notificationsEnabled())
@@ -634,6 +654,14 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
   }
 
   async function handleTest() {
+    // Mock is a local, offline provider: there is no endpoint to probe. Keep
+    // the button honest instead of reporting a misleading 502 from a URL the
+    // user never intended to reach.
+    if (cfg?.provider.name === "mock") {
+      setProbe(null)
+      setNotice(t("model.mockNotice", lang))
+      return
+    }
     setBusy("test")
     setProbe(null)
     setNotice("")
@@ -823,6 +851,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
         className="anim-fade flex h-[min(92vh,680px)] w-[min(96vw,920px)] flex-col overflow-hidden rounded-2xl border border-line bg-canvas shadow-[var(--shadow)]"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label={t("settings.title", lang)}
       >
         <div className="flex h-full min-h-0">
@@ -832,8 +861,20 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
               <IconSettings size={16} className="text-accent" />
               <span className="text-[14px] font-semibold text-ink">{t("settings.title", lang)}</span>
             </div>
+            <div className="px-2 pb-1">
+              <div className="relative">
+                <IconSearch size={12} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-ink3" />
+                <input
+                  value={settingsQuery}
+                  onChange={(e) => setSettingsQuery(e.target.value)}
+                  placeholder={t("settings.searchPh", lang)}
+                  aria-label={t("settings.searchPh", lang)}
+                  className="w-full rounded-lg border border-line bg-panel2 py-1.5 pr-2 pl-7 text-[11px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                />
+              </div>
+            </div>
             <div className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-1">
-              {TAB_GROUPS.map((group) => (
+              {settingsGroups.map((group) => (
                 <button
                   key={group.key}
                   type="button"
@@ -853,7 +894,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
               <p className="px-3 pb-1 text-[10px] font-bold tracking-wide text-ink3 uppercase">
                 {t(activeGroup.labelKey, lang)}
               </p>
-              {activeGroup.tabs.map((tb) => (
+              {activeTabs.map((tb) => (
                 <button
                   key={tb.key}
                   type="button"
@@ -872,6 +913,9 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                   {t(tb.labelKey, lang)}
                 </button>
               ))}
+              {settingsGroups.length === 0 && (
+                <p className="px-3 py-2 text-[11px] text-ink3">{t("settings.noMatches", lang)}</p>
+              )}
             </div>
             <div className="px-3 pb-3 pt-1">
               <div className="rounded-lg border border-line bg-panel2 px-3 py-2">
@@ -892,8 +936,18 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
 
             {/* 移动端：一级 5 页 + 当前页细分 tab。左导航在 <sm 时隐藏 */}
             <div className="flex flex-col gap-1 border-b border-line px-2 py-1.5 sm:hidden">
+              <div className="relative px-1">
+                <IconSearch size={12} className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-ink3" />
+                <input
+                  value={settingsQuery}
+                  onChange={(e) => setSettingsQuery(e.target.value)}
+                  placeholder={t("settings.searchPh", lang)}
+                  aria-label={t("settings.searchPh", lang)}
+                  className="w-full rounded-lg border border-line bg-panel2 py-1.5 pr-2 pl-7 text-[11px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                />
+              </div>
               <div className="flex gap-1 overflow-x-auto">
-                {TAB_GROUPS.map((group) => (
+                {settingsGroups.map((group) => (
                   <button
                     key={group.key}
                     type="button"
@@ -911,7 +965,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                 ))}
               </div>
               <div className="flex gap-1 overflow-x-auto">
-                {activeGroup.tabs.map((tb) => (
+                {activeTabs.map((tb) => (
                   <button
                     key={tb.key}
                     type="button"
@@ -950,6 +1004,11 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                     {busy === "test" ? <Spinner size={11} /> : t("model.testConnection", lang)}
                   </Button>
                 </div>
+                {cfg.provider.name === "mock" && (
+                  <div className="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs leading-relaxed text-warn">
+                    {t("model.mockNotice", lang)}
+                  </div>
+                )}
                 <Field label={t("model.provider", lang)}>
                   <Select value={cfg.provider.name} onChange={(e) => { dirtyRef.current.cfg = true; setCfg((c) => (c ? { ...c, provider: { ...c.provider, name: e.target.value } } : c)) }}>
                     {PROVIDER_OPTIONS.map(([value, label]) => (
@@ -2125,7 +2184,32 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
             都有自己的即时操作，不该出现统一的"保存设置"按钮；
             memory 页含记忆配置区块，需要统一保存 */}
         {tab !== "skills" && tab !== "prompts" && tab !== "plugins" && tab !== "shortcuts" && tab !== "knowledge" && tab !== "wiki" && tab !== "automations" && tab !== "debug" && (
-          <div className="border-t border-line bg-panel2 px-4 py-3">
+          <div className="flex items-center gap-2 border-t border-line bg-panel2 px-4 py-3">
+            <Button
+              variant="ghost"
+              onClick={() =>
+                requestConfirm({
+                  title: t("settings.resetUiTitle", lang),
+                  message: t("settings.resetUiHint", lang),
+                  confirmLabel: t("settings.resetUi", lang),
+                  danger: true,
+                  onConfirm: () => {
+                    setTheme("light")
+                    setPalette("ember")
+                    setLang("zh")
+                    setNotificationsEnabled(false)
+                    setNotifyOn(false)
+                    setSidebarOpen(window.innerWidth >= 1024)
+                    setRightPanelOpen(false)
+                    setWorkbenchTab("files")
+                    setTab("display")
+                    pushToast("toast.uiResetDone", "success")
+                  },
+                })
+              }
+            >
+              {t("settings.resetUi", lang)}
+            </Button>
             <Button variant="primary" full onClick={handleSave} disabled={busy === "save"}>
               {busy === "save" ? (
                 <span className="flex items-center gap-1.5"><Spinner size={12} /> {t("settings.saving", lang)}</span>

@@ -3,7 +3,7 @@ import { useUiStore } from "../store/uiStore"
 import { useSessionStore } from "../store/sessionStore"
 import { fetchReplays, fetchReplayTurn, type ReplayRecord, type ReplayTurnSummary } from "../api"
 import { Button, cls, IconButton, Spinner } from "./ui"
-import { IconClock, IconHistory, IconX } from "./icons"
+import { IconCheck, IconClock, IconCopy, IconHistory, IconRefresh, IconX } from "./icons"
 import { t } from "../i18n"
 
 function statusColor(status?: string): string {
@@ -26,6 +26,7 @@ export const ReplayModal = memo(function ReplayModal() {
   const sessionId = useSessionStore((s) => s.status?.session_id)
   const [turns, setTurns] = useState<ReplayTurnSummary[] | null>(null)
   const [detail, setDetail] = useState<ReplayRecord | null>(null)
+  const [copied, setCopied] = useState("")
 
   const load = useCallback(async () => {
     setTurns(null)
@@ -52,6 +53,16 @@ export const ReplayModal = memo(function ReplayModal() {
     return () => window.removeEventListener("keydown", onKey)
   }, [open, close])
 
+  async function copyText(text: string, key: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(key)
+      window.setTimeout(() => setCopied((v) => (v === key ? "" : v)), 1400)
+    } catch {
+      /* ignore clipboard denial */
+    }
+  }
+
   async function openDetail(index: number) {
     try {
       setDetail(await fetchReplayTurn(index))
@@ -67,6 +78,7 @@ export const ReplayModal = memo(function ReplayModal() {
         className="anim-fade flex h-[min(84vh,640px)] w-[min(96vw,720px)] flex-col overflow-hidden rounded-2xl border border-line bg-canvas shadow-[var(--shadow)]"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label={t("replay.title", lang)}
       >
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
@@ -77,7 +89,10 @@ export const ReplayModal = memo(function ReplayModal() {
               ←
             </Button>
           )}
-          <IconButton title={t("common.close", lang)} onClick={close} className="ml-auto">
+          <IconButton title={t("common.refresh", lang)} onClick={() => void load()} className="ml-auto">
+            <IconRefresh size={14} />
+          </IconButton>
+          <IconButton title={t("common.close", lang)} onClick={close}>
             <IconX size={15} />
           </IconButton>
         </div>
@@ -95,10 +110,20 @@ export const ReplayModal = memo(function ReplayModal() {
               </span>
               {detail.turn.resumed && <span className="rounded bg-hover px-1.5 py-0.5">resumed</span>}
             </div>
-            <p className="mb-3 rounded-xl border border-line bg-panel p-3 text-[13px] text-ink">
-              <span className="font-semibold">{t("chat.you", lang)}: </span>
-              {detail.turn.prompt}
-            </p>
+            <div className="mb-3 rounded-xl border border-line bg-panel p-3 text-[13px] text-ink">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold">{t("chat.you", lang)}</span>
+                <button
+                  type="button"
+                  title={copied === "prompt" ? t("common.copied", lang) : t("common.copy", lang)}
+                  onClick={() => void copyText(detail.turn.prompt ?? "", "prompt")}
+                  className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-ink3 hover:bg-hover hover:text-ink"
+                >
+                  {copied === "prompt" ? <IconCheck size={12} className="text-ok" /> : <IconCopy size={12} />}
+                </button>
+              </div>
+              <p className="mt-1 whitespace-pre-wrap break-words">{detail.turn.prompt}</p>
+            </div>
             {(detail.turn.reasoning || "").trim() && (
               <pre className="mb-3 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-xl border border-line bg-panel p-3 font-mono text-[11px] text-ink2">
                 {detail.turn.reasoning}
@@ -139,7 +164,17 @@ export const ReplayModal = memo(function ReplayModal() {
             )}
             {detail.turn.text && (
               <div>
-                <p className="mb-1.5 text-xs font-semibold text-ink2">{t("chat.spark", lang)}</p>
+                <div className="mb-1.5 flex items-center gap-2">
+                  <p className="text-xs font-semibold text-ink2">{t("chat.spark", lang)}</p>
+                  <button
+                    type="button"
+                    title={copied === "text" ? t("common.copied", lang) : t("common.copy", lang)}
+                    onClick={() => void copyText(detail.turn.text ?? "", "text")}
+                    className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-ink3 hover:bg-hover hover:text-ink"
+                  >
+                    {copied === "text" ? <IconCheck size={12} className="text-ok" /> : <IconCopy size={12} />}
+                  </button>
+                </div>
                 <pre className="whitespace-pre-wrap rounded-xl border border-line bg-panel p-3 font-mono text-[11.5px] text-ink">
                   {detail.turn.text}
                 </pre>

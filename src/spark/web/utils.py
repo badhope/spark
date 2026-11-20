@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 import re
+import shutil
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 from urllib.parse import urlparse
 
 from spark.hooks import HookRegistry
@@ -18,6 +21,241 @@ HOOK_EVENTS = tuple(HookRegistry.EVENTS)
 MAX_REQUEST_BYTES = 32 * 1024 * 1024
 MAX_AGENTS_MD_BYTES = 1 * 1024 * 1024
 MCP_REDACTED_HEADER = "[REDACTED]"
+
+
+ATTACHMENT_OPEN = "\n\n⟦SPARK-ATTACHMENT:{name}⟧\n"
+ATTACHMENT_CLOSE = "\n⟦/SPARK-ATTACHMENT⟧"
+MAX_ATTACHMENTS = 8
+MAX_ATTACHMENT_BYTES = 256 * 1024
+MAX_BINARY_ATTACHMENT_BYTES = 2 * 1024 * 1024
+MAX_EXTRACTED_CHARS = 240_000
+MAX_PDF_PAGES = 80
+MAX_SHEET_ROWS = 2_000
+_ATTACHMENT_RE = re.compile(r"⟦SPARK-ATTACHMENT:([^⟧\n]+)⟧\n(.*?)\n⟦/SPARK-ATTACHMENT⟧", re.S)
+_OFFICE_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".pptx"}
+
+
+def _safe_attachment_name(value: object) -> str:
+    return safe_bare_filename(str(value or "")) or "attachment.bin"
+
+
+def _decode_attachment_data(value: object) -> bytes | None:
+    if not isinstance(value, str) or not value:
+        return None
+    raw = value.split(",", 1)[-1] if value.startswith("data:") else value
+    try:
+        data = base64.b64decode(raw, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if len(data) > MAX_BINARY_ATTACHMENT_BYTES:
+        return None
+    return data or None
+
+
+def parse_attachments(items) -> list[dict[str, Any]]:
+    """校验前端附件；文本保留正文，PDF/Office/二进制保留有界原始字节。
+
+    图片走独立 images 字段。这里不展开文件系统路径；二进制落盘由
+    :func:`prepare_attachments` 在当前会话工作区内完成。
+    """
+    out: list[dict[str, Any]] = []
+    if not isinstance(items, list):
+        return out
+    for item in items[:MAX_ATTACHMENTS]:
+        if not isinstance(item, dict):
+            continue
+        name = _safe_attachment_name(item.get("name"))
+        content = item.get("content")
+        if isinstance(content, str) and content:
+            if len(content.encode("utf-8", errors="ignore")) > MAX_ATTACHMENT_BYTES:
+                continue
+            out.append({"name": name, "content": content, "size": len(content.encode("utf-8", errors="ignore")), "kind": "text"})
+            continue
+        data = _decode_attachment_data(item.get("data"))
+        if data is None:
+            continue
+        mime = str(item.get("mime") or "application/octet-stream").strip()[:120]
+        out.append({"name": name, "data": data, "mime": mime, "size": len(data)})
+    return out
+
+
+def _truncate_extracted(text: str) -> str:
+    text = text.replace("\x00", "").strip()
+    if len(text) > MAX_EXTRACTED_CHARS:
+        return text[:MAX_EXTRACTED_CHARS] + "\n[…内容过长，已截断…]"
+    return text
+
+
+def _extract_pdf(data: bytes) -> tuple[str, str]:
+    from io import BytesIO
+
+    from pypdf import PdfReader
+
+    reader = PdfReader(BytesIO(data))
+    chunks: list[str] = []
+    for page in reader.pages[:MAX_PDF_PAGES]:
+        try:
+            chunks.append(page.extract_text() or "")
+        except Exception:
+            logger.debug("PDF 页文本抽取失败", exc_info=True)
+    text = "\n\n".join(chunk for chunk in chunks if chunk.strip())
+    if len(reader.pages) > MAX_PDF_PAGES:
+        text += f"\n\n[仅解析前 {MAX_PDF_PAGES} 页，共 {len(reader.pages)} 页]"
+    return _truncate_extracted(text), "pdf"
+
+
+def _extract_docx(data: bytes) -> tuple[str, str]:
+    from io import BytesIO
+
+    import docx
+
+    document = docx.Document(BytesIO(data))
+    chunks = [p.text for p in document.paragraphs if p.text.strip()]
+    for table in document.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            if any(cells):
+                chunks.append(" | ".join(cells))
+    return _truncate_extracted("\n".join(chunks)), "docx"
+
+
+def _extract_xlsx(data: bytes) -> tuple[str, str]:
+    from io import BytesIO
+
+    import openpyxl
+
+    workbook = openpyxl.load_workbook(BytesIO(data), read_only=True, data_only=True)
+    chunks: list[str] = []
+    try:
+        for sheet in workbook.worksheets:
+            chunks.append(f"## Sheet: {sheet.title}")
+            rows = 0
+            for row in sheet.iter_rows(values_only=True):
+                if rows >= MAX_SHEET_ROWS:
+                    chunks.append("[…sheet 行数过多，已截断…]")
+                    break
+                values = ["" if cell is None else str(cell) for cell in row]
+                if any(values):
+                    chunks.append("\t".join(values))
+                rows += 1
+    finally:
+        workbook.close()
+    return _truncate_extracted("\n".join(chunks)), "xlsx"
+
+
+def _extract_pptx(data: bytes) -> tuple[str, str]:
+    from io import BytesIO
+
+    from pptx import Presentation
+
+    presentation = Presentation(BytesIO(data))
+    chunks: list[str] = []
+    for index, slide in enumerate(presentation.slides, start=1):
+        chunks.append(f"## Slide {index}")
+        for shape in slide.shapes:
+            text = getattr(shape, "text", "")
+            if text and text.strip():
+                chunks.append(text.strip())
+    return _truncate_extracted("\n".join(chunks)), "pptx"
+
+
+def _extract_binary(name: str, mime: str, data: bytes) -> tuple[str, str]:
+    suffix = Path(name).suffix.lower()
+    if suffix == ".pdf" or mime == "application/pdf":
+        return _extract_pdf(data)
+    if suffix == ".docx" or "wordprocessingml" in mime:
+        return _extract_docx(data)
+    if suffix == ".xlsx" or "spreadsheetml" in mime:
+        return _extract_xlsx(data)
+    if suffix == ".pptx" or "presentationml" in mime:
+        return _extract_pptx(data)
+    if mime.startswith("text/"):
+        try:
+            return _truncate_extracted(data.decode("utf-8")), suffix.lstrip(".") or "text"
+        except UnicodeDecodeError:
+            pass
+    return "", suffix.lstrip(".") or "binary"
+
+
+def prepare_attachments(workdir: Path | str, session_id: str, attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把二进制附件落到工作区 ``.spark/attachments`` 并抽取可读文本。
+
+    文本附件保持原样；二进制路径相对工作区，模型可直接用现有工具读取。
+    路径被限制在 ``<workdir>/.spark/attachments/<session>/``。
+    """
+    prepared: list[dict[str, Any]] = []
+    base_dir = Path(workdir) / ".spark" / "attachments" / (safe_bare_filename(session_id) or "session")
+    for item in attachments:
+        data = item.get("data")
+        if not isinstance(data, bytes):
+            prepared.append(dict(item))
+            continue
+        name = _safe_attachment_name(item.get("name"))
+        mime = str(item.get("mime") or "application/octet-stream")
+        base_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        target = base_dir / name
+        target.write_bytes(data)
+        try:
+            target.chmod(0o600)
+        except OSError:
+            pass
+        text, kind = _extract_binary(name, mime, data)
+        prepared.append(
+            {
+                "name": name,
+                "kind": kind,
+                "mime": mime,
+                "size": len(data),
+                "path": target.relative_to(Path(workdir)).as_posix(),
+                "content": text,
+            }
+        )
+    return prepared
+
+
+def remove_session_attachments(workdir: Path | str, session_id: str) -> None:
+    """删除会话时清理临时附件目录，避免隐私文件随会话删除后继续落盘。"""
+    base_dir = Path(workdir) / ".spark" / "attachments" / (safe_bare_filename(session_id) or "session")
+    shutil.rmtree(base_dir, ignore_errors=True)
+
+
+def inject_attachments(prompt: str, attachments: list[dict[str, Any]]) -> str:
+    """把附件正文/二进制路径附在用户问题后，格式可被历史读取时无损剥离。"""
+    if not attachments:
+        return prompt
+    parts = [prompt]
+    for item in attachments:
+        parts.append(ATTACHMENT_OPEN.format(name=item["name"]))
+        if item.get("data") is not None and not item.get("path"):
+            # prepare_attachments() 之前的二进制不应进入上下文。
+            parts.append("[附件未物化，已跳过]")
+        else:
+            metadata = []
+            if item.get("kind"):
+                metadata.append(f"类型={item['kind']}")
+            if item.get("size"):
+                metadata.append(f"大小={int(item['size'])} bytes")
+            if item.get("path"):
+                metadata.append(f"路径={item['path']}")
+            if metadata:
+                parts.append(f"[附件 {'；'.join(metadata)}]\n")
+            if item.get("content"):
+                parts.append(str(item["content"]))
+            elif item.get("path"):
+                parts.append("无法自动抽取正文；请用文件/表格工具读取上面的路径。")
+        parts.append(ATTACHMENT_CLOSE)
+    return "".join(parts)
+
+
+def split_attachments(content: str) -> tuple[str, list[str]]:
+    """历史展示只返回用户原文 + 附件名；正文块仍在模型上下文里。"""
+    if "⟦SPARK-ATTACHMENT:" not in content:
+        return content, []
+    names = [m.group(1) for m in _ATTACHMENT_RE.finditer(content)]
+    marker = content.find("⟦SPARK-ATTACHMENT:")
+    # 标记前的两个换行是注入时加的，展示时一并去掉。
+    visible = content[:marker].rstrip()
+    return visible, names
 
 
 def is_sensitive_mcp_header(name: str) -> bool:
