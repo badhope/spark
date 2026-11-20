@@ -298,6 +298,24 @@ def check_health(
                 "运行 spark init 配置真实模型",
             )
         )
+    elif cfg.provider.name == "llama_cpp":
+        # Local GGUF does not use an API key. Doctor must not tell users it will
+        # silently fall back to mock just because api_key is empty.
+        model_path = Path(cfg.provider.model).expanduser()
+        if not model_path.is_file():
+            from spark.local_models import models_dir
+
+            model_path = models_dir() / model_path.name
+        if model_path.is_file():
+            rows.append(("ok", f"本地模型已就绪（{cfg.provider.model}）", ""))
+        else:
+            rows.append(
+                (
+                    "bad",
+                    f"本地模型文件不存在：{cfg.provider.model}",
+                    "在设置 → 本地模型重新下载，或用 --model 指定 GGUF",
+                )
+            )
     elif not cfg.provider.api_key and not env_api_key(cfg):
         rows.append(
             (

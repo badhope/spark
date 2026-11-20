@@ -114,6 +114,23 @@ def test_doctor_passes_with_complete_config(
     assert "配置" in result.stdout or "config" in result.stdout.lower()
 
 
+def test_doctor_accepts_local_gguf_without_api_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "default_home", lambda: tmp_path / "home")
+    model = tmp_path / "MiniCPM5.gguf"
+    model.write_bytes(b"gguf")
+    cfg_path = tmp_path / "spark.toml"
+    cfg_path.write_text(
+        '[provider]\nname = "llama_cpp"\nmodel = "' + str(model) + '"\n',
+        encoding="utf-8",
+    )
+    result = runner.invoke(cli.app, ["doctor", "--config", str(cfg_path), "--no-probe"])
+    assert result.exit_code == 0, result.stdout
+    assert "本地模型已就绪" in result.stdout
+    assert "演示模式" not in result.stdout
+
+
 def test_doctor_warns_missing_key_with_action(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -85,9 +85,9 @@
 | --- | --- | --- |
 | `version` / `--version` | 0.15.2 | ✅ |
 | `init` | 隔离配置写入成功 | ✅ |
-| `doctor` | 工作目录/审批/OTel 提示正常；本地 `llama_cpp` 仍提示“无凭据将 mock”，需单独确认 | 🟡 |
+| `doctor` | 工作目录/审批/OTel 提示正常；本地 `llama_cpp` 已被识别为“本地模型已就绪”，不再误报 mock | ✅ |
 | `exec`（mock） | 文本、`--json` NDJSON 均成功 | ✅ |
-| `exec`（本地 GGUF） | 空闲 CPU 复测：默认走 mock；显式 `--provider llama_cpp` 报“GGUF 存在但加载失败”，Web 侧同模型已通过。需单独排查 CLI 加载路径 | ❌ 待修 |
+| `exec`（本地 GGUF） | 显式与默认 provider 均返回 `CLI_LOCAL_OK` / `CLI_DEFAULT_OK`；此前失败是隔离目录被测试清理、GGUF 软链丢失 | ✅ |
 | `providers` / `route` / `sessions` | 正常输出；`route` 显示 offline/ollama 回退 | ✅ |
 | `config show/path/set` | 写入 `agent.max_tool_rounds=12` 后回读 12 | ✅ |
 | `queue list` | 正常 | ✅ |
@@ -156,24 +156,22 @@
 8. **TUI**：`resume` 需要真实 TTY，管道测试超时，未完成交互验收。
 9. **插件 hook 人工触发**：单测覆盖，未在真实插件上手工触发 hook。
 10. **更新/卸载**：发布源 403；卸载属破坏性操作。
-11. **本地模型 CLI `exec`**：默认走 mock；显式 `--provider llama_cpp` 报 GGUF 加载失败，Web 同模型已通过。
-12. **UI**：全量回归已覆盖 UI/浏览器测试；独立 UI 基线 37 passed。
+11. **UI**：全量回归已覆盖 UI/浏览器测试；独立 UI 基线 37 passed。
 
 ## 四、验收口径
 
 如果“全部功能”指**本机可执行的核心路径 + 全部内置工具 + 本机协议服务**：当前可以给真实通过证据，但 PR/商业模型/企业/IDE/桌面/会议转写必须保留 ⛔。
 
-如果指**字面每一个外部集成、每一个工具、每一个平台都真实跑过**：还缺上面的 12 项，不能宣称 100%。
+如果指**字面每一个外部集成、每一个工具、每一个平台都真实跑过**：还缺上面的 11 项，不能宣称 100%。
 
 补齐顺序建议：
 
-1. 先复测本地模型 CLI `exec`（空闲 CPU）并提交 `run_now` 修复。
-2. 给 PR 只读与 publish 配测试 token。
-3. 起 PostgreSQL/Keycloak 测企业控制面。
-4. 准备真实 IDE 与桌面会话。
-5. 装 `faster-whisper` + 音频样本。
-6. 接真实 Langfuse collector。
-7. 做一次真实 TTY 的 `resume` 交互。
+1. 给 PR 只读与 publish 配测试 token。
+2. 起 PostgreSQL/Keycloak 测企业控制面。
+3. 准备真实 IDE 与桌面会话。
+4. 装 `faster-whisper` + 音频样本。
+5. 接真实 Langfuse collector。
+6. 做一次真实 TTY 的 `resume` 交互。
 
 ## 五、最终回归
 
