@@ -251,6 +251,8 @@ def _generate_session_meta_async(
         model = (
             getattr(state.cfg.provider, "small_model", "") or state.cfg.provider.model
         )
+        if state.cfg.provider.name in {"llama_cpp", "mock", "ollama", "bedrock"}:
+            return
         if not model or (state.cfg.provider.name == "openai_compat" and not api_key):
             return
         try:
@@ -308,6 +310,9 @@ class SparkWebState:
         self._fallback_question_bridge = WebQuestionBridge()
         self._orphan_loop: AgentLoop | None = None
         self.settings_lock = threading.Lock()
+        from spark.local_models import LocalModelManager
+
+        self.local_models = LocalModelManager()
         self.mcp_bridge: McpBridge | None = None
         self.control_token = secrets.token_urlsafe(32)
         from spark.web.remote import DevicePairing

@@ -58,6 +58,7 @@ ProviderName = Literal[
     "azure",
     "bedrock",
     "ollama",
+    "llama_cpp",
     "mock",
 ]
 SandboxMode = Literal["sandbox-only", "workspace", "full-access", "unrestricted"]
@@ -823,10 +824,10 @@ def env_api_key(cfg: SparkConfig) -> str:
 def require_api_key(cfg: SparkConfig) -> str | None:
     if cfg.provider.api_key:
         return cfg.provider.api_key
-    if cfg.provider.name in {"mock", "ollama", "bedrock"}:
+    if cfg.provider.name in {"mock", "ollama", "llama_cpp", "bedrock"}:
         # Bedrock uses the standard AWS credential chain; an empty key is not
         # a missing Spark key.
-        return env_api_key(cfg) or ("bedrock" if cfg.provider.name == "bedrock" else "ollama")
+        return env_api_key(cfg) or ("bedrock" if cfg.provider.name == "bedrock" else cfg.provider.name)
     key = env_api_key(cfg)
     if not key and cfg.provider.name in {
         "anthropic", "openai", "gemini", "azure"

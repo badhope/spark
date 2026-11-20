@@ -48,6 +48,8 @@ from spark.web._handlers import (
     _handle_message_feedback,
     _handle_messages_delete,
     _handle_messages_truncate,
+    _handle_local_models_activate,
+    _handle_local_models_download,
     _handle_models_activate,
     _handle_models_delete,
     _handle_models_save,
@@ -588,6 +590,9 @@ def build_handler_class(html: str):
                     },
                 )
                 return
+            if path == "/api/local-models":
+                self._json(200, state.local_models.snapshot())
+                return
             if path == "/api/models":
                 from spark.config import mask_secret
 
@@ -909,6 +914,8 @@ def build_handler_class(html: str):
 # POST dispatch table — wired from spark.web._handlers
 # ======================================================================
 _POST_HANDLERS: dict[str, Any] = {
+    "/api/local-models/download": _handle_local_models_download,
+    "/api/local-models/activate": _handle_local_models_activate,
     "/api/models/save": _handle_models_save,
     "/api/models/delete": _handle_models_delete,
     "/api/models/activate": _handle_models_activate,

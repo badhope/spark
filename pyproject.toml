@@ -53,6 +53,9 @@ dependencies = [
 browser = [
     "playwright>=1.65.2",
 ]
+local = [
+    "llama-cpp-python>=0.3.37,<0.4",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=1.5.0",

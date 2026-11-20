@@ -178,6 +178,28 @@ def provider_preflight(cfg: SparkConfig, live_provider: Any = None) -> ProviderE
             endpoint=endpoint,
             params={"provider": provider},
         )
+    if provider == "llama_cpp":
+        from pathlib import Path
+
+        path = Path(model).expanduser()
+        if not path.is_file():
+            from spark.local_models import models_dir
+
+            path = models_dir() / path.name
+        if not path.is_file():
+            return ProviderErrorInfo(
+                code="local_model_missing",
+                title="本地模型还没有下载",
+                message=f"找不到本地 GGUF 文件：{path}",
+                hint="到「设置 → 模型 → 本地模型」选择 MiniCPM5-1B 等推荐模型，点下载并启用。",
+                retryable=False,
+                action="settings",
+                provider=provider,
+                model=model,
+                endpoint=str(path),
+                params={"model": model, "local": "1"},
+            )
+        return None
     base_url = str(cfg.provider.base_url or "").strip()
     if provider in {"openai_compat", "ollama"} and not base_url:
         return ProviderErrorInfo(
@@ -215,7 +237,7 @@ def classify_provider_error(
     status = _status_code(exc)
     params = {"provider": provider, "model": model, "endpoint": endpoint, "status": str(status or "")}
     env_name = cfg.provider.api_key_env or "SPARK_API_KEY"
-    local = _is_local(str(cfg.provider.base_url or ""))
+    local = provider == "llama_cpp" or _is_local(str(cfg.provider.base_url or ""))
     params["env"] = env_name
     params["local"] = "1" if local else "0"
 
@@ -264,6 +286,8 @@ def classify_provider_error(
             "too many tokens",
             "reduce the length",
             "prompt is too long",
+            "memory slot",
+            "n_ctx",
         )
     ):
         return build(
@@ -327,6 +351,20 @@ def classify_provider_error(
             "请求被限流",
             "模型服务暂时限流或并发超限，稍后重试通常可以恢复。",
             "等待几十秒后重试；持续限流时降低并发、换用其他模型档案，或升级服务商套餐。",
+        )
+
+    if provider == "llama_cpp" and (
+        isinstance(exc, FileNotFoundError)
+        or "local model" in lowered
+        or "llama.cpp" in lowered
+        or "gguf" in lowered
+    ):
+        return build(
+            "local_model_load_failed",
+            "本地模型加载失败",
+            "GGUF 文件存在，但 llama.cpp 没能加载它；常见原因是文件不完整、量化格式不支持或内存不足。",
+            "删除后重新下载并校验；确认 llama-cpp-python 版本支持该模型；降低上下文（SPARK_LOCAL_CTX）或关闭其他占内存程序。",
+            retryable=False,
         )
 
     if isinstance(exc, (TimeoutError,)) or exc.__class__.__name__ in {

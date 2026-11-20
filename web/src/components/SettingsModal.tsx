@@ -7,6 +7,7 @@ import PromptsSection from "./PromptsSection"
 import PluginsSection from "./PluginsSection"
 import ShortcutsSection from "./ShortcutsSection"
 import KnowledgeSection from "./KnowledgeSection"
+import LocalModelsSection from "./LocalModelsSection"
 import WikiSection from "./WikiSection"
 import AutomationsSection from "./AutomationsSection"
 import DebugSection from "./DebugSection"
@@ -94,6 +95,7 @@ const PROVIDER_OPTIONS = [
   ["azure", "Azure OpenAI"],
   ["bedrock", "AWS Bedrock"],
   ["ollama", "Ollama"],
+  ["llama_cpp", "本地 GGUF（内置）"],
   ["mock", "Mock"],
 ] as const
 
@@ -662,6 +664,11 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
       setNotice(t("model.mockNotice", lang))
       return
     }
+    if (cfg?.provider.name === "llama_cpp") {
+      setProbe(null)
+      setNotice(lang === "zh" ? "本地 GGUF 由应用内加载，直接发消息即可；首次加载会慢几秒。" : "Local GGUF is loaded in-process; send a message directly. The first load takes a few seconds.")
+      return
+    }
     setBusy("test")
     setProbe(null)
     setNotice("")
@@ -997,6 +1004,15 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
 
           {tab === "model" && (
             <div className="flex flex-col gap-4">
+              <LocalModelsSection
+                lang={lang}
+                onActivated={(name, config, status) => {
+                  dirtyRef.current.cfg = false
+                  setCfg(config)
+                  setNotice(lang === "zh" ? `已启用本地模型 ${name}，无需 API Key` : `Local model ${name} is active`)
+                  onSaved(status)
+                }}
+              />
               <section className="flex flex-col gap-2.5 rounded-xl border border-line bg-panel p-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-ink">{t("settings.currentModel", lang)}</h3>

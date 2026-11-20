@@ -82,8 +82,10 @@ def _resolve_provider_fields(
     ``mock`` / ``ollama`` 不需要凭据，因此不做可用性校验——此前 ollama 分支
     在"环境里恰好有 key"时报 400，恰好挡住了最不需要 key 的场景。
     """
-    if provider_name not in {"openai_compat", "ollama", "mock"}:
-        return api_key, "provider must be openai_compat, ollama or mock"
+    if provider_name not in {"openai_compat", "ollama", "llama_cpp", "mock"}:
+        return api_key, "provider must be openai_compat, ollama, llama_cpp or mock"
+    if provider_name == "llama_cpp":
+        return "", None
     if not base_url or not model:
         return api_key, "base_url and model are required"
     same_target = (

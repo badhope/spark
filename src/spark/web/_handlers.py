@@ -52,6 +52,10 @@ from spark.web._handlers_knowledge import (  # noqa: F401
     _handle_agents_md,
     _handle_memory,
 )
+from spark.web._handlers_local_models import (  # noqa: F401
+    _handle_local_models_activate,
+    _handle_local_models_download,
+)
 from spark.web._handlers_models import (  # noqa: F401
     _handle_models_activate,
     _handle_models_delete,
@@ -102,6 +106,8 @@ __all__ = [
     "_handle_memory",
     "_handle_messages_delete",
     "_handle_messages_truncate",
+    "_handle_local_models_activate",
+    "_handle_local_models_download",
     "_handle_models_activate",
     "_handle_models_delete",
     "_handle_models_save",

@@ -55,6 +55,30 @@ const COPY: Record<string, Record<Lang, Copy>> = {
       hint: "Fill in the model ID in Settings → Model, e.g. deepseek-chat, qwen3-coder-plus, or a local model name.",
     },
   },
+  local_model_missing: {
+    zh: {
+      title: "本地模型还没有下载",
+      message: "找不到本地 GGUF 文件，请求没有发出。",
+      hint: "打开「设置 → 模型 → 本地模型」，下载 MiniCPM5-1B 等推荐模型，再点「使用此模型」。",
+    },
+    en: {
+      title: "Local model is not downloaded",
+      message: "The GGUF file is missing, so the request never started.",
+      hint: "Open Settings → Model → Local models, download MiniCPM5-1B or another recommendation, then click Use this model.",
+    },
+  },
+  local_model_load_failed: {
+    zh: {
+      title: "本地模型加载失败",
+      message: "GGUF 文件存在，但 llama.cpp 没能加载它；常见原因是文件不完整、格式不支持或内存不足。",
+      hint: "删除后重新下载；确认运行库支持该模型；降低 SPARK_LOCAL_CTX 或关闭占内存的程序。",
+    },
+    en: {
+      title: "Local model failed to load",
+      message: "The GGUF file exists but llama.cpp could not load it — usually a partial download, unsupported quant, or low memory.",
+      hint: "Delete and re-download; verify the runtime supports this model; lower SPARK_LOCAL_CTX or free memory.",
+    },
+  },
   missing_base_url: {
     zh: {
       title: "模型未配置：缺少服务地址",
@@ -263,6 +287,8 @@ export function modelErrorCodeLabel(code: string, lang: Lang): string {
     mock_fallback: ["Mock 回退已阻止", "Mock fallback blocked"],
     missing_model: ["未配置模型", "No model"],
     missing_base_url: ["未配置地址", "No endpoint"],
+    local_model_missing: ["模型未下载", "Model not downloaded"],
+    local_model_load_failed: ["本地加载失败", "Local load failed"],
     auth_failed: ["鉴权失败", "Auth failed"],
     model_not_found: ["模型不存在", "Model not found"],
     rate_limited: ["限流", "Rate limited"],

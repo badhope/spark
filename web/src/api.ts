@@ -150,6 +150,66 @@ export async function queueAction(body: Record<string, unknown>): Promise<Record
   )
 }
 
+
+export interface LocalModelInfo {
+  id: string
+  name: string
+  params: string
+  filename: string
+  size_bytes: number
+  size_mb: number
+  context: number
+  license: string
+  languages: string
+  summary: string
+  strengths: string[]
+  recommended: boolean
+  note: string
+  path: string
+  installed: boolean
+  active: boolean
+  download?: {
+    status: string
+    bytes_done: number
+    bytes_total: number
+    percent: number
+    speed_bps: number
+    error: string
+  } | null
+}
+
+export interface LocalModelsState {
+  models: LocalModelInfo[]
+  models_dir: string
+}
+
+export async function fetchLocalModels(): Promise<LocalModelsState> {
+  return readJson(await fetchWithTimeout("/api/local-models"))
+}
+
+export async function downloadLocalModel(id: string): Promise<{ id: string; status: string }> {
+  return readJson(
+    await fetchWithTimeout("/api/local-models/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    }),
+  )
+}
+
+export async function activateLocalModel(
+  id: string,
+): Promise<{ config: FullConfig; status: Status; model: LocalModelInfo }> {
+  return readJson(
+    await fetchWithTimeout("/api/local-models/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    }),
+  )
+}
+
+
 export async function fetchConfig(): Promise<FullConfig> {
   return readJson<FullConfig>(await fetchWithTimeout("/api/config"))
 }

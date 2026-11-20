@@ -6,13 +6,14 @@ from spark.config import SparkConfig, require_api_key
 from spark.errors import ConfigError
 from spark.providers.base import Provider
 from spark.providers.mock import MockProvider
+from spark.providers.llama_cpp import LlamaCppProvider
 from spark.providers.openai_compat import OllamaProvider, OpenAICompatProvider
 
 logger = logging.getLogger(__name__)
 
 
 def create_provider(cfg: SparkConfig, mock: MockProvider | None = None) -> Provider:
-    valid = ("openai_compat", "openai", "anthropic", "gemini", "azure", "bedrock", "ollama", "mock")
+    valid = ("openai_compat", "openai", "anthropic", "gemini", "azure", "bedrock", "ollama", "llama_cpp", "mock")
     if cfg.provider.name not in valid:
         raise ValueError(
             f"Unknown provider '{cfg.provider.name}'. "
@@ -20,6 +21,8 @@ def create_provider(cfg: SparkConfig, mock: MockProvider | None = None) -> Provi
         )
     if cfg.provider.name == "mock":
         return mock or MockProvider()
+    if cfg.provider.name == "llama_cpp":
+        return LlamaCppProvider(cfg.provider.model)
     try:
         key = require_api_key(cfg)
     except ConfigError:
