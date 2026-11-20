@@ -40,7 +40,7 @@
 
 ## 全局回归（2026-11-21 最终）
 
-- 全量 pytest：**1761 passed, 13 skipped**，1774 collected，耗时 15m34s，EXIT=0。
+- 全量 pytest：**1761 passed, 13 skipped**，1774 collected，耗时 13m16s，EXIT=0。
 - 真实 MiniCPM5 后端 UI：**37 passed**（8 a11y + 9 browser + 8 full interaction + 12 settings）。
 - 本地模型：**15 passed**（目录、下载校验、活动状态、一键启用、两种工具格式）。
 - 额外真实模型任务：写入文件、shell 调用、多轮暗号记忆，见交付说明。
@@ -60,3 +60,10 @@
 - 相同参数重复调用触发 `tool_repeat_loop`：标题“模型重复调用同一个工具”，重复调用被拦截，不污染工作区。
 - Web 错误卡按 code 显示中英文文案与短标签；ACP 将两类 code 映射为 `max_turn_requests`；TUI 对中文标题同样给出可操作提示。
 - 定向回归：`test_loop.py` 3 passed；`test_reliability.py`、`test_adversarial_security.py`、`test_acp_server.py`、`test_tui_welcome.py` 全部通过。
+
+## CLI 补测
+
+- `spark doctor` 在缺失工作目录时正确失败并提示；目录就绪后 exit 0。
+- `spark exec` 使用真实 MiniCPM5：普通回复 exit 0；`write_file` 写入 9 bytes 的 `cli-notes3.txt`，`--json` 最后一行为 `final`。
+- `spark providers`、`spark route`、`spark queue list`、`spark sessions` 均可用。
+- CLI 的 `turn_error` 现在输出结构化 hint，不再只有标题。
