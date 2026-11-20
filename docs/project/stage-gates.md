@@ -29,7 +29,7 @@
 
 - [x] W3：VS Code 0.15.2（diff 审批、会话同步）+ JetBrains 2025.3+ 原生 ACP 配置 + Neovim CodeCompanion 模块；配置层单测与 Lua 语法检查通过。真实 JetBrains / Neovim 冒烟待有客户端环境
 - [x] W4：插件子进程隔离、权限拒绝路径、技能 6 目录导入（W4-b hook 隔离/权限门、W4-c 工具/git 安装/commands/市场索引、official bundle + 仓库内官方命令插件、Web 本机开关已落地）
-- [ ] W5：浏览器工具、PR 工作流（浏览器工具、PR 多平台只读上下文、review brief、`publish --confirm` 与 `/spark review` Action 已落；真实仓库验收待做）
+- [ ] W5：浏览器工具、PR 工作流（浏览器工具、PR 多平台只读上下文、review brief、`publish --confirm` 与 `/spark review` Action 已落；GitHub `psf/requests#7640`、Gitee `mindspore#91606`、GitCode `mindspore!93439` 三平台公开 PR 只读验收已过；真实发布写操作待确认）
 - [x] 插件崩溃不拖主进程；官方插件包可单关（`tests/test_plugins.py::test_plugin_hook_crash_becomes_deny`、`test_official_bundle_members_disable_independently`）
 
 ## M3（第 22–27 周）

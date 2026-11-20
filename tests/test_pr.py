@@ -30,6 +30,51 @@ def test_parse_remote_variants() -> None:
     assert parse_remote("git@gitee.com:acme/spark.git") == RepoRef("acme", "spark", "gitee")
 
 
+def test_build_context_tolerates_missing_comment_endpoints() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/pulls/7"):
+            return httpx.Response(
+                200,
+                json={
+                    "title": "Optional comments",
+                    "state": "open",
+                    "base": {"ref": "main"},
+                    "head": {"ref": "feature"},
+                },
+            )
+        if path.endswith("/pulls/7/files"):
+            return httpx.Response(200, json=[{"filename": "a.py", "status": "modified"}])
+        if path.endswith("/pulls/7/diff"):
+            return httpx.Response(200, text="diff --git a/a.py b/a.py\n+print(1)\n")
+        if path.endswith("/issues/7/comments") or path.endswith("/pulls/7/comments"):
+            return httpx.Response(404, json={"message": "not found"})
+        raise AssertionError(f"unexpected request: {request.method} {path}")
+
+    client = GitHubClient(
+        RepoRef("acme", "spark", "gitee"),
+        token="t",
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        context = build_context(client, 7)
+    finally:
+        client.close()
+    assert context["title"] == "Optional comments"
+    assert context["changed_files"] == 1
+    assert "print(1)" in context["diff"]
+    assert context["comments"] == []
+
+
+def test_pr_repo_override_infers_platform() -> None:
+    from spark.cli import _pr_repo
+
+    assert _pr_repo("gitcode.com/acme/spark", Path(".")).forge == "gitcode"
+    assert _pr_repo("gitee.com/acme/spark", Path(".")).forge == "gitee"
+    assert _pr_repo("github.com/acme/spark", Path(".")).forge == "github"
+    assert _pr_repo("acme/spark", Path(".")).forge == "github"
+
+
 def test_build_context_with_mock_transport() -> None:
     pr = {
         "title": "Add browser tool",

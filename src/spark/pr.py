@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 import httpx
@@ -148,7 +148,7 @@ class GitHubClient:
             )
         if response.status_code >= 400:
             raise PrError(f"PR API {response.status_code}: {response.text[:300]}")
-        if accept and "diff" in accept:
+        if accept and ("diff" in accept or "text/" in accept):
             return response.text
         try:
             return response.json()
@@ -262,6 +262,17 @@ def post_review(
         raise PrError("发布 PR review 返回非 JSON") from exc
 
 
+def _optional_comments(
+    fetch: Callable[[int], list[dict[str, Any]]],
+    number: int,
+) -> list[dict[str, Any]]:
+    """Comment endpoints are optional on GitCode/Gitee and some GitHub repos."""
+    try:
+        return fetch(number)
+    except PrError:
+        return []
+
+
 def build_context(
     client: GitHubClient,
     number: int,
@@ -282,8 +293,8 @@ def build_context(
             if patch:
                 parts.append(f"--- a/{row.get('filename', '')}\n+++ b/{row.get('filename', '')}\n{patch}")
         diff = "\n".join(parts)
-    issue_comments = client.issue_comments(number)
-    review_comments = client.review_comments(number)
+    issue_comments = _optional_comments(client.issue_comments, number)
+    review_comments = _optional_comments(client.review_comments, number)
     checks = client.checks(number)
     comments: list[dict[str, Any]] = []
     for row in issue_comments + review_comments:
@@ -300,6 +311,13 @@ def build_context(
             }
         )
     comments = comments[:max_comments]
+    changed_files = int(pr.get("changed_files") or 0)
+    additions = int(pr.get("additions") or 0)
+    deletions = int(pr.get("deletions") or 0)
+    if not changed_files and files:
+        changed_files = len(files)
+        additions = sum(int(row.get("additions") or 0) for row in files if isinstance(row, dict))
+        deletions = sum(int(row.get("deletions") or 0) for row in files if isinstance(row, dict))
     return {
         "number": number,
         "title": str(pr.get("title") or ""),
@@ -310,9 +328,9 @@ def build_context(
         "base": str((pr.get("base") or {}).get("ref") or ""),
         "head": str((pr.get("head") or {}).get("ref") or ""),
         "body": str(pr.get("body") or ""),
-        "additions": int(pr.get("additions") or 0),
-        "deletions": int(pr.get("deletions") or 0),
-        "changed_files": int(pr.get("changed_files") or 0),
+        "additions": additions,
+        "deletions": deletions,
+        "changed_files": changed_files,
         "mergeable": pr.get("mergeable"),
         "mergeable_state": str(pr.get("mergeable_state") or ""),
         "files": [

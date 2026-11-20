@@ -13,7 +13,8 @@ separate command that requires `--confirm`.
 | `gitee.com` | `https://gitee.com/api/v5` | `GITEE_TOKEN` |
 
 `spark pr` reads `origin` from the current repository; `--repo owner/name`
-overrides it.
+overrides it. To force a platform, prefix the override with its host:
+`github.com/owner/name`, `gitcode.com/owner/name`, or `gitee.com/owner/name`.
 
 ## Local flow
 

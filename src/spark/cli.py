@@ -2224,12 +2224,17 @@ app.add_typer(pr_app, name="pr")
 
 
 def _pr_repo(repo: str, workdir: Path):
-    from spark.pr import RepoRef, find_repo
+    from spark.pr import RepoRef, find_repo, parse_remote
 
     if repo:
+        # Accept platform-qualified overrides such as
+        # ``gitcode.com/acme/spark`` and ``gitee.com/acme/spark``.
+        parsed = parse_remote(repo)
+        if parsed is not None:
+            return parsed
         owner, _, name = repo.partition("/")
         if not owner or not name:
-            typer.echo("--repo 需要 owner/name 格式", err=True)
+            typer.echo("--repo 需要 owner/name 或 host/owner/name 格式", err=True)
             raise typer.Exit(2)
         return RepoRef(owner, name)
     return find_repo(workdir.resolve())
