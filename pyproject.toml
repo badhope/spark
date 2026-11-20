@@ -96,7 +96,7 @@ enterprise = [
 # PostgreSQL 驱动（企业部署；本地 SQLite 不需要）
 postgres = [
     "asyncpg>=0.30",
-    "psycopg[binary]>=3.2",
+    "psycopg[binary]>=3.3.9",
 ]
 # 办公成果物与文档导入（docx/pdf/xlsx/pptx）
 office = [
