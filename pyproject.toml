@@ -25,10 +25,10 @@ dependencies = [
     "chromadb>=1.0",
     "instructor>=1.4,<2.0",
     "litellm>=1.110.1,<2.0",
-    "llama-index-core>=0.12,<1.0",
-    "llama-index-llms-openai-like>=0.3,<1.0",
+    "llama-index-core>=0.14.26,<1.0",
+    "llama-index-llms-openai-like>=0.9.0,<1.0",
     "httpx>=0.27,<1.0",
-    "langgraph>=1.0.10,<2.0",
+    "langgraph>=1.2.22,<2.0",
     "langgraph-checkpoint-sqlite>=3.1.1,<4.0",
     # 上游（langgraph-checkpoint-sqlite 2.0.x）依赖 aiosqlite Connection 的
     # Thread.is_alive()；aiosqlite 0.22 移除了该 API——显式锁住兼容窗。
@@ -36,62 +36,62 @@ dependencies = [
     "croniter>=7.0,<8.0",
     "mcp>=1.0,<2.0; python_version>=\"3.10\"",
     "nbformat>=5.10,<6.0",
-    "pydantic>=2.7,<3.0",
-    "pydantic-settings>=2.0,<3.0",
+    "pydantic>=2.14.3,<3.0",
+    "pydantic-settings>=2.16.3,<3.0",
     "packaging>=23,<27",
     "filelock>=4.2.1,<5",
     "textual>=0.80,<1.0",
     "tomlkit>=0.13,<1.0",
-    "tree-sitter>=0.25,<0.27",
+    "tree-sitter>=0.26.1,<0.27",
     "tree-sitter-javascript>=0.23,<0.26",
     "tree-sitter-python>=0.23,<0.26",
     "tree-sitter-typescript>=0.23,<0.24",
-    "typer>=0.12,<1.0",
+    "typer>=0.29.1,<1.0",
 ]
 
 [project.optional-dependencies]
 browser = [
-    "playwright>=1.49",
+    "playwright>=1.65.2",
 ]
 dev = [
     "pytest>=8.0",
-    "pytest-asyncio>=0.23",
+    "pytest-asyncio>=1.5.0",
     "pytest-cov>=4.1",
-    "ruff>=0.7",
-        "import-linter>=2.0",
+    "ruff>=0.17.5",
+        "import-linter>=2.16",
     "mypy>=1.11",
     "bandit>=1.7",
     "pre-commit>=3.6",
-    "playwright>=1.49",
+    "playwright>=1.65.2",
 ]
 # OpenAPI 合同层（GET /api/openapi.json）。FastAPI 只用于声明 schema，不接管
 # 运行时；未安装时该端点返回 503 并给出安装指引。
 openapi = [
-    "fastapi>=0.110",
+    "fastapi>=0.163.1",
 ]
 # 企业平台会直接使用的 Web/运行时基础库。它们多数已通过 langgraph/llama-index
 # 传递安装；显式列入可避免上游依赖调整时版本悄悄漂移。
 platform = [
-    "fastapi>=0.162",
+    "fastapi>=0.163.1",
     "uvicorn>=0.54",
-    "sse-starlette>=3.5",
+    "sse-starlette>=3.7.0",
     "tiktoken>=0.14",
     "tenacity>=9.2",
     "SQLAlchemy>=2.1",
     "pathspec>=1.1",
-    "wcmatch>=12.0",
+    "wcmatch>=12.0.3",
     "psutil>=7.2",
 ]
 # 企业控制面（FastAPI /api/v1 + SQLAlchemy/Alembic + Authlib/Keycloak + Casbin）
 enterprise = [
-    "fastapi>=0.162",
+    "fastapi>=0.163.1",
     "uvicorn>=0.54",
     "SQLAlchemy>=2.1",
     "alembic>=1.14",
-    "authlib>=1.9",
+    "authlib>=1.9.8",
     "casbin>=1.43",
     "pyjwt>=2.10",
-    "python-multipart>=0.0.9",
+    "python-multipart>=0.0.34",
 ]
 # PostgreSQL 驱动（企业部署；本地 SQLite 不需要）
 postgres = [
@@ -103,7 +103,7 @@ office = [
     "python-docx>=1.1",
     "openpyxl>=3.1",
     "python-pptx>=1.0",
-    "pypdf>=5.0",
+    "pypdf>=7.1.0",
     "pypdfium2>=4.0",
     "rapidocr-onnxruntime>=1.4",
     "extract-msg>=0.58",
