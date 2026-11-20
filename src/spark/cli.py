@@ -397,6 +397,14 @@ def exec_cmd(
         raise typer.Exit(exc.exit_code) from exc
 
 
+
+def _turn_error_text(event) -> str:
+    """Include the structured hint in CLI stderr, not just the title."""
+    data = event.data or {}
+    error = data.get("error") if isinstance(data, dict) else None
+    hint = error.get("hint") if isinstance(error, dict) else None
+    return f"{event.text}\n{hint}" if event.text and hint else (event.text or "")
+
 async def _exec_async(
     prompt: str,
     workdir: Path,
@@ -469,7 +477,7 @@ async def _exec_async(
                     if as_json:
                         _emit({"type": "turn_error", "text": event.text})
                     else:
-                        typer.echo(event.text, err=True)
+                        typer.echo(_turn_error_text(event), err=True)
                     raise typer.Exit(1)
             if final:
                 if as_json:
@@ -502,7 +510,7 @@ async def _exec_async(
                 if event.type == "turn_end" and event.text:
                     final = event.text
                 if event.type == "turn_error" and event.text:
-                    typer.echo(event.text, err=True)
+                    typer.echo(_turn_error_text(event), err=True)
                     raise typer.Exit(1)
             typer.echo(final)
     finally:
