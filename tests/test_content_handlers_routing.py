@@ -143,6 +143,7 @@ class TestPromptsEndpoint:
         )
         assert code == 200
         assert [c["name"] for c in body["commands"]] == ["review"]
+        json.dumps(body, ensure_ascii=False)  # Path must not leak into JSON
         assert (state.workdir / ".spark" / "commands" / "review.md").is_file()
 
     def test_save_command_requires_content(self, state) -> None:

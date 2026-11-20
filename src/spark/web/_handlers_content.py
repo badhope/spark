@@ -65,11 +65,17 @@ def _command_entries(workdir: Path) -> list[dict[str, Any]]:
 
     out: list[dict[str, Any]] = []
     for c in discover_commands(workdir):
+        raw_path = getattr(c, "path", "")
+        if isinstance(raw_path, Path):
+            try:
+                raw_path = raw_path.relative_to(workdir).as_posix()
+            except ValueError:
+                raw_path = raw_path.as_posix()
         out.append(
             {
                 "name": c.name,
                 "description": c.description,
-                "path": getattr(c, "path", ""),
+                "path": raw_path,
                 "plugin": getattr(c, "plugin", ""),
             }
         )
