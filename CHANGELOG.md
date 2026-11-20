@@ -11,6 +11,12 @@
   统一以 `not_used` 关闭并记录原因；根目录当前无未处理的依赖告警。
 - Dependabot 配置增加 `exclude-paths: api/**`、`data-agent/**`，跳过已删除清单，
   停止 `uv in /api for ...` 的失败任务。
+- 上游依赖批量升级：`agent-client-protocol` 0.12 → 1.0、`llama-index-core`
+  0.14.26、`langgraph` 1.2.24、`pydantic` 2.14.4、`typer` 0.29.2 等 17 项。
+  `agent-client-protocol 1.0` 删除了 `acp.helpers`，新增 `spark.acp_compat`
+  用 `acp.schema` 构造等价消息，ACP 端到端测试保持通过。
+- Dependabot 自动合并改为「等待全部 PR 检查变绿后再 squash」，且 major 版本
+  只留人工审核；仅主仓 `badhope/spark` 执行，镜像仓不再自行合并导致分叉。
 
 ## [0.15.2] - 2026-11-16
 

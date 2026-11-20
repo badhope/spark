@@ -272,8 +272,7 @@ async def test_load_session_replay_history(tmp_path: Path) -> None:
 
 
 async def test_prompt_to_resource_blocks(tmp_path: Path) -> None:
-    from acp.helpers import resource_link_block, text_block
-
+    from spark.acp_compat import resource_link_block, text_block
     from spark.acp_server import prompt_to_input
 
     text, images = prompt_to_input(

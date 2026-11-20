@@ -71,6 +71,10 @@
 > 对应 50 条 open 告警已按 "not_used" 批量关闭并注明陈旧清单原因；
 > `.github/dependabot.yml` 同时用 `exclude-paths` 排除 `api/**` 与 `data-agent/**`，
 > 阻止 Dependabot 继续生成指向已删除清单的失败任务。
+>
+> Dependabot 自动合并现在会先等全部 PR 检查通过再 squash；major 版本（例如
+> `agent-client-protocol` 0.12 → 1.0）只留人工审核，且仅主仓 `badhope/spark`
+> 执行，避免主分支先合并、CI 后失败以及镜像仓自行分叉。
 
 ## 明确不做
 

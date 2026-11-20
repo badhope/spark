@@ -18,15 +18,6 @@ from typing import Any, Literal, cast
 
 from acp import PROTOCOL_VERSION, AgentSideConnection, stdio_streams
 from acp.exceptions import RequestError
-from acp.helpers import (
-    plan_entry,
-    text_block,
-    tool_content,
-    update_agent_message,
-    update_agent_thought,
-    update_plan,
-    update_user_message,
-)
 from acp.schema import (
     AcpMcpServer,
     AgentCapabilities,
@@ -49,6 +40,15 @@ from acp.schema import (
 )
 
 from spark import __version__
+from spark.acp_compat import (
+    plan_entry,
+    text_block,
+    tool_content,
+    update_agent_message,
+    update_agent_thought,
+    update_plan,
+    update_user_message,
+)
 from spark.asyncutil import run_coroutine_sync
 from spark.config import McpServerConfig, McpTransportConfig, SparkConfig
 from spark.core.loop import AgentLoop, Approver
