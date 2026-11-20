@@ -248,9 +248,9 @@ def test_circuit_breaker_trips_above_window_capacity(tmp_path: Path) -> None:
         return [event async for event in loop.iter_turn("go")]
 
     events = asyncio.run(run())
-    errors = [e.text for e in events if e.type == "turn_error"]
+    errors = [e for e in events if e.type == "turn_error"]
     assert errors, "identical repeated calls must terminate the turn"
-    assert "circuit breaker" in errors[-1].lower()
+    assert errors[-1].data["error"]["code"] == "tool_repeat_loop"
     store.close()
 
 

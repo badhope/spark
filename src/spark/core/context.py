@@ -19,6 +19,17 @@ def load_system_prompt() -> str:
     return files("spark.prompts").joinpath("system.md").read_text(encoding="utf-8")
 
 
+def load_local_system_prompt() -> str:
+    """Compact prompt for 1B-class local GGUF models.
+
+    The full agent prompt plus skills/repo-map/tool schemas is several thousand
+    tokens; a 1B model starts ignoring instructions and inventing tool results.
+    Keep identity, tool discipline and workdir safety, drop the optional
+    discovery blocks.
+    """
+    return files("spark.prompts").joinpath("system_local.md").read_text(encoding="utf-8")
+
+
 # 项目指令文件生态（2024→2026 事实标准）：
 # * 根层：AGENTS.md（agents.md / agentsstandard.com 规范）与 CLAUDE.md（Anthropic）并列加载
 # * 全局层：~/.agents/{AGENTS.md,CLAUDE.md} —— 用户级跨项目约定
@@ -182,6 +193,7 @@ _SYSTEM_PROMPT_TTL_SEC = 30.0
 def _system_prompt_key(workdir: Path, cfg: SparkConfig) -> tuple:
     return (
         str(Path(workdir).resolve()),
+        str(getattr(cfg.provider, "name", "")),
         str(getattr(cfg.agent, "sandbox_mode", "")),
         getattr(cfg.agent, "system_prompt", "") or "",
         str(cfg.context.agents_md or ""),
@@ -217,14 +229,24 @@ def system_prompt(workdir: Path, cfg: SparkConfig) -> str:
 
 
 def _build_system_prompt(workdir: Path, cfg: SparkConfig) -> str:
+    local_provider = str(getattr(cfg.provider, "name", "")) == "llama_cpp"
     # 用户自定义系统提示词：cfg.agent.system_prompt 非空时覆盖默认 prompts/system.md
     custom_prompt = getattr(cfg.agent, "system_prompt", "") or ""
-    base = custom_prompt.strip() if custom_prompt.strip() else load_system_prompt()
+    if custom_prompt.strip():
+        base = custom_prompt.strip()
+    elif local_provider:
+        base = load_local_system_prompt().strip()
+    else:
+        base = load_system_prompt()
     text = base + f"\n\nWorkdir: {workdir.resolve()}"
     text += f"\n\n{environment_block(workdir)}"
     mode_hint = MODE_HINTS.get(getattr(cfg.agent, "sandbox_mode", "workspace"))
     if mode_hint:
         text += f"\n{mode_hint}"
+    if local_provider:
+        # 1B 级模型对长提示中的技能目录、子代理清单和仓库地图不敏感，反而
+        # 容易忽略“先调用工具”的主指令；保留工具本身，砍掉这些发现型区块。
+        return text
     text = inject_skills(text, discover_skills(workdir))
     # P1-4: 声明式子代理（.claude/agents/*.md，文件即 subagent）
     from spark.agents import discover_declared_agents, inject_subagents

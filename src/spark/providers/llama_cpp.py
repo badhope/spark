@@ -31,6 +31,70 @@ _TOOL_CLOSE = _LT + "/tool_call" + _GT
 _LLM_CACHE: dict[str, Any] = {}
 _LLM_LOCK = threading.Lock()
 
+# A 1B model cannot reliably choose among all ~60 Spark tools; the full schema
+# block alone is ~8k tokens and pushes the model past its instruction-following
+# budget. Keep the coding loop's core verbs, web lookup and ask_user. Unknown
+# names are ignored, so the list stays safe if tools are renamed.
+LOCAL_TOOL_ALLOWLIST = frozenset(
+    {
+        "read_file",
+        "list_dir",
+        "write_file",
+        "apply_patch",
+        "apply_edit",
+        "run_shell",
+        "run_tests",
+        "grep",
+        "glob",
+        "web_search",
+        "web_fetch",
+        "ask_user",
+    }
+)
+
+
+def _filter_tools(tools: list[dict]) -> list[dict]:
+    selected = [
+        tool
+        for tool in tools
+        if isinstance(tool, dict)
+        and isinstance(tool.get("function"), dict)
+        and str(tool["function"].get("name") or "") in LOCAL_TOOL_ALLOWLIST
+    ]
+    # Never send an empty tool block if the registry changed underneath us.
+    return selected or tools
+
+
+_TOOL_INTENT_RE = re.compile(
+    r"(读取|查看|打开|列出|目录|搜索|查找|运行|执行|测试|构建|写入|修改|创建|删除|"
+    r"修复|排查|检查|优化|实现|部署|提交|安装|下载|"
+    r"\b(read|list|open|grep|glob|find|run|exec|test|build|write|edit|patch|install|git)\b)",
+    re.I,
+)
+_FILE_TOKEN_RE = re.compile(r"[\w./\\-]+\.(py|md|json|toml|txt|ya?ml|js|ts|tsx|jsx|css|html|sh|ini|cfg)")
+
+
+def _needs_tools(messages: list[ChatMessage], tools: list[dict]) -> list[dict]:
+    """Only expose tools when the turn plausibly needs an action.
+
+    A 1B model with 12 schemas still calls ``run_tests`` for "12345*6789" and
+    ``read_file`` for a plain question. With no schemas those prompts stay
+    plain chat; tool-result follow-ups keep the schemas because the model must
+    either use the result or chain another call.
+    """
+    if not tools:
+        return tools
+    for msg in messages[-4:]:
+        if msg.role == "tool" or msg.tool_calls:
+            return tools
+    for msg in reversed(messages):
+        if msg.role == "user":
+            text = msg.content or ""
+            if _TOOL_INTENT_RE.search(text) or _FILE_TOKEN_RE.search(text):
+                return tools
+            return []
+    return tools
+
 
 def _model_path(model: str) -> Path:
     from spark.local_models import models_dir
@@ -40,6 +104,51 @@ def _model_path(model: str) -> Path:
         return path
     candidate = models_dir() / path.name
     return candidate
+
+
+def _plain_tool_result(raw: str) -> str:
+    """Turn Spark's tool JSON envelope into plain text for a small model.
+
+    ``read_file`` returns ``{"path": ..., "content": "...", ...}``. Feeding the
+    whole JSON blob makes MiniCPM5 summarize metadata ("3 lines, title,
+    paragraph") instead of the actual file body. Prefer the payload's
+    ``content``/``stdout``/``output`` field and pretty-print the rest.
+    """
+    try:
+        obj = json.loads(raw)
+    except ValueError:
+        return raw
+    if isinstance(obj, str):
+        return obj
+    if isinstance(obj, dict):
+        for key in ("content", "stdout", "output", "text", "result"):
+            value = obj.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+    return json.dumps(obj, ensure_ascii=False, indent=2)
+
+
+def _localize_tool_results(messages: list[dict]) -> list[dict]:
+    """Flatten tool payloads and add a final answer-only instruction."""
+    converted = messages
+    had_tool = False
+    for item in converted:
+        if item.get("role") == "tool":
+            had_tool = True
+            content = item.get("content")
+            if isinstance(content, str):
+                item["content"] = _plain_tool_result(content)
+    if had_tool and converted and converted[-1].get("role") == "tool":
+        converted.append(
+            {
+                "role": "user",
+                "content": (
+                    "以上是工具返回的真实结果。请只依据这个结果，回答最后一条用户任务；"
+                    "不要重复历史里的旧回答，不要编造，也不要回复“收到”。"
+                ),
+            }
+        )
+    return converted
 
 
 def _tool_prompt(tools: list[dict]) -> str:
@@ -191,6 +300,7 @@ class LlamaCppProvider:
 
     def _generate(self, messages: list[ChatMessage], tools: list[dict], effort: str | None) -> dict:
         llm = self._ensure()
+        tools = _needs_tools(messages, _filter_tools(tools))
         max_tokens = {"low": 256, "medium": 768, "high": 1280}.get(effort or "medium", 768)
         template = str(llm.metadata.get("tokenizer.chat_template") or "")
         if template:
@@ -213,6 +323,7 @@ class LlamaCppProvider:
                             fn["arguments"] = json.loads(fn["arguments"])
                         except ValueError:
                             fn["arguments"] = {"value": fn["arguments"]}
+            converted = _localize_tool_results(converted)
             rendered = formatter(
                 messages=converted,
                 tools=tools or None,
@@ -233,11 +344,11 @@ class LlamaCppProvider:
             generated: list[int] = []
             for token in llm.generate(
                 tokens,
-                temp=0.7,
-                top_p=0.95,
+                temp=0.2,
+                top_p=0.9,
                 min_p=0.0,
-                top_k=40,
-                repeat_penalty=1.0,
+                top_k=20,
+                repeat_penalty=1.1,
                 reset=True,
                 stopping_criteria=criteria,
             ):
@@ -261,8 +372,9 @@ class LlamaCppProvider:
         try:
             return llm.create_chat_completion(
                 messages=_to_local_messages(messages, tools),
-                temperature=0.7,
-                top_p=0.95,
+                temperature=0.2,
+                top_p=0.9,
+                repeat_penalty=1.1,
                 min_p=0.0,
                 max_tokens=max_tokens,
                 stream=False,
@@ -271,8 +383,9 @@ class LlamaCppProvider:
         except TypeError:
             return llm.create_chat_completion(
                 messages=_to_local_messages(messages, tools),
-                temperature=0.7,
-                top_p=0.95,
+                temperature=0.2,
+                top_p=0.9,
+                repeat_penalty=1.1,
                 max_tokens=max_tokens,
                 stream=False,
             )
@@ -284,6 +397,12 @@ class LlamaCppProvider:
         effort: str | None = None,
     ) -> AsyncIterator[ChatDelta]:
         result = await asyncio.to_thread(self._generate, messages, tools, effort)
+        active_tools = _needs_tools(messages, _filter_tools(tools))
+        allowed = {
+            str(t.get("function", {}).get("name") or "")
+            for t in active_tools
+            if isinstance(t, dict) and isinstance(t.get("function"), dict)
+        }
         message = (result.get("choices") or [{}])[0].get("message") or {}
         content = str(message.get("content") or "")
         think_open = _LT + "think" + _GT
@@ -296,7 +415,17 @@ class LlamaCppProvider:
             if reasoning.strip():
                 yield ChatDelta(type="reasoning", text=reasoning.strip())
             content = after
+        elif think_close in content:
+            # Some chat templates open the thinking block implicitly at the
+            # assistant prefix; only the closing tag reaches detokenized text.
+            reasoning, content = content.split(think_close, 1)
+            reasoning = reasoning.replace(think_open, "").strip()
+            if reasoning:
+                yield ChatDelta(type="reasoning", text=reasoning)
         calls, text = parse_tool_calls(content)
+        # A model can hallucinate a familiar tool name even when its schema was
+        # not supplied. Never execute a call outside the active tool set.
+        calls = [call for call in calls if call.name in allowed]
         if text:
             for piece in re.split(r"(?<=[。！？.!?])\s*", text):
                 if piece:

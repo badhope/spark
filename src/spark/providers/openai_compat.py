@@ -431,6 +431,12 @@ class OpenAICompatProvider:
                         self.base_url,
                     )
                     continue
+                # A refused socket is not transient: the port is closed or the
+                # host is wrong. Retrying for 1+2+4s only delays the actionable
+                # "start the local service / fix the URL" error card.
+                refused = isinstance(exc, ConnectionRefusedError) or "connection refused" in str(exc).lower()
+                if refused:
+                    break
                 is_retryable = (
                     status in _RETRYABLE_STATUS_CODES
                     or (

@@ -5,8 +5,8 @@ import logging
 from spark.config import SparkConfig, require_api_key
 from spark.errors import ConfigError
 from spark.providers.base import Provider
-from spark.providers.mock import MockProvider
 from spark.providers.llama_cpp import LlamaCppProvider
+from spark.providers.mock import MockProvider
 from spark.providers.openai_compat import OllamaProvider, OpenAICompatProvider
 
 logger = logging.getLogger(__name__)

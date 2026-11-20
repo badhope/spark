@@ -12,7 +12,12 @@ from pathlib import Path
 
 from spark.models import ChatMessage
 from spark.store import SessionStore
-from spark.web.utils import inject_attachments, parse_attachments, prepare_attachments, split_attachments
+from spark.web.utils import (
+    inject_attachments,
+    parse_attachments,
+    prepare_attachments,
+    split_attachments,
+)
 
 
 def _pdf_bytes(text: str) -> bytes:

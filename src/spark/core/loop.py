@@ -686,10 +686,22 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
             self._last_round["error"] = "cancelled"
             return
         if rounds >= self.cfg.agent.max_tool_rounds:
+            issue = {
+                "code": "tool_loop_limit",
+                "title": "模型在工具调用里绕不出来",
+                "message": (
+                    f"模型连续 {rounds} 轮调用工具，仍未给出最终回答。"
+                    "工具本身可能已经执行成功，但小模型没有把结果收束成答案。"
+                ),
+                "hint": "把任务拆成更小的一步；或换 4B 级模型。工具结果已保留在工作区，不会重复执行。",
+                "retryable": True,
+                "action": "settings",
+                "params": {"rounds": str(rounds)},
+            }
             yield TurnEvent(
                 type="turn_error",
-                text="Reached max_tool_rounds",
-                data=self._budget_state(),
+                text=issue["title"],
+                data={"error": issue, **self._budget_state()},
             )
             self._last_round["error"] = "max_rounds"
             return
@@ -799,14 +811,22 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
                         **self._budget_state(),
                     },
                 )
+                issue = {
+                    "code": "tool_repeat_loop",
+                    "title": "模型重复调用同一个工具",
+                    "message": (
+                        f"模型连续 {count} 次用完全相同的参数调用 {name}，"
+                        f"已触发保护阈值（{self.cfg.agent.max_repeat_calls}）。"
+                    ),
+                    "hint": "任务已执行到这里；换一个说法或换 4B 级模型继续。重复调用已被拦截，不会污染工作区。",
+                    "retryable": True,
+                    "action": "settings",
+                    "params": {"tool": name, "repeats": str(count)},
+                }
                 yield TurnEvent(
                     type="turn_error",
-                    text=(
-                        f"Circuit breaker: tool '{name}' repeated with identical "
-                        f"arguments {count} times (limit "
-                        f"{self.cfg.agent.max_repeat_calls})"
-                    ),
-                    data=self._budget_state(),
+                    text=issue["title"],
+                    data={"error": issue, **self._budget_state()},
                 )
                 self._last_round["error"] = "circuit_breaker"
                 return

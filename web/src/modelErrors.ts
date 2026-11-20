@@ -67,6 +67,30 @@ const COPY: Record<string, Record<Lang, Copy>> = {
       hint: "Open Settings → Model → Local models, download MiniCPM5-1B or another recommendation, then click Use this model.",
     },
   },
+  tool_loop_limit: {
+    zh: {
+      title: "模型在工具调用里绕不出来",
+      message: "模型连续多轮调用工具，仍未给出最终回答。工具可能已经执行成功，但小模型没有把结果收束成答案。",
+      hint: "把任务拆成更小的一步，或换用 4B 级模型。工具结果已保留在工作区，不会重复执行。",
+    },
+    en: {
+      title: "Model got stuck in a tool loop",
+      message: "The model kept calling tools without producing a final answer. The tools may have succeeded, but the small model failed to summarise the result.",
+      hint: "Split the task into a smaller step, or switch to a 4B model. Tool results are kept in the workspace and are not re-executed.",
+    },
+  },
+  tool_repeat_loop: {
+    zh: {
+      title: "模型重复调用同一个工具",
+      message: "模型连续用完全相同的参数调用同一个工具，已触发保护阈值。",
+      hint: "重复调用已被拦截，不会污染工作区；换一个说法或换用 4B 级模型继续。",
+    },
+    en: {
+      title: "Model repeated the same tool call",
+      message: "The model called the same tool with identical arguments until the safety threshold fired.",
+      hint: "The duplicate calls were blocked and did not touch the workspace. Rephrase the task or switch to a 4B model.",
+    },
+  },
   local_model_load_failed: {
     zh: {
       title: "本地模型加载失败",
@@ -258,6 +282,17 @@ export function modelErrorText(info: ModelErrorInfo | undefined, lang: Lang, fal
     }
   }
   const values = vars(info)
+  // Unknown failures carry the sanitized provider exception in `message`.
+  // Prefer it over the generic copy so a provider crash is debuggable from
+  // the chat card without opening the technical-details drawer.
+  if (info.code === "unknown") {
+    const unknown = COPY.unknown[lang]
+    return {
+      title: unknown.title,
+      message: info.message || unknown.message,
+      hint: info.hint || unknown.hint,
+    }
+  }
   const copy = COPY[info.code]?.[lang]
   if (!copy) {
     return {
@@ -289,6 +324,8 @@ export function modelErrorCodeLabel(code: string, lang: Lang): string {
     missing_base_url: ["未配置地址", "No endpoint"],
     local_model_missing: ["模型未下载", "Model not downloaded"],
     local_model_load_failed: ["本地加载失败", "Local load failed"],
+    tool_loop_limit: ["工具循环", "Tool loop"],
+    tool_repeat_loop: ["重复调用", "Repeat call"],
     auth_failed: ["鉴权失败", "Auth failed"],
     model_not_found: ["模型不存在", "Model not found"],
     rate_limited: ["限流", "Rate limited"],

@@ -86,6 +86,8 @@ def test_error_hint_covers_common_failures() -> None:
     assert "spark init" in error_hint("Missing User API Key")
     assert "base_url" in error_hint("connection timeout")
     assert "max_repeat_calls" in error_hint("Circuit breaker: tool x repeated")
+    assert "max_repeat_calls" in error_hint("模型重复调用同一个工具")
+    assert "max_tool_rounds" in error_hint("模型在工具调用里绕不出来")
     assert "max_turn_tokens" in error_hint("Token budget exceeded for this turn")
     assert "doctor" in error_hint("something odd happened")
 

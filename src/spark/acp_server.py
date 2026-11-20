@@ -315,13 +315,15 @@ def plan_entries(steps: list[dict[str, Any]]) -> list[Any]:
     return entries
 
 
-def map_error_stop_reason(message: str) -> str:
-    """Spark turn_error 文案 → ACP StopReason。"""
+def map_error_stop_reason(message: str, code: str | None = None) -> str:
+    """Spark turn_error 文案/错误码 → ACP StopReason。"""
     lowered = message.lower()
+    if code == "tool_loop_limit" or "max_tool_rounds" in message:
+        return "max_turn_requests"
+    if code in {"tool_repeat_loop", "circuit_breaker"}:
+        return "max_turn_requests"
     if "cancelled" in lowered:
         return "cancelled"
-    if "max_tool_rounds" in message:
-        return "max_turn_requests"
     if "budget exceeded" in lowered:
         return "max_tokens"
     return "refusal"
@@ -384,7 +386,9 @@ async def stream_turn(
             break
         elif event.type == "turn_error":
             message = event.text or "turn failed"
-            stop_reason = map_error_stop_reason(message)
+            error_payload = (event.data or {}).get("error") if isinstance(event.data, dict) else None
+            code = error_payload.get("code") if isinstance(error_payload, dict) else None
+            stop_reason = map_error_stop_reason(message, code)
             if stop_reason == "refusal":
                 # 真错误以文本形式透出，客户端可见
                 await conn.session_update(

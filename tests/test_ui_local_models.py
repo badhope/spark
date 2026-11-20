@@ -37,3 +37,30 @@ def test_local_model_catalog_and_settings_cards(tmp_path, monkeypatch) -> None:
             assert "下载" in text
             context.close()
             browser.close()
+
+
+def test_one_click_activation_switches_provider(tmp_path, monkeypatch) -> None:
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    target = model_dir / "MiniCPM5-1B-Q4_K_M.gguf"
+    with target.open("wb") as fh:
+        fh.write(b"GGUF")
+        fh.truncate(688_065_920)
+    monkeypatch.setenv("SPARK_MODEL_DIR", str(model_dir))
+
+    with _missing_key_server(tmp_path) as (base, _state):
+        with sync_playwright() as playwright:
+            browser = launch(playwright)
+            context = browser.new_context(viewport={"width": 1440, "height": 900})
+            page = context.new_page()
+            page.set_default_timeout(8000)
+            page.goto(f"{base}/?onboarding=skip&panel=settings&tab=model", wait_until="domcontentloaded")
+            page.get_by_test_id("local-model-minicpm5-1b").wait_for(state="visible")
+            page.get_by_role("button", name="使用此模型").click()
+            page.wait_for_timeout(1500)
+            status = _get_json(f"{base}/api/status")
+            assert status["provider"] == "llama_cpp"
+            assert status["model"].endswith("MiniCPM5-1B-Q4_K_M.gguf")
+            assert status["model_status"]["ready"] is True
+            context.close()
+            browser.close()

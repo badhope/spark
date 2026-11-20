@@ -72,9 +72,9 @@ async def test_repeated_identical_tool_call_trips_circuit_breaker(
     provider = ScriptedProvider([[call, text_delta("again")]] * 6)
     loop, store = make_loop(tmp_path, provider, max_repeat_calls=3)
     events = await collect(loop)
-    errors = [event.text for event in events if event.type == "turn_error"]
+    errors = [event for event in events if event.type == "turn_error"]
     assert errors
-    assert "circuit breaker" in errors[-1].lower()
+    assert errors[-1].data["error"]["code"] == "tool_repeat_loop"
     store.close()
 
 

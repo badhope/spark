@@ -21,7 +21,6 @@ import urllib.request
 
 import pytest
 
-
 BASE = os.environ.get("SPARK_REAL_BASE", "").rstrip("/")
 pytestmark = pytest.mark.skipif(
     not BASE, reason="set SPARK_REAL_BASE to a live Spark Web URL to run this test"

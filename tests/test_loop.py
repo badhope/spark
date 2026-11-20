@@ -60,7 +60,7 @@ async def test_max_tool_rounds(tmp_path: Path) -> None:
     loop = _loop(tmp_path, provider, max_rounds=2)
     events = await loop.run("loop forever")
     assert events[-1].type == "turn_error"
-    assert "max_tool_rounds" in (events[-1].text or "")
+    assert (events[-1].data or {}).get("error", {}).get("code") == "tool_loop_limit"
 
 
 @pytest.mark.asyncio

@@ -300,6 +300,10 @@ def test_map_error_stop_reason() -> None:
 
     assert map_error_stop_reason("Turn cancelled") == "cancelled"
     assert map_error_stop_reason("Reached max_tool_rounds") == "max_turn_requests"
+    assert (
+        map_error_stop_reason("模型在工具调用里绕不出来", "tool_loop_limit")
+        == "max_turn_requests"
+    )
     assert map_error_stop_reason("Token budget exceeded for this turn") == "max_tokens"
     assert map_error_stop_reason("provider exploded") == "refusal"
 

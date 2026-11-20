@@ -441,10 +441,14 @@ def classify_provider_error(
     if preflight is not None:
         return preflight
 
+    # Keep the sanitized original error in the user-visible text.  A generic
+    # "unknown" message makes provider crashes impossible to debug from the
+    # chat window and breaks clients that only render ``turn_error.text``.
+    reason = detail or "错误不在常见分类里。"
     return build(
         "unknown",
         "模型调用失败",
-        "模型请求没有完成，错误不在常见分类里。",
+        f"模型请求没有完成：{reason}",
         "展开技术细节查看原始错误；先重试一次，仍失败就到「设置 → 模型」点「测试连接」并检查服务日志。",
     )
 

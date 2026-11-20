@@ -56,7 +56,7 @@ def test_composer_routes_bang_commands_to_shell() -> None:
 def test_share_command_is_in_the_palette() -> None:
     src = _read("components/CommandPalette.tsx")
     assert "downloadShareHtml" in src
-    assert 'exportSession("html")' in src
+    assert "void downloadShareHtml()" in src
 
 
 def test_settings_save_refreshes_redacted_mcp_rows() -> None:

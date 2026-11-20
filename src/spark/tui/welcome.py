@@ -148,12 +148,12 @@ def error_hint(text: str) -> str:
         return "提示：运行 spark init 重新配置密钥，或 spark doctor 查看诊断。"
     if "connection" in lowered or "timeout" in lowered or "网络" in text:
         return "提示：检查 base_url 是否可达，或稍后重试。"
-    if "circuit breaker" in lowered:
+    if "circuit breaker" in lowered or "重复调用" in text:
         return (
             "提示：模型在重复调用同一工具，已自动中止。可调大 agent.max_repeat_calls。"
         )
     if "token budget" in lowered:
         return "提示：本轮 token 预算用尽。可调大 agent.max_turn_tokens 或拆小任务。"
-    if "max_tool_rounds" in lowered:
+    if "max_tool_rounds" in lowered or "工具调用" in text or "绕不出来" in text:
         return "提示：达到工具轮数上限。可调大 agent.max_tool_rounds 或拆小任务。"
     return "提示：运行 spark doctor 查看完整配置诊断。"
