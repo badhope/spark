@@ -122,7 +122,7 @@
 | MCP 客户端 | 现有 138 项定向测试；真实 MCP server 已作为服务端验收；真实 resources/prompts 客户端链路通过 | ✅ |
 | relay | 端到端 200；401 是上游控制令牌缺失，补设备令牌后通过 | ✅ |
 | OTel | 本机起真实 OTLP gRPC collector，收到 `spark.turn` span | ✅ |
-| 插件子进程/hook | 单测覆盖；本地安装启用通过，未做人工 hook 触发 | 🟡 |
+| 插件子进程/hook | 本地插件启用后，真实 `read_file` 触发 `pre_tool` 子进程 hook，落盘 payload `{"tool":"read_file","arguments":{"path":"note.txt"}}`，且 `plugin_hook_issues=[]` | ✅ |
 | PR 写/publish | 无 token，未做 | ⛔ |
 | VS Code Extension Host | 无 Code/Extension Host，仅配置生成 | ⛔ |
 | JetBrains/Neovim 真实 IDE | 配置生成成功；无 IDE 客户端 | 🟡 |
@@ -153,15 +153,14 @@
 5. **桌面**：`pywebview` 未安装，且当前无桌面会话。
 6. **外部可观测后端**：本机 OTLP gRPC collector 已通；真实 Langfuse/Tempo 未接。
 7. **会议转写**：`faster-whisper` 未安装，真实音频未跑。
-8. **插件 hook 人工触发**：单测覆盖，未在真实插件上手工触发 hook。
-9. **更新/卸载**：发布源 403；卸载属破坏性操作。
-10. **UI**：全量回归已覆盖 UI/浏览器测试；独立 UI 基线 37 passed。
+8. **更新/卸载**：发布源 403；卸载属破坏性操作。
+9. **UI**：全量回归已覆盖 UI/浏览器测试；独立 UI 基线 37 passed。
 
 ## 四、验收口径
 
 如果“全部功能”指**本机可执行的核心路径 + 全部内置工具 + 本机协议服务**：当前可以给真实通过证据，但 PR/商业模型/企业/IDE/桌面/会议转写必须保留 ⛔。
 
-如果指**字面每一个外部集成、每一个工具、每一个平台都真实跑过**：还缺上面的 10 项，不能宣称 100%。
+如果指**字面每一个外部集成、每一个工具、每一个平台都真实跑过**：还缺上面的 9 项，不能宣称 100%。
 
 补齐顺序建议：
 
