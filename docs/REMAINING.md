@@ -68,7 +68,9 @@
 > `filelock>=4.2.1`。`tests/test_workflow.py` 与全量测试验证 FileLock API 兼容。
 
 > 另：`data-agent/` 与 `api/` 下清单文件在 v0.9.6 前已从仓库删除，GitHub 不会自动回收；
-> 对应 50 条 open 告警已按 "not_used" 批量关闭并注明陈旧清单原因。
+> 对应 50 条 open 告警已按 "not_used" 批量关闭并注明陈旧清单原因；
+> `.github/dependabot.yml` 同时用 `exclude-paths` 排除 `api/**` 与 `data-agent/**`，
+> 阻止 Dependabot 继续生成指向已删除清单的失败任务。
 
 ## 明确不做
 

@@ -6,6 +6,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    exclude-paths:
+      # 这两份清单在 v0.9.6 前已从仓库删除，但 GitHub 依赖图不会自动回收；
+      # Dependabot 仍会动态扫描并生成 "uv in /api ..." 失败任务。显式排除。
+      - "api/**"
+      - "data-agent/**"
     ignore:
       - dependency-name: "unstructured"
     groups:

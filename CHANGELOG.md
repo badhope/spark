@@ -9,6 +9,8 @@
   `pyproject.toml` 下限同步为 `litellm>=1.110.1`、`filelock>=4.2.1`。
 - 清理已删除清单 `api/uv.lock`、`data-agent/uv.lock` 遗留的 50 条 Dependabot 告警，
   统一以 `not_used` 关闭并记录原因；根目录当前无未处理的依赖告警。
+- Dependabot 配置增加 `exclude-paths: api/**`、`data-agent/**`，跳过已删除清单，
+  停止 `uv in /api for ...` 的失败任务。
 
 ## [0.15.2] - 2026-11-16
 
