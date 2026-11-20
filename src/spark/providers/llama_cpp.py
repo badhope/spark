@@ -191,7 +191,7 @@ class LlamaCppProvider:
 
     def _generate(self, messages: list[ChatMessage], tools: list[dict], effort: str | None) -> dict:
         llm = self._ensure()
-        max_tokens = {"low": 512, "medium": 1280, "high": 2048}.get(effort or "medium", 1280)
+        max_tokens = {"low": 256, "medium": 768, "high": 1280}.get(effort or "medium", 768)
         template = str(llm.metadata.get("tokenizer.chat_template") or "")
         if template:
             from llama_cpp.llama_chat_format import Jinja2ChatFormatter
@@ -217,6 +217,7 @@ class LlamaCppProvider:
                 messages=converted,
                 tools=tools or None,
                 tool_choice="auto" if tools else None,
+                enable_thinking=False,
             )
             tokens = llm.tokenize(rendered.prompt.encode("utf-8"), add_bos=False, special=True)
             stop_ids = {llm.token_eos(), llm.token_bos()}

@@ -27,3 +27,13 @@
 - 16K 上下文在纯 CPU 上首轮较慢；默认 `SPARK_LOCAL_CTX=16384`，可由高级用户调高。
 - 下载源为 ModelScope / Hugging Face 直链；未固定官方 SHA256，当前校验大小 + GGUF magic + 本地哈希，后续应补官方哈希。
 - 1B 模型仍不能保证复杂多轮 Agent；4B 级才是“稳定干活”的下限。
+
+## 全模型 UI 回归（2026-11-20）
+
+服务：`127.0.0.1:8768`，`provider=llama_cpp`，`model=/home/user/.spark/models/MiniCPM5-1B-Q4_K_M.gguf`，16K。
+
+- `test_ui_a11y.py`: 8 passed
+- `test_ui_browser.py`: 9 passed（含真实发送与工具调用）
+- `test_ui_full_interaction.py`: 8 passed（全设置页、工作台五页、下载/重发/移动端）
+- `test_settings_roundtrip.py` + `test_settings_shelf_actions.py`: 12 passed
+- 合计 **37 passed**，全部使用真实 MiniCPM5-1B 作为后端。
