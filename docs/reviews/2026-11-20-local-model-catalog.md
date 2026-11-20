@@ -37,3 +37,10 @@
 - `test_ui_full_interaction.py`: 8 passed（全设置页、工作台五页、下载/重发/移动端）
 - `test_settings_roundtrip.py` + `test_settings_shelf_actions.py`: 12 passed
 - 合计 **37 passed**，全部使用真实 MiniCPM5-1B 作为后端。
+
+## 全局回归（2026-11-20）
+
+- 全量 pytest：**1759 passed, 13 skipped**，耗时 15m37s，EXIT=0。
+- 真实 MiniCPM5 后端 UI：**37 passed**（8 a11y + 9 browser + 8 full interaction + 12 settings）。
+- 本地模型：**15 passed**（目录、下载校验、活动状态、一键启用、两种工具格式）。
+- 额外真实模型任务：写入文件、shell 调用、多轮暗号记忆，见交付说明。
