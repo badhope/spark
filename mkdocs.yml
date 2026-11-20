@@ -44,6 +44,7 @@ nav:
       - Control plane: ENTERPRISE.md
       - PR review: PR_REVIEW.md
       - Workflow: WORKFLOW.md
+      - Outbound relay: RELAY.md
   - Operations:
       - Diagrams and secrets: diagrams-ops.md
   - Decisions:

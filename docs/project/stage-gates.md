@@ -35,7 +35,7 @@
 ## M3（第 22–27 周）
 
 - [ ] W6：子 Agent/Workflow；并发上限；成本上限（W6-a..g 声明层、执行器、AgentLoop 适配、暂停/续跑/重跑、Web 图、成本上限、worktree 隔离已落；真实模型端到端待验）
-- [ ] W7：中继、PWA/IM、可选云 runner（PWA manifest/图标、短时配对码、设备令牌、远程解锁页、空闲任务队列（Web/CLI/设置页）已落；中继、IM Bot、云 runner 未开始）
+- [ ] W7：中继、PWA/IM、可选云 runner（PWA manifest/图标、短时配对码、设备令牌、远程解锁页、空闲任务队列（Web/CLI/设置页）已落；出站 HTTP 中继 MVP（`spark relay serve/connect/call`、本地回环转发、二进制 body、`tests/test_relay.py`）已落；SSE 流式中继、IM Bot、云 runner 未开始）
 - [ ] 远程执行仍走 policy + sandbox + approval（设备令牌最小权限已落：可发起/审批/取消/切会话与读文件 diff，不可改设置、装插件、直接 shell 或管理配对；`tests/test_remote_token_scope.py`）
 
 ## M4（第 28–31 周）

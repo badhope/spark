@@ -2223,6 +2223,95 @@ pr_app = typer.Typer(help="Pull Request 上下文（GitHub/GitCode/Gitee；除 p
 app.add_typer(pr_app, name="pr")
 
 
+relay_app = typer.Typer(help="出站 HTTP 中继：让远端调用本机 Spark Web，不开放入站端口")
+app.add_typer(relay_app, name="relay")
+
+
+@relay_app.command("serve", help="运行中继服务（明文 HTTP，生产请置于 TLS 反向代理后）")
+def relay_serve_cmd(
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8788, "--port"),
+) -> None:
+    from spark.relay import serve_relay
+
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        typer.echo("警告：中继是明文 HTTP，请只监听内网或置于 TLS 反向代理后。", err=True)
+    typer.echo(f"Relay listening on http://{host}:{port}")
+    serve_relay(host, port)
+
+
+@relay_app.command("connect", help="让本机 Spark 连出到中继，并把请求转发给本地 Web")
+def relay_connect_cmd(
+    relay: str = typer.Option(..., "--relay", help="中继地址，例如 https://relay.example.com"),
+    channel: str = typer.Option(..., "--channel", help="频道 id"),
+    key: str = typer.Option(..., "--key", envvar="SPARK_RELAY_KEY", help="频道密钥（建议用环境变量）"),
+    upstream: str = typer.Option("http://127.0.0.1:8000", "--upstream", help="本地 Spark Web 地址"),
+    token: str = typer.Option("", "--token", envvar="SPARK_WEB_TOKEN", help="本地 Spark Web token"),
+    poll_wait: int = typer.Option(25, "--poll-wait", help="长轮询秒数，1-30"),
+) -> None:
+    from spark.relay import RelayAgent, RelayError
+
+    agent = RelayAgent(
+        relay,
+        channel,
+        key,
+        upstream,
+        token=token,
+        poll_wait=poll_wait,
+    )
+    try:
+        agent.register()
+        typer.echo(f"Relay agent connected: {relay} channel={channel} upstream={upstream}")
+        agent.run()
+    except KeyboardInterrupt:
+        typer.echo("\nRelay agent stopped.")
+    except RelayError as exc:
+        typer.echo(f"Relay agent failed: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    finally:
+        agent.close()
+
+
+@relay_app.command("call", help="通过中继调用一次本机 Spark Web API")
+def relay_call_cmd(
+    relay: str = typer.Option(..., "--relay"),
+    channel: str = typer.Option(..., "--channel"),
+    key: str = typer.Option(..., "--key", envvar="SPARK_RELAY_KEY"),
+    method: str = typer.Option("GET", "--method"),
+    path: str = typer.Option("/api/status", "--path"),
+    body_file: Path | None = typer.Option(None, "--body-file"),
+    timeout: int = typer.Option(60, "--timeout"),
+) -> None:
+    from spark.relay import RelayError, relay_call
+
+    body = b""
+    if body_file is not None:
+        try:
+            body = body_file.read_bytes()
+        except OSError as exc:
+            typer.echo(f"读取 body 文件失败: {exc}", err=True)
+            raise typer.Exit(2) from exc
+    try:
+        result = relay_call(
+            relay,
+            channel,
+            key,
+            method=method,
+            path=path,
+            body=body,
+            timeout=timeout,
+        )
+    except RelayError as exc:
+        typer.echo(f"Relay call failed: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"HTTP {result['status']}")
+    text = result["body"].decode("utf-8", errors="replace")
+    if text:
+        typer.echo(text)
+    if result["status"] >= 400:
+        raise typer.Exit(1)
+
+
 def _pr_repo(repo: str, workdir: Path):
     from spark.pr import RepoRef, find_repo, parse_remote
 
