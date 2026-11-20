@@ -49,9 +49,18 @@ def _remote_server(tmp_path: Path):
         store.close()
 
 
-def _request(base: str, path: str, *, token: str, body: dict | None = None):
+def _request(
+    base: str,
+    path: str,
+    *,
+    token: str,
+    body: dict | None = None,
+    extra_headers: dict[str, str] | None = None,
+):
     data = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {"X-Spark-Token": token}
+    if extra_headers:
+        headers.update(extra_headers)
     if data is not None:
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(base + path, data=data, headers=headers)
@@ -77,6 +86,63 @@ def test_device_token_is_read_and_run_only(tmp_path: Path) -> None:
         assert _request(base, "/api/shell", token=device, body={})[0] == 403
         assert _request(base, "/api/plugins", token=device, body={})[0] == 403
         assert _request(base, "/api/debug", token=device)[0] == 403
+
+
+def test_relay_header_prevents_loopback_control_escalation(tmp_path: Path) -> None:
+    """A relayed request is remote even when it reaches a loopback server."""
+    cfg = SparkConfig()
+    cfg.provider.name = "mock"
+    cfg.provider.model = "mock-model"
+    cfg.agent.approval = "full-auto"
+    store = SessionStore(tmp_path / "relay-scope.db")
+    port = _free_port()
+    server, state = build_web_server(
+        workdir=tmp_path, cfg=cfg, store=store, host="127.0.0.1", port=port
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{port}"
+    try:
+        for _ in range(100):
+            try:
+                with urllib.request.urlopen(base + "/api/status", timeout=1):
+                    break
+            except (urllib.error.URLError, OSError):
+                time.sleep(0.05)
+
+        # Local control token works directly (the break-glass path).
+        assert _request(base, "/api/pair/devices", token=state.control_token)[0] == 200
+
+        # The same control token must not be promoted by the relay marker.
+        status = _request(
+            base,
+            "/api/pair/devices",
+            token=state.control_token,
+            extra_headers={"X-Spark-Relay": "1"},
+        )[0]
+        assert status in {401, 403}
+
+        code = state.pairing.new_code()["code"]
+        device = state.pairing.claim(code, "phone")["token"]
+        # A paired device token works, but remains read/run only.
+        assert _request(
+            base,
+            "/api/config",
+            token=device,
+            extra_headers={"X-Spark-Relay": "1"},
+        )[0] == 200
+        assert _request(
+            base,
+            "/api/settings",
+            token=device,
+            body={},
+            extra_headers={"X-Spark-Relay": "1"},
+        )[0] == 403
+    finally:
+        server.shutdown()
+        server.server_close()
+        state.close()
+        store.close()
 
 
 def test_device_token_cannot_use_control_token_channels(tmp_path: Path) -> None:

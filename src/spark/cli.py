@@ -2246,7 +2246,7 @@ def relay_connect_cmd(
     channel: str = typer.Option(..., "--channel", help="频道 id"),
     key: str = typer.Option(..., "--key", envvar="SPARK_RELAY_KEY", help="频道密钥（建议用环境变量）"),
     upstream: str = typer.Option("http://127.0.0.1:8000", "--upstream", help="本地 Spark Web 地址"),
-    token: str = typer.Option("", "--token", envvar="SPARK_WEB_TOKEN", help="本地 Spark Web token"),
+    token: str = typer.Option("", "--token", envvar="SPARK_WEB_TOKEN", help="本地 Spark Web 的配对设备 token（控制 token 会被拒绝）"),
     poll_wait: int = typer.Option(25, "--poll-wait", help="长轮询秒数，1-30"),
 ) -> None:
     from spark.relay import RelayAgent, RelayError

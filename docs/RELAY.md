@@ -37,11 +37,13 @@ spark relay connect \
   --upstream http://127.0.0.1:8000
 ```
 
-`--upstream` must point at the local Spark Web server. If that server requires
-an `X-Spark-Token` or a paired-device token, pass it with `--token` (or
-`SPARK_WEB_TOKEN`) and the agent injects it after receiving the relayed request.
-The relay key and the Spark token are separate credentials: the relay key
-protects the channel, while Spark still checks its own token.
+`--upstream` must point at the local Spark Web server. Remote callers must use
+a **paired-device token**, passed with `--token` (or `SPARK_WEB_TOKEN`); the
+agent injects it after receiving the relayed request. The relay key and the
+Spark device token are separate credentials: the relay key protects the
+channel, while Spark still enforces device scope. A relayed request is marked
+with `X-Spark-Relay: 1`, so the local **break-glass control token is rejected**
+even though the agent reaches the Web server over loopback.
 
 ## Call through the relay
 

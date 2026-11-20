@@ -243,8 +243,19 @@ def build_handler_class(html: str):
         # Security guards
         # ------------------------------------------------------------------
         def _is_loopback(self) -> bool:
+            if self._is_relayed():
+                return False
             host = self.client_address[0] if self.client_address else ""
             return host in {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
+
+        def _is_relayed(self) -> bool:
+            """Mark requests forwarded by the outbound relay as remote.
+
+            The relay agent connects to the loopback Web server, so source
+            address alone would grant the local control role. The agent sets
+            ``X-Spark-Relay: 1`` after stripping any client-supplied copy.
+            """
+            return (self.headers.get("X-Spark-Relay") or "").strip() == "1"
 
         def _server_is_loopback(self) -> bool:
             host = getattr(self.server, "server_address", ("",))[0]
@@ -319,11 +330,17 @@ def build_handler_class(html: str):
 
         def _auth_role(self) -> str | None:
             """Return the caller role: control (local) or device."""
-            if self._server_is_loopback():
+            if self._server_is_loopback() and not self._is_relayed():
                 return "control"
             supplied = self.headers.get("X-Spark-Token") or ""
             state = _route_state(self)
-            return state.authorize_token(supplied) if supplied else None
+            role = state.authorize_token(supplied) if supplied else None
+            if self._is_relayed():
+                # A relayed caller must use a paired-device token. The
+                # break-glass control token is local-only even though the relay
+                # agent reaches the Web server over loopback.
+                return "device" if role == "device" else None
+            return role
 
         def _authorized(self) -> bool:
             return self._auth_role() is not None

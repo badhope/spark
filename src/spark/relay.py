@@ -55,6 +55,10 @@ _HOP_HEADERS = {
     "accept-encoding",
     "content-encoding",
     "x-relay-key",
+    "x-spark-relay",
+    "origin",
+    "referer",
+    "sec-fetch-site",
 }
 
 
@@ -451,6 +455,7 @@ class RelayAgent:
         if not path.startswith("/") or path.startswith("//"):
             raise RelayError("path must start with a single /")
         headers = _headers_dict(request.get("headers"))
+        headers["X-Spark-Relay"] = "1"
         if self.token:
             headers["X-Spark-Token"] = self.token
         body = _unb64(request.get("body_b64"))
