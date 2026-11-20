@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from spark.automations import CronError, looks_like_cron, new_automation, parse_cron
 from spark.web._httpbase import HandlerBase
@@ -100,8 +101,9 @@ def _handle_automations(handler: HandlerBase, body: dict) -> None:
             return
 
         # run_now：把 next_run_at 拨到过去，交给调度器下一拍取走。
-        # 不在请求线程里直接跑 turn——那会让一个长任务卡住整个 HTTP 响应。
-        existing["next_run_at"] = 0
+        # 必须是"非零的过去值"：0 在调度器里表示"新建任务尚未排期"，
+        # 会被补算成下一次 cron 时间，run_now 永远不会真正执行。
+        existing["next_run_at"] = time.time() - 1
         state.store.upsert_automation(existing)
         handler._json(
             200,

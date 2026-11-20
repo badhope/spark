@@ -214,7 +214,8 @@ def test_run_now_marks_due_without_executing(web) -> None:
     status, body = _request(base, "/api/automations", {"action": "run_now", "id": rec["id"]})
     assert status == 200, body
     assert body["queued"] is True
-    assert state.store.get_automation(rec["id"])["next_run_at"] == 0
+    due_at = state.store.get_automation(rec["id"])["next_run_at"]
+    assert 0 < due_at <= time.time(), "0 would be re-scheduled instead of run"
 
 
 def test_unknown_action_rejected(web) -> None:
