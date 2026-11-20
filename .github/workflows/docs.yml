@@ -27,9 +27,7 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - name: Install
-        run: |
-          pip install -e . -i https://mirrors.aliyun.com/pypi/simple/
-          pip install mkdocs-material mkdocstrings[python] -i https://mirrors.aliyun.com/pypi/simple/
+        run: pip install mkdocs-material mkdocs-autorefs -i https://mirrors.aliyun.com/pypi/simple/
       - name: Build site
         run: mkdocs build --site-dir site
       - uses: actions/configure-pages@v5
