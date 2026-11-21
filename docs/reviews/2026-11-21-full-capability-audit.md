@@ -4,7 +4,7 @@
 
 **不能把“全部功能都测过了”说成事实。**
 
-当前可以确认的是：**本机可真实调用的核心功能已经逐项跑过**，包括 59 个内置工具、真实本地模型、Web/API、CLI、ACP、A2A、MCP、relay、PTY、队列、定时任务、检查点和 OTel 本地 collector。剩下的缺口集中在**外部凭据、外部服务、真实 IDE/桌面环境和可选依赖**，不是靠再点几下 UI 就能补齐的。
+当前可以确认的是：**本机可真实调用的核心功能已经逐项跑过**，包括 59 个内置工具、真实本地模型、Web/API、CLI、ACP、A2A、MCP、relay、PTY、队列、定时任务、检查点和 OTel 本地 collector。剩下的缺口集中在**外部凭据、外部服务、真实 IDE 环境**；桌面窗口与会议转写已补跑并通过。
 
 本文件只记录**本轮真实执行过**的能力；测试通过只作为回归证据，不替代功能验收。
 
@@ -76,7 +76,7 @@
 | 模型/本地模型列表 | `/api/models`、`/api/local-models` 200 | ✅ |
 | 设备配对 | code/claim/devices 200；设备令牌真实用于 relay | ✅ |
 | UI 回归 | 既有真实浏览器基线 37 passed；本轮代码修复未触碰前端结构，最终全量回归覆盖 UI 测试 | 🟡 |
-| 桌面 WebView | `spark desktop` 实测失败：缺少 `pywebview` | ⛔ |
+| 桌面 WebView | Xvfb + Qt xcb 真实启动 pywebview 窗口，加载 Spark 首页并渲染欢迎弹窗，接口全部 200 | ✅ |
 | 企业控制面 | `spark enterprise` 8s 内无监听，缺 PostgreSQL/Keycloak 运行环境 | ⛔ |
 
 ### 4. CLI
@@ -106,7 +106,7 @@
 | `acp` | 真实子进程：initialize、new_session、prompt，`end_turn` | ✅ |
 | `a2a-serve` | Agent Card、health、message/send、tasks/get、message/stream 四帧 | ✅ |
 | `relay serve/connect/call` | 补设备令牌后 `HTTP 200`，返回真实 `/api/status` | ✅ |
-| `desktop` | 缺 `pywebview` | ⛔ |
+| `desktop` | 真实窗口 1280×832，首页/命令/静态资源均 200；Linux `desktop` extra 补齐 `pywebview[qt]`，缺后端时返回 2 并给安装提示 | ✅ |
 | `enterprise` | 缺 PostgreSQL/Keycloak，8s 无监听 | ⛔ |
 | `update --check` | 发布源 403 rate limit | ⛔ |
 | `uninstall` | 破坏性操作，未执行 | ⛔ |
@@ -127,7 +127,7 @@
 | VS Code Extension Host | 无 Code/Extension Host，仅配置生成 | ⛔ |
 | JetBrains/Neovim 真实 IDE | 配置生成成功；无 IDE 客户端 | 🟡 |
 | 企业控制面 | 无 PostgreSQL/Keycloak | ⛔ |
-| 会议转写 | `faster_whisper` 未安装（ModuleNotFoundError） | ⛔ |
+| 会议转写 | 安装 faster-whisper + tiny 模型；espeak 生成真实语音，转写返回文本；`tests/test_control_audio.py` **5 passed**（含上传→转写→纪要） | ✅ |
 | 外部 OTel/Langfuse | 本机 collector 已过；未接真实 Langfuse | 🟡 |
 
 ## 二、本轮修掉的真实缺陷
@@ -144,38 +144,48 @@
 - 真实复验：`run_now` 后任务出现 `last_status=ok` 和真实执行会话。
 - 修复已提交 `0674fa0`。
 
+### 3. `doctor` 把本地 GGUF 误报为“无凭据将 mock”
+
+`doctor` 只看 `api_key`，`provider.name=llama_cpp` 时即使 GGUF 存在也提示未配置凭据。已加本地模型分支：文件存在显示“本地模型已就绪”，不存在给出重新下载提示。`tests/test_cli_onboarding.py` **43 passed**，提交 `3fc89a3`。
+
+### 4. TUI 的 Ctrl-D 被输入框吞掉
+
+footer 写着 `Quit ^D`，但 `Input.BINDINGS` 里 `ctrl+d` 是 `delete_right`，优先级高于 `SparkApp` 的 quit。结果是按 Ctrl-D 只删光标右侧字符，窗口不退。已给 app 级绑定加 `priority=True`，并用真实 PTY 验证：历史会话加载后按 Ctrl-D 正常离开备用屏、进程退出。`tests/test_tui_app.py` **7 passed**，提交 `143d4a0`。
+
+### 5. Linux `spark[desktop]` 装了 pywebview 却没有 GUI 后端
+
+`desktop` extra 原来只有 `pywebview>=5.0`。Linux 上 pywebview 导入成功，但 `start()` 报 “You must have either QT or GTK”，桌面窗口完全起不来。已在 Linux 分支改为 `pywebview[qt]`（QtPy + PyQt6 + WebEngine），并在 `run_desktop` 捕获缺后端异常返回退出码 2、打印系统依赖提示。`tests/test_desktop.py` **3 passed**；Xvfb + Qt xcb 下真实窗口 1280×832、首页与接口全部 200。提交 `e981468`。
+
 ## 三、仍然没有测/没有闭合的项
 
 1. **商业模型 Key**：DeepSeek/Qwen/Kimi/GLM/豆包/OpenAI/Anthropic 均未发真实请求；只有本地 GGUF 与假 OpenAI 端点。
 2. **PR 写与只读**：4 个读工具 403，`pr_checks` 空结果，publish 无 token。
 3. **企业控制面**：PostgreSQL + Keycloak + Casbin + 全格式导出未起真实环境。
 4. **真实 IDE**：VS Code Extension Host、JetBrains 2025.3、Neovim 客户端未拉起。
-5. **桌面**：`pywebview` 未安装，且当前无桌面会话。
-6. **外部可观测后端**：本机 OTLP gRPC collector 已通；真实 Langfuse/Tempo 未接。
-7. **会议转写**：`faster-whisper` 未安装，真实音频未跑。
-8. **更新/卸载**：发布源 403；卸载属破坏性操作。
-9. **UI**：全量回归已覆盖 UI/浏览器测试；独立 UI 基线 37 passed。
+5. **外部可观测后端**：本机 OTLP gRPC collector 已通；真实 Langfuse/Tempo 未接。
+6. **更新/卸载**：发布源 403；卸载属破坏性操作。
+7. **UI**：全量回归已覆盖 UI/浏览器测试；独立 UI 基线 37 passed。
 
 ## 四、验收口径
 
-如果“全部功能”指**本机可执行的核心路径 + 全部内置工具 + 本机协议服务**：当前可以给真实通过证据，但 PR/商业模型/企业/IDE/桌面/会议转写必须保留 ⛔。
+如果“全部功能”指**本机可执行的核心路径 + 全部内置工具 + 本机协议服务**：当前可以给真实通过证据，但 PR/商业模型/企业/IDE 必须保留 ⛔。
 
-如果指**字面每一个外部集成、每一个工具、每一个平台都真实跑过**：还缺上面的 9 项，不能宣称 100%。
+如果指**字面每一个外部集成、每一个工具、每一个平台都真实跑过**：还缺上面的 7 项，不能宣称 100%。
 
 补齐顺序建议：
 
 1. 给 PR 只读与 publish 配测试 token。
 2. 起 PostgreSQL/Keycloak 测企业控制面。
-3. 准备真实 IDE 与桌面会话。
-4. 装 `faster-whisper` + 音频样本。
-5. 接真实 Langfuse collector。
+3. 准备真实 IDE 会话。
+4. 接真实 Langfuse collector。
 
 ## 五、最终回归
 
-- 全量 pytest：**1761 passed, 13 skipped, 14 warnings in 1119.94s (18:39)**。
-- 覆盖 UI/浏览器、协议、工具、Web、CLI 模块测试；不代表外部集成已验收。
-- 定向定时任务回归：`tests/test_automations_web.py` **17 passed**。
-- 本轮代码改动：命令列表 Path 修复已提交 `85da14e`；`run_now` 修复已提交 `0674fa0`；本文件随附。
-- 全量回归日志：`../spark-full-final2.log`（仓库外层）。
+- 最终全量 pytest：**1766 passed, 11 skipped, 14 warnings in 1142.05s (19:02)**，退出码 0。
+- 相比上一轮全量 `1761 passed, 13 skipped`：新增 doctor/TUI/desktop 3 条回归，并启用 2 条真实 Whisper 转写测试（原为 skipped）。
+- 覆盖 UI/浏览器、协议、工具、Web、CLI、桌面与办公转写模块测试；不代表外部集成已验收。
+- 定向回归：定时任务 **17 passed**；doctor **43 passed**；TUI **7 passed**；desktop **3 passed**；真实 Whisper 上传→转写→纪要 **5 passed**。
+- 本轮修复提交：`85da14e`（命令列表 Path）、`0674fa0`（run_now）、`3fc89a3`（doctor 本地模型）、`143d4a0`（TUI Ctrl-D）、`e981468`（Linux desktop 后端）。
+- 全量回归日志：`../spark-full-final3.log`，退出码 `../spark-full-final3.rc`。
 
-该文件不把 pytest 数量当作功能完成证明。
+该文件不把 pytest 数量当作功能完成证明；上表的外部集成项仍按 ⛔/🟡 单独标注。
