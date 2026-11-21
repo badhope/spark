@@ -4,6 +4,29 @@
 
 ## [Unreleased]
 
+## [0.15.4] - 2026-11-21
+
+### Fixed
+
+- macOS 上 `SPARK_HOME=/tmp` 时 `uninstall` 守卫漏判：`/tmp` 实为
+  `/private/tmp` 的符号链接，旧逻辑只比对解析后的路径，未覆盖 macOS 真实
+  系统目录。现在同时保护 `/private/tmp`、`/private/var`、`/private/etc`，
+  并拒绝任何位于文件系统根目录顶层的目录；Windows 上 `/tmp` 解析为当前盘符
+  根下的 `\tmp` 时同样拒绝。
+
+### Changed
+
+- Release 工作流只负责可重复构建、打包与启动冒烟；完整 pytest 矩阵由 CI
+  负责。跨平台浏览器测试不再阻塞三平台制品发布。
+
+### Tests
+
+- 工作台终端页签改为验证真实 DOM 与清屏/重启入口，PTY 输入回显仍由
+  `test_web_terminal` 覆盖；macOS 快捷键用例改用窗口事件派发，避开 Chromium
+  保留的 `Mod+K` 浏览器快捷键。
+- 修正 Windows 下本地 GGUF 配置路径的 TOML 转义、文件权限断言与连接拒绝
+  等待窗口，Linux 3.11/3.12 CI 恢复全绿。
+
 ## [0.15.3] - 2026-11-21
 
 ### Added

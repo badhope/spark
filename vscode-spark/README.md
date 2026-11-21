@@ -33,7 +33,7 @@
 ## 安装
 
 ```bash
-code --install-extension vscode-spark/spark-agent-0.15.3.vsix
+code --install-extension vscode-spark/spark-agent-0.15.4.vsix
 ```
 
 （Marketplace 上架待签名与发布者账号，当前为本地 VSIX 分发。）
