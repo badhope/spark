@@ -17,7 +17,7 @@ import os
 import re
 import threading
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, cast
 
 from spark.models import ChatDelta, ChatMessage, ToolCall
 
@@ -325,8 +325,8 @@ class LlamaCppProvider:
                             fn["arguments"] = {"value": fn["arguments"]}
             converted = _localize_tool_results(converted)
             rendered = formatter(
-                messages=converted,
-                tools=tools or None,
+                messages=cast(Any, converted),
+                tools=cast(Any, tools or None),
                 tool_choice="auto" if tools else None,
                 enable_thinking=False,
             )

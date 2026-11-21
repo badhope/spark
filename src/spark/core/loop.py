@@ -700,7 +700,7 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
             }
             yield TurnEvent(
                 type="turn_error",
-                text=issue["title"],
+                text=str(issue["title"]),
                 data={"error": issue, **self._budget_state()},
             )
             self._last_round["error"] = "max_rounds"
@@ -825,7 +825,7 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
                 }
                 yield TurnEvent(
                     type="turn_error",
-                    text=issue["title"],
+                    text=str(issue["title"]),
                     data={"error": issue, **self._budget_state()},
                 )
                 self._last_round["error"] = "circuit_breaker"
