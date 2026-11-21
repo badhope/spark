@@ -8,7 +8,12 @@ from pathlib import Path
 from spark.config import SparkConfig
 from spark.core.context import system_prompt
 from spark.local_models import CATALOG, LocalModelManager, get_spec
-from spark.providers.llama_cpp import _filter_tools, _localize_tool_results, _needs_tools, parse_tool_calls
+from spark.providers.llama_cpp import (
+    _filter_tools,
+    _localize_tool_results,
+    _needs_tools,
+    parse_tool_calls,
+)
 
 
 def test_catalog_contains_strong_small_long_context_defaults() -> None:
