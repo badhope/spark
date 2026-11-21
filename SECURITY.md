@@ -25,7 +25,9 @@
   可完全离线运行（Ollama / mock）
 - **可回滚**：每轮涉及文件或命令的操作自动打工作区快照，支持回滚（含非 git 目录）
 - **依赖安全门**：`Security` workflow 的 `uv audit --locked` 与 `pip-audit` 默认阻断合并；
-  仅豁免已登记、上游无修复版本且 Spark 不暴露其服务端的 ChromaDB 嵌入式客户端 advisory
+  仅豁免已登记、上游无修复版本且 Spark 不暴露其服务端的 ChromaDB 嵌入式客户端
+  advisory，以及可选 `local` extra 中 llama-cpp-python 带入的 diskcache 缓存反序列化
+  advisory（Spark 不向不可信写入者暴露缓存目录）
 
 ## 已知边界
 

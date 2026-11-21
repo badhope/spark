@@ -56,12 +56,15 @@ jobs:
       - name: uv audit
         # ChromaDB 只以嵌入式 PersistentClient/EphemeralClient 使用，不启动 HTTP 服务；
         # 这 4 个 advisory 在 1.5.9 无修复版本，登记到上游发布修复为止。
+        # diskcache 5.6.3 只由可选 local extra（llama-cpp-python）带入，PyPI 无修复版；
+        # Spark 不向不可信写入者暴露其缓存目录，登记到上游发布修复为止。
         run: |
           uv audit --locked \
             --ignore-until-fixed PYSEC-2026-311 \
             --ignore-until-fixed PYSEC-2026-3813 \
             --ignore-until-fixed PYSEC-2026-3814 \
-            --ignore-until-fixed PYSEC-2026-3815
+            --ignore-until-fixed PYSEC-2026-3815 \
+            --ignore-until-fixed PYSEC-2026-2447
       - name: pip-audit
         # 同一组 ChromaDB advisory；一旦上游发布修复版本，请删除对应 ignore 并升级。
         run: |
@@ -70,4 +73,5 @@ jobs:
             --ignore-vuln PYSEC-2026-311 \
             --ignore-vuln PYSEC-2026-3813 \
             --ignore-vuln PYSEC-2026-3814 \
-            --ignore-vuln PYSEC-2026-3815
+            --ignore-vuln PYSEC-2026-3815 \
+            --ignore-vuln PYSEC-2026-2447
