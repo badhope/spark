@@ -30,7 +30,7 @@
 | M23 | TUI | `tui/` | 终端交互 | `test_tui*` | badhope | 稳定 |
 | M24 | 桌面壳 | `desktop.py`、`desktop_main.py` | 桌面启动 / 托盘 | `test_desktop_main.py` | badhope | 稳定 |
 | M25 | ACP / A2A / IDE 接入 | `acp_server.py`、`a2a_server.py`、`ide.py` | ACP / A2A 协议；`spark ide install zed\|jetbrains\|neovim` | `test_acp*`、`test_a2a*`、`test_ide_install.py`（16 项） | badhope | 稳定（Zed / JetBrains 原生 ACP / Neovim 模块） |
-| M26 | VS Code 扩展 | `vscode-spark/` | 编辑器内聊天 / 选区上下文 / 内联 diff 审批 / 诊断回显 / file:line 跳转 / VSIX | `vscode-spark/test/*.test.js`、`scripts/verify_vscode.py` | badhope | 稳定（0.15.2） |
+| M26 | VS Code 扩展 | `vscode-spark/` | 编辑器内聊天 / 选区上下文 / 内联 diff 审批 / 诊断回显 / file:line 跳转 / VSIX | `vscode-spark/test/*.test.js`、`scripts/verify_vscode.py` | badhope | 稳定（0.15.3） |
 | M27 | Control / Office | `control/app.py`、`control/agent_runner.py`、`control/models.py` | control task / office API / AgentLoop run | `test_control_plane.py`、`test_control_office.py` | badhope | 稳定（双内核已接） |
 | M28 | Authz / 审计 | `audit.py`、control authz | 权限 / 审计日志 | `test_authz*`、`test_audit*` | badhope | 稳定 |
 | M29 | 自动化 / Git 记忆 | `automations.py`、`git_memory.py` | cron/automation / git memory | `test_automations*`、`test_git_bg_persist.py` | badhope | 稳定 |

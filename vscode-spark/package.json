@@ -2,7 +2,7 @@
   "name": "spark-agent",
   "displayName": "Spark Agent",
   "description": "Spark — API-first AI coding agent. Chat, review multi-file diffs and jump to diagnostics without leaving VS Code.",
-  "version": "0.15.2",
+  "version": "0.15.3",
   "publisher": "badhope",
   "license": "MIT",
   "icon": "icon.png",

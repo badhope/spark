@@ -97,7 +97,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1
 dist\spark\spark.exe web
 ```
 
-或直接下载 **GitHub Releases** 现成包：打个 tag（`git tag v0.15.2 && git push --tags`），
+或直接下载 **GitHub Releases** 现成包：打个 tag（`git tag v0.15.3 && git push --tags`），
 `Release` 工作流会自动构建 `spark-windows-x86_64.zip`（同时产出 Linux/macOS 压缩包）。
 
 ### Linux / macOS
@@ -172,7 +172,7 @@ Python 包本身用 `pip uninstall spark-agent`，scoop 安装的用
 **New TUI Session** 两个全功能入口。本地 VSIX 安装：
 
 ```bash
-code --install-extension vscode-spark/spark-agent-0.15.2.vsix
+code --install-extension vscode-spark/spark-agent-0.15.3.vsix
 ```
 
 前提：已安装 Spark（打包版或 `pip install spark-agent`）；审批模式在

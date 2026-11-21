@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from spark import __version__
+
 logger = logging.getLogger(__name__)
 
 _MAX_MESSAGE_BYTES = 16 * 1024 * 1024
@@ -163,7 +165,7 @@ class LSPClient:
 
         params = {
             "processId": os.getpid(),
-            "clientInfo": {"name": "spark", "version": "0.15.2"},
+            "clientInfo": {"name": "spark", "version": __version__},
             "rootUri": self.root.as_uri(),
             "workspaceFolders": [
                 {"uri": self.root.as_uri(), "name": self.root.name or "workspace"}

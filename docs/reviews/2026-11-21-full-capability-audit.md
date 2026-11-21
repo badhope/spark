@@ -83,7 +83,7 @@
 
 | 命令 | 实测结果 | 状态 |
 | --- | --- | --- |
-| `version` / `--version` | 0.15.2 | ✅ |
+| `version` / `--version` | 0.15.3 | ✅ |
 | `init` | 隔离配置写入成功 | ✅ |
 | `doctor` | 工作目录/审批/OTel 提示正常；本地 `llama_cpp` 已被识别为“本地模型已就绪”，不再误报 mock | ✅ |
 | `exec`（mock） | 文本、`--json` NDJSON 均成功 | ✅ |

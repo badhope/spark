@@ -4,19 +4,62 @@
 
 ## [Unreleased]
 
-- 安全依赖升级：`litellm` 1.106.6 → 1.110.1，`filelock` 3.32.7 → 4.2.12。
-  litellm 1.110.1 已放宽 `filelock<5`，根目录 13 条 filelock 告警随锁文件更新关闭；
-  `pyproject.toml` 下限同步为 `litellm>=1.110.1`、`filelock>=4.2.1`。
-- 清理已删除清单 `api/uv.lock`、`data-agent/uv.lock` 遗留的 50 条 Dependabot 告警，
-  统一以 `not_used` 关闭并记录原因；根目录当前无未处理的依赖告警。
-- Dependabot 配置增加 `exclude-paths: api/**`、`data-agent/**`，跳过已删除清单，
-  停止 `uv in /api for ...` 的失败任务。
-- 上游依赖批量升级：`agent-client-protocol` 0.12 → 1.0、`llama-index-core`
-  0.14.26、`langgraph` 1.2.24、`pydantic` 2.14.4、`typer` 0.29.2 等 17 项。
-  `agent-client-protocol 1.0` 删除了 `acp.helpers`，新增 `spark.acp_compat`
-  用 `acp.schema` 构造等价消息，ACP 端到端测试保持通过。
-- Dependabot 自动合并改为「等待全部 PR 检查变绿后再 squash」，且 major 版本
-  只留人工审核；仅主仓 `badhope/spark` 执行，镜像仓不再自行合并导致分叉。
+## [0.15.3] - 2026-11-21
+
+### Added
+
+- 语义代码智能：接入真实 LSP（definition / references / hover / symbols /
+  diagnostics / rename / rename_symbol / code_action），rename 支持多文件落盘、
+  dry-run diff 与工作区边界审批。
+- 原生模型 provider：OpenAI / Anthropic / Gemini / Azure / Bedrock 预设、
+  capability/cost/offline 路由、成本台账与缓存命中；本地模型目录新增
+  MiniCPM5-1B / Qwen2.5 / Qwen3.5 GGUF 推荐、下载、激活与非思考模式适配。
+- IDE 集成：VS Code 原生聊天面板、选区上下文、SSE 流、内联 diff 审批、
+  Problems 诊断和 `file:line` 跳转；Zed / JetBrains 2025.3+ / Neovim
+  CodeCompanion 的 ACP 配置入口。
+- 插件系统：manifest 校验、内置工具/hook、子进程隔离、官方插件包、远程安装、
+  注册表搜索更新与 Web 启停开关。
+- PR 与浏览器：Playwright 浏览器工具、GitHub/GitCode/Gitee PR 只读上下文、
+  确定性 review brief、带 `--confirm` 的 review 发布。
+- Workflow DAG：YAML 校验、有界并发执行、暂停续跑、单节点重放、单次运行
+  USD 预算与 git worktree 隔离。
+- 本地 Web relay、桌面 Qt 后端、企业控制面 dev 模式、会议/报告多格式导出
+  与端到端验收。
+- `spark pr token github|gitcode|gitee` 与 `spark pr status`：隐藏输入保存到
+  `$SPARK_HOME/pr-tokens.json`（0600），环境变量优先，状态只显示来源不显示 token。
+
+### Changed
+
+- Web 会话改为 per-session runtime registry；SSE 使用 v1 envelope，断线后可按
+  会话事件环恢复未完成 turn；待处理 turn、question 回答和审批状态不再互相串会话。
+- 前端完成亮暗双主题下的交互细节收口：加载/跳转状态、会话切换缓存、命令面板、
+  模型设置错误卡片与移动端差异化布局。
+- PR 工具按 `--repo` 推断 GitCode/Gitee，GitHub 保持官方 API；无 token 时给出
+  权限与配置指引，而不是静默空列表。
+- ACP 升级到 `agent-client-protocol 1.0`，新增 `spark.acp_compat` 兼容层。
+- 依赖与供应链：`litellm` 1.110.1、`filelock` 4.2.12、`agent-client-protocol`
+  1.0、`llama-index-core` 0.14.26、`langgraph` 1.2.24、`pydantic` 2.14.4、
+  `typer` 0.29.2 等 17 项升级；清理已删除清单的 50 条 Dependabot 告警，
+  Dependabot 自动合并改为等待全部检查变绿后再 squash。
+
+### Fixed
+
+- 命令列表返回 `Path` 无法 JSON 序列化导致 Web 连接关闭。
+- 定时任务 `run_now` 写入 `next_run_at=0`，调度器视为未排期而永不执行。
+- `doctor` 对本地 GGUF 误报“无凭据将 mock”。
+- TUI 在输入框聚焦时 Ctrl-D 被 `delete_right` 吞掉，无法按 footer 提示退出。
+- Linux `spark[desktop]` 只装 pywebview 没有 Qt/GTK 后端，窗口起不来；现在
+  安装 Qt 后端，缺后端时返回退出码 2 并给出系统依赖提示。
+- `uninstall` 的 `SPARK_HOME` 守卫漏掉 `/tmp` 等系统目录，真实执行会尝试
+  `rmtree('/tmp')`；现在清点前拒绝系统目录、家目录和当前工作目录。
+- 本地小模型工具循环、上下文窗口与非思考模式输出；结构化 turn 错误给出可操作提示。
+- Windows 文件 URI 规范化与 Python 插件解释器；relay 调用方保持配对设备作用域。
+
+### Tests
+
+- 全能力审计覆盖 59 个内置工具、Web/API、CLI、A2A/ACP/MCP、企业控制面 dev、
+  桌面窗口、真实 Whisper 转写、插件 hook 与卸载路径；外部凭据/生产环境单独标注。
+- 最终全量回归 `1767 passed, 13 skipped, 14 warnings in 820.00s`，退出码 0。
 
 ## [0.15.2] - 2026-11-16
 
