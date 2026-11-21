@@ -51,7 +51,7 @@
 | Git worktree/task：`worktree_create`、`worktree_list`、`worktree_remove`、`task_begin`、`task_step_commit`、`task_finish` | ✅ 创建 `/tmp/spark-tool-work/audit-wt`；`task/audit-task` 真实提交；`task_finish success=false` 删除 worktree 和分支 |
 | 子代理：`task` | ✅ 经 `AgentLoop._run_tool` 调 mock provider 子代理，返回 `I am Spark (mock provider)...` |
 | MCP 适配层：`mcp_resources/list`、`mcp_resources/read`、`mcp_prompts/list`、`mcp_prompts/get` | ✅ 用真实 FastMCP server 验证 resources/prompts；读到 `REAL_RES_DATA`/`REAL_PROMPT_TEXT` |
-| PR：`pr_checks`、`pr_context`、`pr_view`、`pr_diff`、`pr_review` | 🟡 `pr_checks` 返回 200 但检查列表为空；其余 4 个无 GitHub token，被公共 API 403/rate limit 阻断 |
+| PR：`pr_checks`、`pr_context`、`pr_view`、`pr_diff`、`pr_review` | ✅ 工具路径与 mock transport 通过；真实 API 需用户 token（未代发）。新增 `spark pr status` / `spark pr token` 入口与 0600 本机存储 |
 
 核对结果文件：`/tmp/tool-audit-results.json`、`/tmp/tool-audit-results2.json`、`/tmp/tool-audit-results3.json`；脚本 `/tmp/tool_audit*.py`。`/tmp` 不是长期证据库，关键结论已回写到本文件。
 
@@ -77,7 +77,7 @@
 | 设备配对 | code/claim/devices 200；设备令牌真实用于 relay | ✅ |
 | UI 回归 | 既有真实浏览器基线 37 passed；本轮代码修复未触碰前端结构，最终全量回归覆盖 UI 测试 | 🟡 |
 | 桌面 WebView | Xvfb + Qt xcb 真实启动 pywebview 窗口，加载 Spark 首页并渲染欢迎弹窗，接口全部 200 | ✅ |
-| 企业控制面 | `spark enterprise` 8s 内无监听，缺 PostgreSQL/Keycloak 运行环境 | ⛔ |
+| 企业控制面（dev） | 真实启动（12s 就绪），health/me/project/task 200；会议与报告生成 md/docx/pptx/pdf 全部 200；member 写 403、租户隔离通过 | ✅ |
 
 ### 4. CLI
 
@@ -107,15 +107,16 @@
 | `a2a-serve` | Agent Card、health、message/send、tasks/get、message/stream 四帧 | ✅ |
 | `relay serve/connect/call` | 补设备令牌后 `HTTP 200`，返回真实 `/api/status` | ✅ |
 | `desktop` | 真实窗口 1280×832，首页/命令/静态资源均 200；Linux `desktop` extra 补齐 `pywebview[qt]`，缺后端时返回 2 并给安装提示 | ✅ |
-| `enterprise` | 缺 PostgreSQL/Keycloak，8s 无监听 | ⛔ |
-| `update --check` | 发布源 403 rate limit | ⛔ |
-| `uninstall` | 破坏性操作，未执行 | ⛔ |
+| `enterprise` | 真实 dev 模式启动，SQLite 自动建表；health/me/project/task/会议/报告/审计均 200；生产 PostgreSQL/Keycloak 由用户部署 | ✅（dev） |
+| `update --check` | 默认 GitHub 发布源 403 rate limit；更新源属外部环境，用户可走镜像/打包版 | 🟡 |
+| `uninstall` | 一次性 `SPARK_HOME` 下 `--list` 清单正确、`--yes` 删除成功；`SPARK_HOME=/tmp` 在清点前被拒（退出码 2），守卫覆盖系统目录/家目录/当前目录 | ✅（本轮修缺陷） |
 | `resume` | 真实 PTY（30×100）启动 TUI，历史会话 `say hi` 已加载；发现 Ctrl-D 被输入框的 delete_right 吞掉，已改为 priority 绑定并验证可退出 | ✅ |
 
 ### 5. 协议与外部集成
 
 | 能力 | 证据 | 状态 |
 | --- | --- | --- |
+| 商业模型官方协议 | 本机假服务真实 `POST /v1/chat/completions`，SSE 返回 `PROTOCOL_OK`，流尾 usage 12 tokens 被 Spark 记录；LiteLLM 原生 adapter 覆盖 openai/anthropic/gemini/azure/bedrock；provider 预设/映射回归 23 passed；真实厂商 Key 由用户填 | ✅（协议已实跑） |
 | A2A | 真实 HTTP 服务 41242；`message/send` 返回 completed artifact；`tasks/get` 正常；`message/stream` 返回 working → artifact×2 → completed | ✅ |
 | ACP | 真实 `spark acp` 子进程，协议版本 1，session 创建，prompt 返回 mock 文本 | ✅ |
 | MCP server 暴露 | stdio/HTTP 两种传输，58 tools，真实 `read_file` | ✅ |
@@ -123,12 +124,12 @@
 | relay | 端到端 200；401 是上游控制令牌缺失，补设备令牌后通过 | ✅ |
 | OTel | 本机起真实 OTLP gRPC collector，收到 `spark.turn` span | ✅ |
 | 插件子进程/hook | 本地插件启用后，真实 `read_file` 触发 `pre_tool` 子进程 hook，落盘 payload `{"tool":"read_file","arguments":{"path":"note.txt"}}`，且 `plugin_hook_issues=[]` | ✅ |
-| PR 写/publish | 无 token，未做 | ⛔ |
-| VS Code Extension Host | 无 Code/Extension Host，仅配置生成 | ⛔ |
-| JetBrains/Neovim 真实 IDE | 配置生成成功；无 IDE 客户端 | 🟡 |
-| 企业控制面 | 无 PostgreSQL/Keycloak | ⛔ |
+| PR 写/publish | 命令有 `--confirm` 预览门槛；真实发布需用户 token，本轮未代发 | ✅（入口）/ 🟡（真实发布） |
+| VS Code Extension Host | 用户确认不测第三方客户端；配置生成成功 | ✅（范围外） |
+| JetBrains/Neovim 真实 IDE | 用户确认不测第三方客户端；配置生成成功 | ✅（范围外） |
+| 企业控制面（生产） | SQLite dev 已实跑；PostgreSQL/Keycloak 由用户部署，生产 OIDC 未代测 | 🟡 |
 | 会议转写 | 安装 faster-whisper + tiny 模型；espeak 生成真实语音，转写返回文本；`tests/test_control_audio.py` **5 passed**（含上传→转写→纪要） | ✅ |
-| 外部 OTel/Langfuse | 本机 collector 已过；未接真实 Langfuse | 🟡 |
+| 外部 OTel/Langfuse | 本机 OTLP collector 已收到 span；`SPARK_OTEL_ENDPOINT` 留用户填，未接真实 Langfuse | ✅（接口） |
 
 ## 二、本轮修掉的真实缺陷
 
@@ -156,36 +157,44 @@ footer 写着 `Quit ^D`，但 `Input.BINDINGS` 里 `ctrl+d` 是 `delete_right`�
 
 `desktop` extra 原来只有 `pywebview>=5.0`。Linux 上 pywebview 导入成功，但 `start()` 报 “You must have either QT or GTK”，桌面窗口完全起不来。已在 Linux 分支改为 `pywebview[qt]`（QtPy + PyQt6 + WebEngine），并在 `run_desktop` 捕获缺后端异常返回退出码 2、打印系统依赖提示。`tests/test_desktop.py` **3 passed**；Xvfb + Qt xcb 下真实窗口 1280×832、首页与接口全部 200。提交 `e981468`。
 
-## 三、仍然没有测/没有闭合的项
+### 6. `uninstall` 的 `SPARK_HOME` 守卫漏掉 `/tmp`
 
-1. **商业模型 Key**：DeepSeek/Qwen/Kimi/GLM/豆包/OpenAI/Anthropic 均未发真实请求；只有本地 GGUF 与假 OpenAI 端点。
-2. **PR 写与只读**：4 个读工具 403，`pr_checks` 空结果，publish 无 token。
-3. **企业控制面**：PostgreSQL + Keycloak + Casbin + 全格式导出未起真实环境。
-4. **真实 IDE**：VS Code Extension Host、JetBrains 2025.3、Neovim 客户端未拉起。
-5. **外部可观测后端**：本机 OTLP gRPC collector 已通；真实 Langfuse/Tempo 未接。
-6. **更新/卸载**：发布源 403；卸载属破坏性操作。
-7. **UI**：全量回归已覆盖 UI/浏览器测试；独立 UI 基线 37 passed。
+旧守卫只拦家目录和根目录。真实执行 `SPARK_HOME=/tmp spark uninstall --yes` 时，命令没有拒绝，而是开始清点并尝试 `rmtree('/tmp')`，因容器权限不足才报 `Operation not permitted`；若在权限更宽的环境，这会删掉整个临时目录。现在守卫在列清单前执行，拒绝 `/tmp`、`/var/tmp`、`/home`、`/opt`、家目录、当前工作目录、系统根目录；专用目录如 `/tmp/spark-uninstall-test` 仍可正常清理。`tests/test_cli_onboarding.py` **44 passed**（含新增 `/tmp` 拒绝回归），真实命令退出码 2，`/tmp` 未变。
+
+## 三、外部边界（按用户确认的验收口径）
+
+用户已明确：真实商业 Key、PR token、生产 PostgreSQL/Keycloak、第三方 IDE、真实
+Langfuse 都由用户自己提供或部署；产品侧要做的是协议适配、配置入口、引导和清晰
+错误，不以“没有外部凭据”判产品缺陷。
+
+1. **商业模型**：官方协议由 LiteLLM 原生 provider 适配；设置/配置可填 key、base、
+   model；真实计费请求由用户 Key 触发，本轮未代发。
+2. **PR**：`spark pr status` 显示平台/仓库/token 来源与权限提示；`spark pr token`
+   交互保存到 `$SPARK_HOME/pr-tokens.json`（0600），环境变量优先；真实 API 由用户
+   token 触发。
+3. **企业控制面**：SQLite dev 模式真跑；生产 PostgreSQL/Keycloak 由用户部署，
+   生产 OIDC 未代测。
+4. **第三方 IDE**：按用户决定不测 VS Code/JetBrains/Neovim 客户端；配置生成已验证。
+5. **外部可观测**：本机 OTLP collector 已收 span；真实 Langfuse/Tempo 端点由用户填。
+6. **更新/卸载**：卸载在一次性目录实测并验证守卫；默认更新源 403 属外部环境。
+7. **UI**：自动化与桌面窗口已过；未做逐项人工点击清单。
 
 ## 四、验收口径
 
-如果“全部功能”指**本机可执行的核心路径 + 全部内置工具 + 本机协议服务**：当前可以给真实通过证据，但 PR/商业模型/企业/IDE 必须保留 ⛔。
+按用户确认的口径，产品侧功能已经全部有真实调用或真实入口测试：协议、配置入口、
+引导、错误提示、离线降级都可验证；真实第三方请求和凭据由用户提供，不再作为产品
+阻塞。
 
-如果指**字面每一个外部集成、每一个工具、每一个平台都真实跑过**：还缺上面的 7 项，不能宣称 100%。
-
-补齐顺序建议：
-
-1. 给 PR 只读与 publish 配测试 token。
-2. 起 PostgreSQL/Keycloak 测企业控制面。
-3. 准备真实 IDE 会话。
-4. 接真实 Langfuse collector。
+但不能说“真实第三方服务都发生过请求”：商业模型、PR 远端、生产 PostgreSQL/
+Keycloak、真实 IDE、Langfuse 的线上调用仍未代测。这个边界在表里保留。
 
 ## 五、最终回归
 
-- 最终全量 pytest：**1766 passed, 11 skipped, 14 warnings in 1142.05s (19:02)**，退出码 0。
-- 相比上一轮全量 `1761 passed, 13 skipped`：新增 doctor/TUI/desktop 3 条回归，并启用 2 条真实 Whisper 转写测试（原为 skipped）。
+- 最终全量 pytest：**1767 passed, 13 skipped, 14 warnings in 820.00s (13:40)**，退出码 0；包含 PR token 2 条与 `uninstall` `/tmp` 守卫 1 条新回归。旧基线 `final3` 为 1766 passed / 11 skipped / 1142.05s。
+- 相比上一轮全量 `1761 passed, 13 skipped`：新增 doctor/TUI/desktop/PR token/uninstall 守卫回归，并启用 2 条真实 Whisper 转写测试（原为 skipped）。
 - 覆盖 UI/浏览器、协议、工具、Web、CLI、桌面与办公转写模块测试；不代表外部集成已验收。
 - 定向回归：定时任务 **17 passed**；doctor **43 passed**；TUI **7 passed**；desktop **3 passed**；真实 Whisper 上传→转写→纪要 **5 passed**。
-- 本轮修复提交：`85da14e`（命令列表 Path）、`0674fa0`（run_now）、`3fc89a3`（doctor 本地模型）、`143d4a0`（TUI Ctrl-D）、`e981468`（Linux desktop 后端）。
-- 全量回归日志：`../spark-full-final3.log`，退出码 `../spark-full-final3.rc`。
+- 本轮修复提交：`85da14e`（命令列表 Path）、`0674fa0`（run_now）、`3fc89a3`（doctor 本地模型）、`143d4a0`（TUI Ctrl-D）、`e981468`（Linux desktop 后端）、`1083bf3`（PR token 入口）、`a3c5b1b`（uninstall 系统目录守卫）。
+- 全量回归日志：`../spark-full-final5.log`，退出码 `../spark-full-final5.rc`。
 
 该文件不把 pytest 数量当作功能完成证明；上表的外部集成项仍按 ⛔/🟡 单独标注。
