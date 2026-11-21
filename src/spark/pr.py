@@ -8,9 +8,11 @@ tool layer, not here.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
@@ -90,12 +92,101 @@ def find_repo(workdir) -> RepoRef:
     return repo
 
 
+TOKEN_ENVS: dict[str, tuple[str, ...]] = {
+    "github": ("GITHUB_TOKEN", "GH_TOKEN"),
+    "gitcode": ("GITCODE_TOKEN", "GITCODE_ACCESS_TOKEN"),
+    "gitee": ("GITEE_TOKEN", "GITEE_ACCESS_TOKEN"),
+}
+
+
+def token_env_names(forge: str = "github") -> tuple[str, ...]:
+    return TOKEN_ENVS.get(forge, TOKEN_ENVS["github"])
+
+
+def _token_file() -> Path:
+    # Lazy import: tests change SPARK_HOME per test, and the CLI must honour it.
+    from spark.config import default_home
+
+    return default_home() / "pr-tokens.json"
+
+
+def _read_token_file() -> dict[str, str]:
+    path = _token_file()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k): str(v) for k, v in raw.items() if isinstance(v, str) and v}
+
+
+def stored_token(forge: str = "github") -> str:
+    return _read_token_file().get(forge, "")
+
+
+def set_stored_token(forge: str, token: str) -> Path:
+    if forge not in TOKEN_ENVS:
+        raise PrError(f"不支持的代码托管平台: {forge}")
+    token = token.strip()
+    if not token:
+        raise PrError("token 不能为空")
+    path = _token_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = _read_token_file()
+    data[forge] = token
+    payload = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+    finally:
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    return path
+
+
+def clear_stored_token(forge: str = "github") -> bool:
+    path = _token_file()
+    data = _read_token_file()
+    if forge not in data:
+        return False
+    del data[forge]
+    if data:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+        finally:
+            try:
+                os.chmod(path, 0o600)
+            except OSError:
+                pass
+    else:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+    return True
+
+
+def token_source(forge: str = "github") -> str:
+    for name in token_env_names(forge):
+        if os.environ.get(name):
+            return f"环境变量 {name}"
+    if stored_token(forge):
+        return f"本地凭据 {_token_file()}"
+    return ""
+
+
 def _token(forge: str = "github") -> str:
-    if forge == "gitcode":
-        return os.environ.get("GITCODE_TOKEN") or os.environ.get("GITCODE_ACCESS_TOKEN") or ""
-    if forge == "gitee":
-        return os.environ.get("GITEE_TOKEN") or os.environ.get("GITEE_ACCESS_TOKEN") or ""
-    return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
+    for name in token_env_names(forge):
+        value = os.environ.get(name) or ""
+        if value:
+            return value
+    return stored_token(forge)
 
 
 class GitHubClient:

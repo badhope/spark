@@ -234,3 +234,59 @@ def test_gitcode_client_uses_patches_and_token_query() -> None:
     assert context["title"] == "GitCode PR"
     assert "x = 1" in context["diff"]
     assert context["checks"] == {"statuses": [], "check_runs": []}
+
+
+def test_stored_pr_token_roundtrip_and_env_precedence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import stat
+
+    from spark.pr import (
+        _token,
+        clear_stored_token,
+        set_stored_token,
+        stored_token,
+        token_source,
+    )
+
+    monkeypatch.setenv("SPARK_HOME", str(tmp_path))
+    for name in ("GITHUB_TOKEN", "GH_TOKEN", "GITCODE_TOKEN", "GITEE_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+
+    path = set_stored_token("github", "ghp_file_token")
+    assert path == tmp_path / "pr-tokens.json"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert stored_token("github") == "ghp_file_token"
+    assert _token("github") == "ghp_file_token"
+    assert token_source("github") == f"本地凭据 {path}"
+
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_env_token")
+    assert _token("github") == "ghp_env_token"
+    assert token_source("github") == "环境变量 GITHUB_TOKEN"
+
+    client = GitHubClient(RepoRef("acme", "spark", "github"))
+    try:
+        assert client._client.headers["Authorization"] == "Bearer ghp_env_token"
+    finally:
+        client.close()
+
+    assert clear_stored_token("github") is True
+    assert stored_token("github") == ""
+    assert clear_stored_token("github") is False
+
+
+def test_pr_token_cli_saves_without_echo(tmp_path: Path, monkeypatch) -> None:
+    from typer.testing import CliRunner
+
+    from spark.cli import app
+
+    monkeypatch.setenv("SPARK_HOME", str(tmp_path))
+    for name in ("GITHUB_TOKEN", "GH_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+    result = CliRunner().invoke(app, ["pr", "token", "github"], input="ghp_cli_token\n")
+    assert result.exit_code == 0, result.output
+    assert "ghp_cli_token" not in result.output
+    assert "权限 600" in result.output
+    status = CliRunner().invoke(app, ["pr", "status", "--repo", "acme/spark", "--json"])
+    assert status.exit_code == 0, status.output
+    assert '"token_configured": true' in status.output

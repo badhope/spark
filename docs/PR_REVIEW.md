@@ -12,6 +12,23 @@ separate command that requires `--confirm`.
 | `gitcode.com` | `https://api.gitcode.com/api/v5` | `GITCODE_TOKEN` |
 | `gitee.com` | `https://gitee.com/api/v5` | `GITEE_TOKEN` |
 
+## Token setup
+
+```bash
+spark pr status --repo owner/name       # 平台、仓库、token 来源（只显示是否已配置）
+spark pr token github                  # 交互输入，不进入 shell 历史，文件权限 600
+spark pr token gitcode                 # 或 gitee
+spark pr token github --clear          # 删除本机保存的 token
+```
+
+- 保存位置：`$SPARK_HOME/pr-tokens.json`，权限 600。
+- 环境变量优先于本地文件：`GITHUB_TOKEN`/`GH_TOKEN`、`GITCODE_TOKEN`、
+  `GITEE_TOKEN`。
+- GitHub 读取 token 需要 `repo`（或公开仓库的 `public_repo`）权限；发布 review
+  还需要 `Pull requests: write`。GitCode/Gitee 使用平台的 access token。
+- 未配置 token 仍可读公开仓库，但受未认证速率限制；`spark pr status` 会给出
+  配置入口和所需权限。
+
 `spark pr` reads `origin` from the current repository; `--repo owner/name`
 overrides it. To force a platform, prefix the override with its host:
 `github.com/owner/name`, `gitcode.com/owner/name`, or `gitee.com/owner/name`.
@@ -54,7 +71,7 @@ configuration.
 
 - PR text, diff and comments are wrapped in `<untrusted>` fences before they
   reach the model.
-- Tokens are read from the environment and never written into tool payloads or
-  command lines.
+- Tokens come from the environment or `$SPARK_HOME/pr-tokens.json` (0600); they are
+  never written into tool payloads or command lines.
 - `pr_review` is a read-only tool; `publish` is CLI-only and requires `--confirm`.
 - Browser and PR tools both honor `agent.network_access = false`.

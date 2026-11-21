@@ -2343,6 +2343,82 @@ def _pr_client(repo, number: int, *, token: str = ""):
     return GitHubClient(repo, token or None)
 
 
+@pr_app.command("status", help="查看 PR 平台、仓库和 token 配置状态")
+def pr_status_cmd(
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    repo: str = typer.Option("", "--repo", help="owner/name 或 host/owner/name"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    import json
+
+    from spark.pr import token_env_names, token_source
+
+    try:
+        ref = _pr_repo(repo, workdir)
+    except SparkError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    source = token_source(ref.forge)
+    if source:
+        token_state = f"已配置（{source}）"
+    else:
+        token_state = "未配置"
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "forge": ref.forge,
+                    "repo": ref.slug,
+                    "token_configured": bool(source),
+                    "token_source": source,
+                    "env_names": list(token_env_names(ref.forge)),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+    typer.echo(f"平台: {ref.forge}")
+    typer.echo(f"仓库: {ref.slug}")
+    typer.echo(f"Token: {token_state}")
+    if not source:
+        typer.echo("\n未配置 token 仍可读公开仓库，但会受未认证速率限制（60 次/小时）。")
+        typer.echo("推荐在本机保存（仅当前用户可读，权限 600）：")
+        typer.echo(f"  spark pr token {ref.forge}")
+        typer.echo("或临时使用环境变量：")
+        typer.echo("  export " + token_env_names(ref.forge)[0] + "=<token>")
+        typer.echo("\nGitHub 读取需要 repo 权限；发布 review 需要 Pull requests: write。")
+
+
+@pr_app.command("token", help="交互式保存 PR token 到本机（不写入 shell 历史）")
+def pr_token_cmd(
+    forge: str = typer.Argument("github", help="github / gitcode / gitee"),
+    clear: bool = typer.Option(False, "--clear", help="删除已保存的 token"),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+) -> None:
+    from spark.pr import (
+        TOKEN_ENVS,
+        clear_stored_token,
+        set_stored_token,
+        token_env_names,
+    )
+
+    if forge not in TOKEN_ENVS:
+        typer.echo(f"不支持的平台: {forge}（可选 github / gitcode / gitee）", err=True)
+        raise typer.Exit(2)
+    if clear:
+        removed = clear_stored_token(forge)
+        typer.echo("已删除本地 token。" if removed else "本地没有保存该平台的 token。")
+        return
+    token = typer.prompt(f"{forge} token", hide_input=True).strip()
+    if not token:
+        typer.echo("token 不能为空", err=True)
+        raise typer.Exit(2)
+    path = set_stored_token(forge, token)
+    typer.echo(f"已保存到 {path}（权限 600）。环境变量 {token_env_names(forge)[0]} 优先级更高。")
+    typer.echo("运行 spark pr status --repo <owner/name> 检查配置。")
+
+
 @pr_app.command("view", help="查看 PR 标题、文件、diff、评论和 CI 状态")
 def pr_view_cmd(
     number: int = typer.Argument(..., help="PR 编号"),
