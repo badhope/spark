@@ -518,17 +518,20 @@ def test_keyboard_and_responsive_layout(ui) -> None:
     page.wait_for_timeout(100)
     assert page.evaluate("() => document.activeElement && document.activeElement !== document.body")
 
-    # Global shortcuts. macOS Chromium may reserve Control+K for browser UI;
-    # Mod+K is Ctrl+K on Linux/Windows and Meta+K on macOS.
-    page.keyboard.press("Control+k")
+    # Global shortcuts. Browser-level shortcuts differ by OS and Chromium may
+    # reserve Mod+K; dispatch the same KeyboardEvent the window handler sees.
+    page.evaluate(
+        "() => window.dispatchEvent(new KeyboardEvent('keydown', "
+        "{key: 'k', code: 'KeyK', ctrlKey: true, bubbles: true}))"
+    )
     page.wait_for_timeout(300)
-    if page.get_by_role("dialog").count() == 0:
-        page.keyboard.press("Meta+k")
-        page.wait_for_timeout(300)
     assert page.get_by_role("dialog").count() >= 1
     page.keyboard.press("Escape")
 
-    page.keyboard.press("?")
+    page.evaluate(
+        "() => window.dispatchEvent(new KeyboardEvent('keydown', "
+        "{key: '?', code: 'Slash', bubbles: true}))"
+    )
     page.wait_for_timeout(300)
     assert page.get_by_role("dialog").count() >= 1
     page.keyboard.press("Escape")
