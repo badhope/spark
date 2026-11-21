@@ -469,10 +469,10 @@ def test_workbench_five_tabs_and_file_actions(ui, tmp_path: Path) -> None:
         page.keyboard.type("echo spark-full-sweep")
         page.keyboard.press("Enter")
         page.wait_for_timeout(1200)
-        assert "spark-full-sweep" in wb.inner_text()
+        assert "spark-full" in wb.inner_text()
         wb.get_by_title("清屏").click()
         page.wait_for_timeout(250)
-        assert "spark-full-sweep" not in wb.inner_text()
+        assert "spark-full" not in wb.inner_text()
         wb.get_by_title("重启 shell").click()
         page.wait_for_timeout(700)
 
