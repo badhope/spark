@@ -145,7 +145,11 @@ pty = [
     "pywinpty>=3.1; sys_platform == 'win32'",
 ]
 desktop = [
-    "pywebview>=5.0",
+    "pywebview>=5.0; sys_platform != 'linux'",
+    # Linux needs an explicit GUI backend: pywebview alone reports
+    # "You must have either QT or GTK" at start. The qt extra pulls QtPy +
+    # PyQt6 + QtWebEngine; on Debian/Ubuntu also install libxcb-cursor0.
+    "pywebview[qt]>=5.0; sys_platform == 'linux'",
 ]
 
 [project.scripts]

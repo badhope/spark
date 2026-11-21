@@ -74,6 +74,17 @@ pip install -e ".[dev]"
 spark web                        # 打开打印出的地址
 ```
 
+### Linux 桌面模式
+
+```bash
+pip install -e ".[desktop]"      # Linux 会装 pywebview[qt]（QtPy + PyQt6 + WebEngine）
+sudo apt install libxcb-cursor0  # Debian/Ubuntu：Qt xcb 平台插件依赖
+spark desktop
+```
+
+没有桌面会话（SSH/容器）时请用 `spark web`；`spark desktop` 检测不到 Qt/GTK
+后端会返回退出码 2，并提示缺少的系统/GUI 依赖。
+
 ## 方式 B — 打包版二进制
 
 ### Windows EXE

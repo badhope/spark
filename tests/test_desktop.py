@@ -38,3 +38,31 @@ def test_run_desktop_without_pywebview_returns_2(
     finally:
         store.close()
     assert code == 2
+
+
+
+def test_run_desktop_without_gui_backend_returns_2(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """pywebview imports without Qt/GTK; start() must map to exit code 2."""
+    import types
+
+    fake = types.ModuleType("webview")
+    fake.create_window = lambda *args, **kwargs: object()
+
+    def _fail_start() -> None:
+        raise RuntimeError(
+            "You must have either QT or GTK with Python extensions installed "
+            "in order to use pywebview."
+        )
+
+    fake.start = _fail_start
+    monkeypatch.setitem(sys.modules, "webview", fake)
+    cfg = SparkConfig()
+    cfg.provider.name = "mock"
+    store = SessionStore(tmp_path / "desktop3.db")
+    try:
+        code = run_desktop(workdir=tmp_path, cfg=cfg, store=store, port=0)
+    finally:
+        store.close()
+    assert code == 2

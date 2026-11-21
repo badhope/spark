@@ -119,6 +119,19 @@ def run_desktop(
     webview.create_window(title, url, width=width, height=height)
     try:
         webview.start()
+    except Exception as exc:
+        # pywebview imports fine without a GUI backend; the failure only
+        # surfaces at start(). Give Linux users the real fix instead of a
+        # raw "You must have either QT or GTK" stack trace.
+        message = str(exc)
+        if "QT or GTK" in message or "Main window failed to start" in message:
+            logger.error(
+                "桌面模式缺少 GUI 后端。Linux 请安装："
+                'pip install "spark[desktop]"（会带 pywebview[qt]），'
+                "以及系统库 libxcb-cursor0；无桌面环境请改用 spark web。"
+            )
+            return 2
+        raise
     finally:
         server.shutdown()
         server.server_close()
