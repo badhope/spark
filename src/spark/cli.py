@@ -1858,8 +1858,12 @@ def _home_inventory(home: Path) -> list[tuple[str, int]]:
 _UNINSTALL_PROTECTED = {
     Path("/"),
     Path("/tmp"),
+    Path("/private/tmp"),
     Path("/var"),
+    Path("/private/var"),
     Path("/var/tmp"),
+    Path("/private/etc"),
+    Path("/etc"),
     Path("/etc"),
     Path("/usr"),
     Path("/bin"),
@@ -1891,6 +1895,11 @@ def _uninstall_refusal(home: Path) -> str:
         )
     if resolved.parent == resolved:
         return f"拒绝删除：{resolved} 是系统根目录。请核对 SPARK_HOME 后重试。"
+    if resolved.parent == Path(resolved.anchor):
+        return (
+            f"拒绝删除：{resolved} 位于系统根目录顶层，不能当作 Spark 数据目录清理。"
+            "请核对 SPARK_HOME 后重试。"
+        )
     if resolved == Path.cwd().resolve():
         return f"拒绝删除：{resolved} 是当前工作目录，不能当作 Spark 数据目录清理。"
     return ""

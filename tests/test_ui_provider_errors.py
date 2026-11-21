@@ -192,7 +192,8 @@ def test_connection_refused_explains_local_service(tmp_path) -> None:
         page.get_by_title("发送").click()
 
         error = page.get_by_test_id("model-error")
-        error.wait_for(state="visible", timeout=12000)
+        # Windows 的连接拒绝会走 LiteLLM 重试/退避，12s 不够；Linux/macOS 仍然秒回。
+        error.wait_for(state="visible", timeout=45000)
         text = error.inner_text()
         assert "连接不上模型服务" in text, text
         assert base_url.split("://", 1)[1] in text, text

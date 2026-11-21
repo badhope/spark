@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import httpx
@@ -255,7 +256,8 @@ def test_stored_pr_token_roundtrip_and_env_precedence(
 
     path = set_stored_token("github", "ghp_file_token")
     assert path == tmp_path / "pr-tokens.json"
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert stored_token("github") == "ghp_file_token"
     assert _token("github") == "ghp_file_token"
     assert token_source("github") == f"本地凭据 {path}"
