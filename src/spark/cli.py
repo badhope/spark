@@ -1855,6 +1855,47 @@ def _home_inventory(home: Path) -> list[tuple[str, int]]:
     return sorted(items, key=lambda item: item[0])
 
 
+_UNINSTALL_PROTECTED = {
+    Path("/"),
+    Path("/tmp"),
+    Path("/var"),
+    Path("/var/tmp"),
+    Path("/etc"),
+    Path("/usr"),
+    Path("/bin"),
+    Path("/sbin"),
+    Path("/lib"),
+    Path("/lib64"),
+    Path("/boot"),
+    Path("/dev"),
+    Path("/proc"),
+    Path("/sys"),
+    Path("/run"),
+    Path("/home"),
+    Path("/root"),
+    Path("/opt"),
+    Path("/srv"),
+    Path("/mnt"),
+    Path("/media"),
+}
+
+
+def _uninstall_refusal(home: Path) -> str:
+    """返回拒绝删除的原因；空字符串表示可以继续。"""
+    resolved = home.resolve()
+    user_home = Path.home().resolve()
+    if resolved in _UNINSTALL_PROTECTED or resolved in (user_home, user_home.parent):
+        return (
+            f"拒绝删除：{resolved} 不是典型的 Spark 数据目录（应为 ~/.spark 或 "
+            "$SPARK_HOME 指向的专用目录）。请核对 SPARK_HOME 后重试。"
+        )
+    if resolved.parent == resolved:
+        return f"拒绝删除：{resolved} 是系统根目录。请核对 SPARK_HOME 后重试。"
+    if resolved == Path.cwd().resolve():
+        return f"拒绝删除：{resolved} 是当前工作目录，不能当作 Spark 数据目录清理。"
+    return ""
+
+
 @app.command("uninstall", help="清除 Spark 全部本地数据（配置/会话/记忆/知识库），先列清单再确认")
 def uninstall_cmd(
     yes: bool = typer.Option(False, "--yes", "-y", help="跳过确认，直接删除"),
@@ -1868,6 +1909,10 @@ def uninstall_cmd(
     ``pip uninstall spark-agent``（或对应包管理器）移除；这里清的是数据。
     """
     home = default_home()
+    refusal = _uninstall_refusal(home)
+    if refusal:
+        typer.echo(refusal, err=True)
+        raise typer.Exit(2)
     inventory = _home_inventory(home)
     if not inventory:
         typer.echo(f"{home} 不存在或已是空目录，没有可清理的数据")
@@ -1884,17 +1929,8 @@ def uninstall_cmd(
     )
     if list_only:
         return
-    # 防御性守卫：SPARK_HOME 指向家目录本身、盘符根或任何不像 Spark 数据目录
-    # 的位置时拒绝删除——一个环境变量写错不该有能力删掉用户整个家目录。
-    resolved = home.resolve()
-    user_home = Path.home().resolve()
-    if resolved in (user_home, user_home.parent) or resolved.parent == resolved:
-        typer.echo(
-            f"拒绝删除：{resolved} 不是典型的 Spark 数据目录（应为 ~/.spark 或 "
-            "$SPARK_HOME 指向的专用目录）。请核对 SPARK_HOME 后重试。",
-            err=True,
-        )
-        raise typer.Exit(2)
+    # 防御性守卫在列表/确认/删除之前执行：SPARK_HOME 指向 /tmp、家目录、
+    # 系统根目录或当前项目目录时，一个环境变量写错不该有能力删掉整棵目录。
     if not yes and not typer.confirm("确认删除以上全部数据？此操作不可恢复"):
         typer.echo("已取消，未删除任何文件")
         return
@@ -2394,7 +2430,6 @@ def pr_status_cmd(
 def pr_token_cmd(
     forge: str = typer.Argument("github", help="github / gitcode / gitee"),
     clear: bool = typer.Option(False, "--clear", help="删除已保存的 token"),
-    workdir: Path = typer.Option(Path("."), "--workdir"),
 ) -> None:
     from spark.pr import (
         TOKEN_ENVS,

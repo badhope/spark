@@ -621,6 +621,17 @@ def test_uninstall_refuses_to_delete_home_directory_itself(tmp_path, monkeypatch
     assert home.exists(), "守卫拦截后不得删除"
 
 
+def test_uninstall_refuses_system_temp_directory(monkeypatch) -> None:
+    """SPARK_HOME=/tmp 曾通过旧守卫并尝试 rmtree；必须在清点前拒绝。"""
+    monkeypatch.setattr(cli, "default_home", lambda: Path("/tmp"))
+    monkeypatch.setenv("SPARK_HOME", "/tmp")
+    r = runner.invoke(cli.app, ["uninstall", "--yes"])
+    assert r.exit_code == 2, r.stdout
+    assert "拒绝删除" in r.stdout + (r.stderr or "")
+    assert Path("/tmp").exists()
+    assert "数据目录：" not in r.stdout
+
+
 def test_uninstall_empty_home_is_a_noop(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(cli, "default_home", lambda: tmp_path / "missing")
     monkeypatch.setenv("SPARK_HOME", str(tmp_path / "missing"))
