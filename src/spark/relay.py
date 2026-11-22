@@ -13,8 +13,11 @@ Security model:
 - The relay is intentionally plaintext HTTP. Put it behind a TLS-terminating
   reverse proxy; do not expose it directly to the internet.
 - Request and response bodies are base64 encoded so JSON and binary payloads
-  (for example screenshots) survive the hop. Streaming/SSE is not supported by
-  this MVP: a response is buffered before it is returned.
+  (for example screenshots) survive the hop.
+- Streaming responses (SSE and chunked HTTP) use a separate request/stream
+  rendezvous: the agent opens ``httpx.stream`` and posts headers/chunks/end;
+  the relay keeps the client connection open and writes chunked HTTP as data
+  arrives. Non-streaming calls keep the buffered ``/responses`` path.
 """
 from __future__ import annotations
 
@@ -28,6 +31,8 @@ import re
 import secrets
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -118,7 +123,10 @@ def _headers_dict(value: Any) -> dict[str, str]:
         name = str(name).strip()
         if not name or name.lower() in _HOP_HEADERS:
             continue
-        result[name] = str(item)
+        text = str(item)
+        if "\r" in name or "\n" in name or "\r" in text or "\n" in text:
+            raise RelayError("header names/values must not contain CR or LF")
+        result[name] = text
     return result
 
 
@@ -131,11 +139,20 @@ def _unb64(value: Any) -> bytes:
         raise RelayError("body_b64 is not valid base64") from exc
 
 
+def _timeout_value(value: Any, default: float = 60.0) -> float:
+    try:
+        seconds = float(value if value is not None else default)
+    except (TypeError, ValueError) as exc:
+        raise RelayError("timeout must be a number") from exc
+    return max(5.0, min(seconds, float(MAX_CALL_TIMEOUT)))
+
+
 @dataclass
 class _Channel:
     key_hash: str
     requests: "queue.Queue[dict[str, Any]]" = field(default_factory=queue.Queue)
     responses: dict[str, "queue.Queue[dict[str, Any]]"] = field(default_factory=dict)
+    streams: dict[str, "queue.Queue[dict[str, Any]]"] = field(default_factory=dict)
     lock: threading.Lock = field(default_factory=threading.Lock)
     last_poll: float = 0.0
 
@@ -234,6 +251,61 @@ class RelayHub:
             return
         target.put(response)
 
+    def start_stream(
+        self,
+        channel: str,
+        key: str,
+        payload: dict[str, Any],
+        *,
+        timeout: float = 60.0,
+    ) -> tuple[str, "queue.Queue[dict[str, Any]]"]:
+        """Queue a streaming request and return its (request_id, event queue)."""
+        item = self._channel(channel, key)
+        if time.time() - item.last_poll > self.agent_stale_sec:
+            raise RelayUnavailable()
+        request_id = "req_" + secrets.token_hex(10)
+        events: "queue.Queue[dict[str, Any]]" = queue.Queue(maxsize=64)
+        with item.lock:
+            item.streams[request_id] = events
+        item.requests.put(
+            {
+                "request_id": request_id,
+                "method": str(payload.get("method") or "GET").upper(),
+                "path": str(payload.get("path") or "/"),
+                "headers": _headers_dict(payload.get("headers")),
+                "body_b64": _b64_payload(payload.get("body_b64")),
+                "stream": True,
+                "timeout": max(1.0, min(float(timeout), MAX_CALL_TIMEOUT)),
+            }
+        )
+        return request_id, events
+
+    def stream_event(
+        self, channel: str, key: str, request_id: str, event: dict[str, Any]
+    ) -> bool:
+        """Deliver one headers/chunk/end/error event to a waiting client.
+
+        Returns ``False`` when the client has disconnected or timed out, so the
+        agent can stop reading upstream instead of filling memory.
+        """
+        item = self._channel(channel, key)
+        with item.lock:
+            target = item.streams.get(str(request_id))
+        if target is None:
+            return False
+        try:
+            target.put(event, timeout=10.0)
+        except queue.Full as exc:
+            raise RelayTimeout("stream consumer is not reading") from exc
+        return True
+
+    def drop_stream(self, channel: str, request_id: str) -> None:
+        item = self._channels.get(channel)
+        if item is None:
+            return
+        with item.lock:
+            item.streams.pop(str(request_id), None)
+
 
 class RelayHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
@@ -241,19 +313,48 @@ class RelayHTTPServer(ThreadingHTTPServer):
     block_on_close = False
 
     hub: RelayHub
+    web_channel: str = ""
+    web_key: str = ""
 
 
-def build_relay_server(host: str = "127.0.0.1", port: int = 0) -> tuple[RelayHTTPServer, RelayHub]:
+def build_relay_server(
+    host: str = "127.0.0.1",
+    port: int = 0,
+    *,
+    web_channel: str = "",
+    web_key: str = "",
+) -> tuple[RelayHTTPServer, RelayHub]:
     hub = RelayHub()
     server = RelayHTTPServer((host, int(port)), _RelayHandler)
     server.hub = hub
+    if web_channel:
+        # A relay instance can expose one Spark Web at its root. The channel
+        # and key are server-side; the browser never receives the relay key.
+        server.web_channel = _check_channel(web_channel)
+        server.web_key = _check_key(web_key)
+        hub.register(server.web_channel, server.web_key)
+    elif web_key:
+        raise RelayError("web_key requires web_channel")
     return server, hub
 
 
-def serve_relay(host: str = "127.0.0.1", port: int = 8788) -> None:
-    server, _hub = build_relay_server(host, port)
+def serve_relay(
+    host: str = "127.0.0.1",
+    port: int = 8788,
+    *,
+    web_channel: str = "",
+    web_key: str = "",
+) -> None:
+    server, _hub = build_relay_server(
+        host,
+        port,
+        web_channel=web_channel,
+        web_key=web_key,
+    )
     address = server.server_address
     logger.info("Spark relay listening on http://%s:%s", address[0], address[1])
+    if server.web_channel:
+        logger.info("relay root proxies Spark Web channel %s", server.web_channel)
     try:
         server.serve_forever()
     finally:
@@ -286,6 +387,8 @@ def _read_json(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
 
 def _b64_payload(value: Any) -> str:
     """Requests carry body_b64; accept a raw string only for compatibility."""
+    if value is None:
+        return ""
     if isinstance(value, str):
         return value
     raise RelayError("body_b64 must be a base64 string")
@@ -312,11 +415,149 @@ class _RelayHandler(BaseHTTPRequestHandler):
     def _key(self) -> str:
         return self.headers.get("X-Relay-Key", "")
 
+    def _write_chunk(self, data: bytes) -> None:
+        if not data:
+            return
+        self.wfile.write(f"{len(data):x}\r\n".encode("ascii") + data + b"\r\n")
+        self.wfile.flush()
+
+    def _stream_call(self, channel: str, body: dict[str, Any]) -> None:
+        timeout = _timeout_value(body.get("timeout"))
+        request_id, events = self.hub.start_stream(
+            channel,
+            self._key(),
+            body,
+            timeout=timeout,
+        )
+        try:
+            self._stream_response(events, timeout=timeout)
+        finally:
+            self.hub.drop_stream(channel, request_id)
+
+    def _stream_response(
+        self,
+        events: "queue.Queue[dict[str, Any]]",
+        *,
+        timeout: float,
+    ) -> None:
+        try:
+            first = events.get(timeout=timeout)
+        except queue.Empty:
+            _send_json(self, 504, {"error": "relay stream headers timed out"})
+            return
+        if not isinstance(first, dict) or first.get("type") == "error":
+            message = str((first or {}).get("error") or "upstream stream failed")
+            _send_json(self, 502, {"error": message})
+            return
+        if first.get("type") != "headers":
+            _send_json(self, 502, {"error": "relay agent did not send stream headers"})
+            return
+        status = int(first.get("status") or 200)
+        headers = _headers_dict(first.get("headers"))
+        self.send_response(status)
+        for name, value in headers.items():
+            self.send_header(name, value)
+        self.send_header("Transfer-Encoding", "chunked")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        try:
+            while True:
+                event = events.get(timeout=timeout)
+                kind = str(event.get("type") or "")
+                if kind == "chunk":
+                    self._write_chunk(_unb64(event.get("body_b64")))
+                elif kind == "end":
+                    break
+                elif kind == "error":
+                    logger.warning("relay stream error: %s", event.get("error"))
+                    break
+            self.wfile.write(b"0\r\n\r\n")
+            self.wfile.flush()
+        except queue.Empty:
+            # Headers already went out; terminate the chunked body cleanly
+            # rather than leaving the client waiting for a read timeout.
+            try:
+                self.wfile.write(b"0\r\n\r\n")
+                self.wfile.flush()
+            except OSError:
+                pass
+        except (BrokenPipeError, ConnectionResetError):
+            logger.debug("relay stream client disconnected")
+
+    def _web_binding(self) -> tuple[str, str]:
+        channel = str(getattr(self.server, "web_channel", "") or "")
+        key = str(getattr(self.server, "web_key", "") or "")
+        return channel, key
+
+    def _proxy_web_enabled(self, path: str) -> bool:
+        channel, _key = self._web_binding()
+        return bool(channel) and path != "/health" and not path.startswith("/v1/")
+
+    def _read_raw_body(self) -> bytes:
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > MAX_BODY_BYTES:
+            raise RelayError("request body too large", 413)
+        if length <= 0:
+            return b""
+        raw = self.rfile.read(length)
+        if len(raw) != length:
+            raise RelayError("request body truncated", 400)
+        return raw
+
+    def _proxy_web(self, method: str) -> None:
+        channel, key = self._web_binding()
+        if not channel:
+            _send_json(self, 404, {"error": "relay Web entry is not configured"})
+            return
+        path = self.path
+        if not path.startswith("/") or path.startswith("//"):
+            raise RelayError("path must start with a single /")
+        headers = _headers_dict(dict(self.headers.items()))
+        body = self._read_raw_body()
+        payload = {
+            "method": method,
+            "path": path,
+            "headers": headers,
+            "body_b64": base64.b64encode(body).decode("ascii"),
+        }
+        streaming = path.rstrip("/").endswith("/stream") or (
+            "text/event-stream" in (self.headers.get("Accept") or "").lower()
+        )
+        timeout = 120.0 if streaming else _timeout_value(self.headers.get("X-Relay-Timeout"))
+        if streaming:
+            request_id, events = self.hub.start_stream(
+                channel,
+                key,
+                payload,
+                timeout=timeout,
+            )
+            try:
+                self._stream_response(events, timeout=timeout)
+            finally:
+                self.hub.drop_stream(channel, request_id)
+            return
+        response = self.hub.submit(channel, key, payload, timeout=timeout)
+        status = int(response.get("status") or 200)
+        out_headers = _headers_dict(response.get("headers"))
+        out_body = _unb64(response.get("body_b64"))
+        self.send_response(status)
+        for name, value in out_headers.items():
+            self.send_header(name, value)
+        self.send_header("Content-Length", str(len(out_body)))
+        self.end_headers()
+        if method != "HEAD":
+            self.wfile.write(out_body)
+            self.wfile.flush()
+
     def do_GET(self) -> None:  # noqa: N802
         try:
             parsed = urlparse(self.path)
             if parsed.path == "/health":
                 _send_json(self, 200, {"ok": True})
+                return
+            if self._proxy_web_enabled(parsed.path):
+                self._proxy_web("GET")
                 return
             parts = parsed.path.strip("/").split("/")
             if len(parts) != 4 or parts[0] != "v1" or parts[1] != "channels" or parts[3] != "next":
@@ -336,6 +577,9 @@ class _RelayHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         try:
             parsed = urlparse(self.path)
+            if self._proxy_web_enabled(parsed.path):
+                self._proxy_web("POST")
+                return
             parts = parsed.path.strip("/").split("/")
             if len(parts) != 4 or parts[0] != "v1" or parts[1] != "channels":
                 _send_json(self, 404, {"error": "not found"})
@@ -359,12 +603,37 @@ class _RelayHandler(BaseHTTPRequestHandler):
                 )
                 _send_json(self, 200, {"ok": True})
                 return
+            if action == "stream":
+                kind = str(body.get("type") or "")
+                event: dict[str, Any] = {"type": kind}
+                if kind == "headers":
+                    event["status"] = int(body.get("status") or 200)
+                    event["headers"] = _headers_dict(body.get("headers"))
+                elif kind == "chunk":
+                    event["body_b64"] = _b64_payload(body.get("body_b64"))
+                elif kind == "error":
+                    event["error"] = str(body.get("error") or "stream failed")[:300]
+                elif kind != "end":
+                    raise RelayError("stream event type must be headers/chunk/end/error")
+                if not self.hub.stream_event(
+                    channel,
+                    self._key(),
+                    str(body.get("request_id") or ""),
+                    event,
+                ):
+                    _send_json(self, 410, {"error": "stream consumer is gone"})
+                    return
+                _send_json(self, 200, {"ok": True})
+                return
             if action == "call":
+                if bool(body.get("stream")):
+                    self._stream_call(channel, body)
+                    return
                 response = self.hub.submit(
                     channel,
                     self._key(),
                     body,
-                    timeout=float(body.get("timeout") or 60),
+                    timeout=_timeout_value(body.get("timeout")),
                 )
                 # Relay transport success is 200; the upstream status travels
                 # inside the JSON envelope so a 404/500 body is not discarded.
@@ -377,6 +646,28 @@ class _RelayHandler(BaseHTTPRequestHandler):
             _send_json(self, 404, {"error": "not found"})
         except Exception as exc:  # noqa: BLE001 - HTTP boundary
             self._error(exc)
+
+    def _web_method(self, method: str) -> None:
+        try:
+            parsed = urlparse(self.path)
+            if self._proxy_web_enabled(parsed.path):
+                self._proxy_web(method)
+                return
+            _send_json(self, 404, {"error": "not found"})
+        except Exception as exc:  # noqa: BLE001 - HTTP boundary
+            self._error(exc)
+
+    def do_PUT(self) -> None:  # noqa: N802
+        self._web_method("PUT")
+
+    def do_PATCH(self) -> None:  # noqa: N802
+        self._web_method("PATCH")
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        self._web_method("DELETE")
+
+    def do_HEAD(self) -> None:  # noqa: N802
+        self._web_method("HEAD")
 
 
 class RelayAgent:
@@ -434,18 +725,91 @@ class RelayAgent:
                 request = response.json()
                 if not isinstance(request, dict):
                     raise RelayError("relay returned a non-object request")
-                result = self.forward(request)
-                self._relay.post(
-                    f"{self.relay_url}/v1/channels/{self.channel}/responses",
-                    headers={"X-Relay-Key": self.key},
-                    json={"request_id": request.get("request_id"), **result},
-                )
+                if bool(request.get("stream")):
+                    self.forward_stream(request)
+                else:
+                    result = self.forward(request)
+                    self._relay.post(
+                        f"{self.relay_url}/v1/channels/{self.channel}/responses",
+                        headers={"X-Relay-Key": self.key},
+                        json={"request_id": request.get("request_id"), **result},
+                    )
             except httpx.HTTPError as exc:
                 logger.warning("relay agent transport error: %s", exc)
                 stop.wait(1.0)
             except Exception:  # noqa: BLE001 - keep the agent alive
                 logger.exception("relay agent loop failed")
                 stop.wait(1.0)
+
+    def _stream_post(self, request_id: str, event: dict[str, Any]) -> None:
+        response = self._relay.post(
+            f"{self.relay_url}/v1/channels/{self.channel}/stream",
+            headers={"X-Relay-Key": self.key},
+            json={"request_id": request_id, **event},
+        )
+        if response.status_code >= 400:
+            raise RelayError(
+                f"relay stream rejected: {response.text[:200]}",
+                response.status_code,
+            )
+
+    def forward_stream(self, request: dict[str, Any]) -> None:
+        """Forward one request while streaming upstream bytes to the relay."""
+        request_id = str(request.get("request_id") or "")
+        if not request_id:
+            raise RelayError("relay stream request is missing request_id")
+        method = str(request.get("method") or "GET").upper()
+        if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}:
+            raise RelayError("unsupported HTTP method")
+        path = str(request.get("path") or "/")
+        if not path.startswith("/") or path.startswith("//"):
+            raise RelayError("path must start with a single /")
+        headers = _headers_dict(request.get("headers"))
+        headers["X-Spark-Relay"] = "1"
+        headers["Accept-Encoding"] = "identity"
+        if self.token:
+            headers["X-Spark-Token"] = self.token
+        body = _unb64(request.get("body_b64"))
+        try:
+            with self._upstream.stream(
+                method,
+                self.upstream + path,
+                headers=headers,
+                content=body,
+            ) as response:
+                self._stream_post(
+                    request_id,
+                    {
+                        "type": "headers",
+                        "status": response.status_code,
+                        "headers": {
+                            name: value
+                            for name, value in response.headers.items()
+                            if name.lower() not in _HOP_HEADERS
+                        },
+                    },
+                )
+                for chunk in response.iter_raw():
+                    if chunk:
+                        self._stream_post(
+                            request_id,
+                            {
+                                "type": "chunk",
+                                "body_b64": base64.b64encode(chunk).decode("ascii"),
+                            },
+                        )
+            self._stream_post(request_id, {"type": "end"})
+        except RelayError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - report upstream failure to client
+            try:
+                self._stream_post(
+                    request_id,
+                    {"type": "error", "error": f"upstream stream failed: {exc}"[:300]},
+                )
+            except RelayError:
+                logger.debug("relay stream client already gone")
+            return
 
     def forward(self, request: dict[str, Any]) -> dict[str, Any]:
         method = str(request.get("method") or "GET").upper()
@@ -456,6 +820,7 @@ class RelayAgent:
             raise RelayError("path must start with a single /")
         headers = _headers_dict(request.get("headers"))
         headers["X-Spark-Relay"] = "1"
+        headers["Accept-Encoding"] = "identity"
         if self.token:
             headers["X-Spark-Token"] = self.token
         body = _unb64(request.get("body_b64"))
@@ -513,3 +878,46 @@ def relay_call(
         "headers": data.get("headers") or {},
         "body": _unb64(data.get("body_b64")),
     }
+
+
+@contextmanager
+def relay_stream(
+    relay_url: str,
+    channel: str,
+    key: str,
+    *,
+    method: str = "GET",
+    path: str = "/api/status",
+    headers: dict[str, str] | None = None,
+    body: bytes = b"",
+    timeout: int = 60,
+) -> Iterator[httpx.Response]:
+    """Submit one request and expose the live HTTP response for SSE/chunked reads.
+
+    The connection stays open while the relay agent forwards upstream chunks;
+    callers should iterate ``response.iter_raw()`` and close promptly.
+    """
+    method = method.upper()
+    if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}:
+        raise RelayError("unsupported HTTP method")
+    if not path.startswith("/") or path.startswith("//"):
+        raise RelayError("path must start with a single /")
+    payload = {
+        "method": method,
+        "path": path,
+        "headers": headers or {},
+        "body_b64": base64.b64encode(body).decode("ascii"),
+        "timeout": max(5, min(int(timeout), MAX_CALL_TIMEOUT)),
+        "stream": True,
+    }
+    with httpx.stream(
+        "POST",
+        f"{relay_url.rstrip('/')}/v1/channels/{_check_channel(channel)}/call",
+        headers={"X-Relay-Key": _check_key(key)},
+        json=payload,
+        timeout=httpx.Timeout(max(10, int(timeout) + 10), connect=10.0),
+    ) as response:
+        if response.status_code >= 400:
+            detail = response.read().decode("utf-8", errors="replace")[:200]
+            raise RelayError(detail, response.status_code)
+        yield response

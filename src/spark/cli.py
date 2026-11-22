@@ -1043,6 +1043,12 @@ def web_cmd(
     port: int | None = typer.Option(
         None, "--port", help="监听端口；省略时从 8000 起自动选择可用端口"
     ),
+    public_url: str = typer.Option(
+        "",
+        "--public-url",
+        envvar="SPARK_PUBLIC_URL",
+        help="公网入口（例如 https://spark.example.com），用于生成手机远程链接；需自建 HTTPS 反向代理并保留 Host",
+    ),
     add_dir: list[Path] = typer.Option(
         None,
         "--add-dir",
@@ -1067,9 +1073,17 @@ def web_cmd(
             )
             raise typer.Exit(1)
         server, state = build_web_server(
-            workdir=workdir, cfg=cfg, store=store, host=host, port=port
+            workdir=workdir,
+            cfg=cfg,
+            store=store,
+            host=host,
+            port=port,
+            public_url=public_url,
         )
         typer.echo(f"◆ Spark Web  →  http://{host}:{port}")
+        if public_url:
+            typer.echo(f"◆ 远程公网入口 → {state.remote_access.public_url}")
+            typer.echo("  该入口必须由你的 HTTPS 反向代理转发到本服务，并保留原始 Host。")
         if host not in {"127.0.0.1", "localhost", "::1"}:
             pair = state.pairing.new_code()
             typer.echo(
@@ -2284,13 +2298,38 @@ app.add_typer(relay_app, name="relay")
 def relay_serve_cmd(
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8788, "--port"),
+    channel: str = typer.Option(
+        "",
+        "--channel",
+        help="把该频道的 Spark Web 挂到 relay 根路径；与 relay connect 的 channel 一致",
+    ),
+    key: str = typer.Option(
+        "",
+        "--key",
+        envvar="SPARK_RELAY_KEY",
+        help="频道密钥；只存在 relay 与 agent 两端，不下发给浏览器",
+    ),
 ) -> None:
-    from spark.relay import serve_relay
+    from spark.relay import RelayError, serve_relay
 
     if host not in {"127.0.0.1", "localhost", "::1"}:
         typer.echo("警告：中继是明文 HTTP，请只监听内网或置于 TLS 反向代理后。", err=True)
+    if channel and not key:
+        typer.echo("使用 --channel 时必须同时提供 --key（或 SPARK_RELAY_KEY）", err=True)
+        raise typer.Exit(2)
     typer.echo(f"Relay listening on http://{host}:{port}")
-    serve_relay(host, port)
+    if channel:
+        typer.echo(f"◆ Web 入口 →  http://{host}:{port}/  (channel={channel})")
+    try:
+        serve_relay(
+            host,
+            port,
+            web_channel=channel,
+            web_key=key if channel else "",
+        )
+    except RelayError as exc:
+        typer.echo(f"Relay failed: {exc}", err=True)
+        raise typer.Exit(2) from exc
 
 
 @relay_app.command("connect", help="让本机 Spark 连出到中继，并把请求转发给本地 Web")
@@ -2334,8 +2373,9 @@ def relay_call_cmd(
     path: str = typer.Option("/api/status", "--path"),
     body_file: Path | None = typer.Option(None, "--body-file"),
     timeout: int = typer.Option(60, "--timeout"),
+    stream: bool = typer.Option(False, "--stream", help="逐块读取 SSE/chunked 响应"),
 ) -> None:
-    from spark.relay import RelayError, relay_call
+    from spark.relay import RelayError, relay_call, relay_stream
 
     body = b""
     if body_file is not None:
@@ -2344,6 +2384,24 @@ def relay_call_cmd(
         except OSError as exc:
             typer.echo(f"读取 body 文件失败: {exc}", err=True)
             raise typer.Exit(2) from exc
+    if stream:
+        try:
+            with relay_stream(
+                relay,
+                channel,
+                key,
+                method=method,
+                path=path,
+                body=body,
+                timeout=timeout,
+            ) as response:
+                typer.echo(f"HTTP {response.status_code}", err=True)
+                for chunk in response.iter_raw():
+                    typer.echo(chunk.decode("utf-8", errors="replace"), nl=False)
+        except RelayError as exc:
+            typer.echo(f"Relay call failed: {exc}", err=True)
+            raise typer.Exit(2) from exc
+        return
     try:
         result = relay_call(
             relay,

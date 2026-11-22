@@ -91,6 +91,34 @@ class ToolRunnerMixin:
                 logger.debug("audit write failed", exc_info=True)
         return result
 
+    def _validation_error(
+        self: Any, call: ToolCall, *, schemas: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any] | None:
+        """Return a structured validation error, with one correction attempt.
+
+        Invalid calls never reach policy/approval or a tool handler. The first
+        failure is marked retryable so the model can repair the arguments; a
+        second failure for the same tool in one turn is terminal for that tool.
+        """
+        error = self.registry.validation_error(call, schemas=schemas)
+        if error is None:
+            return None
+        attempts = getattr(self, "_tool_validation_failures", None)
+        if attempts is None:
+            attempts = {}
+            self._tool_validation_failures = attempts
+        name = str(call.name or "")
+        if attempts.get(name, 0) >= 1:
+            return {
+                **error,
+                "code": f"{error.get('code', 'invalid_tool_arguments')}_retry_exhausted",
+                "error": f"{error.get('error', 'invalid tool call')}（已重试一次，本轮不再执行）",
+                "retryable": False,
+                "retry_limit": 1,
+            }
+        attempts[name] = attempts.get(name, 0) + 1
+        return {**error, "retryable": True, "retry_limit": 1}
+
     async def _resolve_direct_verdict(
         self: Any, call: ToolCall
     ) -> tuple[dict[str, Any], TurnEvent | None]:
@@ -351,6 +379,22 @@ class ToolRunnerMixin:
             return
         started = time.monotonic()
         args_summary = json.dumps(call.arguments, ensure_ascii=False, default=str)[:200]
+        invalid: dict[str, Any] | None = None
+        if verdict is not None:
+            invalid = verdict.get("validation")
+            if verdict.get("action") == "invalid" and not isinstance(invalid, dict):
+                invalid = {
+                    "error": verdict.get("reason") or "invalid tool call",
+                    "code": "invalid_tool_arguments",
+                }
+        else:
+            invalid = self._validation_error(call)
+        if invalid is not None:
+            result = ToolResult(ok=False, payload=invalid)
+            self._finish_tool_execution(call, result, started, args_summary)
+            await self._persist_tool(call, message_id, result, "invalid")
+            yield TurnEvent(type="tool_end", tool_call=call, result=result)
+            return
         if verdict is None:
             verdict, approval_event = await self._resolve_direct_verdict(call)
             if approval_event is not None:

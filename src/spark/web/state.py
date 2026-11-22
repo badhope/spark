@@ -17,6 +17,7 @@ from spark.asyncutil import run_coroutine_sync
 from spark.config import (
     ModelProfile,
     SparkConfig,
+    default_home,
     env_api_key,
     mask_secret,
     save_config,
@@ -169,7 +170,8 @@ class SessionRuntime:
     running after the user switches to another session, and its approval /
     question rendezvous must not leak into the new one. The runtime owns the
     loop, approver, question bridge, turn lock and replay buffer for exactly
-    one session.
+    one session. It also carries the RC-04 device lease: one paired device may
+    drive the session, while local control always bypasses the lease.
     """
 
     session_id: str
@@ -183,6 +185,101 @@ class SessionRuntime:
     _events_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     _seq_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     _last_seq: int = 0
+    # RC-04: one device may drive a session at a time. Local control always
+    # bypasses the lease; device leases expire after 120 seconds without a
+    # heartbeat and can be taken over explicitly.
+    lease_owner: str = ""
+    lease_until: float = 0.0
+    lease_ttl: float = 120.0
+    _lease_lock: Any = field(
+        default_factory=threading.RLock, repr=False, compare=False
+    )
+
+    def lease_snapshot(self, now: float | None = None) -> dict[str, Any]:
+        now = time.monotonic() if now is None else float(now)
+        with self._lease_lock:
+            if self.lease_owner and now >= self.lease_until:
+                self.lease_owner = ""
+                self.lease_until = 0.0
+            return {
+                "owner": self.lease_owner,
+                "held": bool(self.lease_owner),
+                "expires_in": max(0, int(self.lease_until - now)) if self.lease_owner else 0,
+                "ttl_sec": int(self.lease_ttl),
+            }
+
+    def lease_claim(
+        self,
+        owner: str,
+        *,
+        takeover: bool = False,
+        now: float | None = None,
+    ) -> dict[str, Any]:
+        """Claim or renew a session lease; return a snapshot with ``ok``."""
+        owner = str(owner or "").strip()
+        now = time.monotonic() if now is None else float(now)
+        if not owner:
+            return {**self.lease_snapshot(now), "ok": False, "reason": "empty owner"}
+        with self._lease_lock:
+            if self.lease_owner and now >= self.lease_until:
+                self.lease_owner = ""
+                self.lease_until = 0.0
+            # Local control is the break-glass owner: an explicit local acquire
+            # takes over a device lease instead of being refused by it.
+            if owner == "local" and self.lease_owner not in {"", "local"}:
+                takeover = True
+            if self.lease_owner and self.lease_owner != owner and not takeover:
+                return {
+                    **self.lease_snapshot(now),
+                    "ok": False,
+                    "reason": "lease_held",
+                }
+            previous = self.lease_owner
+            self.lease_owner = owner
+            self.lease_until = now + self.lease_ttl
+            return {
+                "owner": owner,
+                "held": True,
+                "expires_in": int(self.lease_ttl),
+                "ttl_sec": int(self.lease_ttl),
+                "ok": True,
+                "took_over": previous if previous and previous != owner else "",
+            }
+
+    def lease_renew(self, owner: str, *, now: float | None = None) -> bool:
+        owner = str(owner or "").strip()
+        now = time.monotonic() if now is None else float(now)
+        with self._lease_lock:
+            if owner == "local":
+                return True
+            if not owner or self.lease_owner != owner:
+                return False
+            if now >= self.lease_until:
+                self.lease_owner = ""
+                self.lease_until = 0.0
+                return False
+            self.lease_until = now + self.lease_ttl
+            return True
+
+    def lease_release(self, owner: str) -> None:
+        owner = str(owner or "").strip()
+        with self._lease_lock:
+            # Local control may free a lease held by any device.
+            if self.lease_owner and (owner == "local" or self.lease_owner == owner):
+                self.lease_owner = ""
+                self.lease_until = 0.0
+
+    def lease_allows(self, owner: str, *, now: float | None = None) -> bool:
+        owner = str(owner or "").strip()
+        if owner == "local":
+            return True
+        now = time.monotonic() if now is None else float(now)
+        with self._lease_lock:
+            return bool(
+                owner
+                and self.lease_owner == owner
+                and now < self.lease_until
+            )
 
     def next_seq_start(self) -> int:
         """Return the last sequence already used by this session.
@@ -298,11 +395,29 @@ def _generate_session_meta_async(
 
 
 class SparkWebState:
-    def __init__(self, workdir: Path, cfg: SparkConfig, store: Any) -> None:
+    def __init__(
+        self,
+        workdir: Path,
+        cfg: SparkConfig,
+        store: Any,
+        *,
+        public_url: str = "",
+    ) -> None:
         self.workdir = workdir
         self.cfg = cfg
         self.store = store
         self.sandbox = WorkdirSandbox(workdir, cfg)
+        # Set by build_web_server once the socket is bound. Route guards use
+        # these values to distinguish a local UI from a public reverse proxy.
+        self.web_host = "127.0.0.1"
+        self.web_port = 0
+        self.ui_dir: Path | None = None
+        self.handler_class: Any = None
+        # 首次打开工作区时播种内置 Skills/Commands，让设置页不是空白。
+        # 只补缺失文件，失败不影响启动。
+        from spark.builtin_content import ensure_workspace_defaults
+
+        ensure_workspace_defaults(workdir, enable_plugins=True)
         self.session_id = ""
         self._runtimes: dict[str, SessionRuntime] = {}
         self._current_runtime: SessionRuntime | None = None
@@ -315,9 +430,20 @@ class SparkWebState:
         self.local_models = LocalModelManager()
         self.mcp_bridge: McpBridge | None = None
         self.control_token = secrets.token_urlsafe(32)
-        from spark.web.remote import DevicePairing
+        from spark.web.remote import DevicePairing, RemoteAuditLog
 
         self.pairing = DevicePairing()
+        self.audit = RemoteAuditLog(Path(default_home()) / "remote-audit.jsonl")
+        self.pairing.set_admin_expiry_listener(self._audit_admin_expiry)
+        from spark.web.remote_access import RemoteAccessManager
+
+        self.remote_access = RemoteAccessManager(self)
+        from spark.web.web_push import WebPushManager
+
+        self.push = WebPushManager(Path(default_home()))
+
+        if public_url:
+            self.remote_access.set_public_url(public_url)
         #: Compatibility switch for pre-v1 SSE clients. Set
         #: ``SPARK_WEB_LEGACY=1`` to emit bare ``data:`` frames again while the
         #: rest of the server keeps the per-session runtime and replay API.
@@ -377,6 +503,19 @@ class SparkWebState:
             runtime.loop = value
         else:
             self._orphan_loop = value
+
+    def _audit_admin_expiry(self, device: dict[str, Any]) -> None:
+        """Record the automatic 30-minute downgrade; never raise into auth."""
+        try:
+            self.audit.record(
+                str(device.get("id") or "device"),
+                str(device.get("name") or "remote device"),
+                "device.admin.expired",
+                detail=f"scope device_admin expired · {device.get('id') or '-'}",
+                source="device",
+            )
+        except Exception:  # noqa: BLE001 - audit must not break token validation
+            logger.debug("device_admin expiry audit failed", exc_info=True)
 
     def authorize_token(self, token: str) -> str | None:
         """Return ``control``/``device`` for a valid token, else ``None``.
@@ -518,6 +657,10 @@ class SparkWebState:
         owned by the caller and is intentionally left open; the caller decides
         when to close it.
         """
+        try:
+            self.remote_access.close()
+        except Exception:  # pragma: no cover - teardown must not raise
+            logger.debug("remote access close failed", exc_info=True)
         try:
             self.automations.stop()
         except Exception:  # pragma: no cover - teardown must not raise
@@ -670,7 +813,7 @@ class SparkWebState:
             session_id = latest["id"] if latest else None
         if session_id is None:
             session_id = self.store.create_session(
-                self.workdir, self.cfg.provider.model, title="新对话"
+                self.workdir, self.cfg.provider.model, title="untitled"
             )
         runtime = self.get_runtime(session_id)
         if runtime is None:  # pragma: no cover - get_runtime(create=True) always returns
@@ -901,6 +1044,7 @@ class SparkWebState:
             "plan": plan,
             "last_error": self.store.get_session_error(sid),
             "model_status": self.model_status(loop),
+            "lease": runtime.lease_snapshot() if runtime is not None else None,
             **self._demo_flags(key, loop),
         }
 
@@ -917,27 +1061,27 @@ class SparkWebState:
         return {"ready": False, "issue": issue.to_dict()}
 
     def _demo_flags(self, key: str, loop=None) -> dict:
-        """Say out loud when the configured provider silently fell back to mock.
+        """``demo_mode`` 只代表用户显式选择的 Mock 展示模式。
 
-        ``create_provider`` degrades to ``MockProvider`` when an openai_compat
-        provider has no key, which kept the UI looking like a live model was
-        answering while every reply was scripted. The flag is derived from the
-        loop's actual provider instance, not from config, so it cannot drift.
+        缺 Key、模型没下载、端点连不上都是真实配置错误，交给
+        ``model_status`` 如实呈现；绝不把错误伪装成“演示模式”，也不让
+        Mock 在真实配置下顶班。
         """
         provider_name = str(self.cfg.provider.name)
         loop = loop or self.loop
         live = loop.provider if loop is not None else None
         is_mock = live is not None and live.__class__.__name__ == "MockProvider"
         if provider_name == "mock":
-            return {"demo_mode": True, "demo_reason": "当前使用 Mock 演示模型"}
-        if is_mock:
-            env_name = self.cfg.provider.api_key_env or "SPARK_API_KEY"
             return {
                 "demo_mode": True,
-                "demo_reason": f"缺少 API Key（{env_name}），已退回 Mock 演示模型",
+                "demo_reason": "Mock 展示模式：回复由脚本生成，未连接真实模型",
             }
-        if provider_name == "openai_compat" and not key:
-            return {"demo_mode": True, "demo_reason": "缺少 API Key，尚未连接真实模型"}
+        if is_mock:
+            # 配置与运行实例不一致属于异常，不是演示。
+            return {
+                "demo_mode": False,
+                "demo_reason": "配置指向真实模型，但运行实例是 Mock；请退出演示或重新保存配置",
+            }
         return {"demo_mode": False, "demo_reason": ""}
 
     def ensure_default_profile(self) -> None:

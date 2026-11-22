@@ -41,6 +41,7 @@ class ProviderPreset:
     prompt_cache: bool = False
     tier: str = "cost"
     note: str = ""
+    label_en: str = ""
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -60,6 +61,7 @@ PRESETS: tuple[ProviderPreset, ...] = (
     ProviderPreset(
         id="qwen",
         label="Qwen / 百炼",
+        label_en="Qwen / Bailian",
         provider="openai_compat",
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         model="qwen3-coder-plus",
@@ -78,6 +80,7 @@ PRESETS: tuple[ProviderPreset, ...] = (
     ProviderPreset(
         id="glm",
         label="GLM / 智谱",
+        label_en="GLM / Zhipu",
         provider="openai_compat",
         base_url="https://open.bigmodel.cn/api/paas/v4",
         model="glm-4.5",
@@ -87,6 +90,7 @@ PRESETS: tuple[ProviderPreset, ...] = (
     ProviderPreset(
         id="doubao",
         label="豆包 / 方舟",
+        label_en="Doubao / Ark",
         provider="openai_compat",
         base_url="https://ark.cn-beijing.volces.com/api/v3",
         model="doubao-seed-code-preview",
@@ -151,6 +155,7 @@ PRESETS: tuple[ProviderPreset, ...] = (
     ProviderPreset(
         id="ollama",
         label="Ollama 本地",
+        label_en="Ollama (local)",
         provider="ollama",
         base_url="http://127.0.0.1:11434/v1",
         model="qwen3-coder:latest",
@@ -160,6 +165,7 @@ PRESETS: tuple[ProviderPreset, ...] = (
     ProviderPreset(
         id="mock",
         label="Mock 演示",
+        label_en="Mock demo",
         provider="mock",
         base_url="http://localhost",
         model="mock-model",

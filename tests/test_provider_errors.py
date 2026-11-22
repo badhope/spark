@@ -73,14 +73,20 @@ def test_local_model_404_explains_how_to_install() -> None:
     assert "ollama pull qwen3:8b" in info.hint
 
 
-def test_preflight_blocks_missing_key_and_mock_fallback() -> None:
-    cfg = _cfg(key=None)
-    info = provider_preflight(cfg)
+def test_preflight_blocks_missing_key_and_provider_mismatch() -> None:
+    missing = _cfg(key=None)
+    info = provider_preflight(missing)
     assert info is not None and info.code == "missing_api_key"
 
-    fallback = provider_preflight(cfg, MockProvider())
-    assert fallback is not None and fallback.code == "mock_fallback"
-    assert "Mock" in fallback.message
+    # 缺少 Key 时不能被 Mock 实例掩盖成“演示”状态；先报真实配置错误。
+    blocked = provider_preflight(missing, MockProvider())
+    assert blocked is not None and blocked.code == "missing_api_key"
+
+    # 配置完整但运行实例是 Mock：如实报 provider_mismatch，不产生假回答。
+    configured = _cfg()
+    mismatch = provider_preflight(configured, MockProvider())
+    assert mismatch is not None and mismatch.code == "provider_mismatch"
+    assert "Mock" in mismatch.message
 
 
 def test_preflight_allows_mock_and_ollama_without_key() -> None:

@@ -77,10 +77,10 @@ def test_missing_key_shows_banner_error_card_and_survives_reload(tmp_path, monke
     monkeypatch.delenv("SPARK_E2E_MISSING_KEY", raising=False)
     with _missing_key_server(tmp_path) as (base, _state), sync_playwright() as playwright:
         status = _get_json(f"{base}/api/status")
-        assert status["demo_mode"] is True, "factory should have degraded, making the guard necessary"
+        assert status["demo_mode"] is False, "missing key must be a real error, not demo mode"
         issue = status["model_status"]["issue"]
         assert status["model_status"]["ready"] is False
-        assert issue["code"] == "mock_fallback"
+        assert issue["code"] == "missing_api_key"
         assert "API Key" in issue["title"]
 
         browser = launch(playwright)
@@ -102,7 +102,7 @@ def test_missing_key_shows_banner_error_card_and_survives_reload(tmp_path, monke
         error.wait_for(state="visible", timeout=8000)
         text = error.inner_text()
         assert "API Key" in text
-        assert "未配置" in text or "Mock" in text
+        assert "未配置" in text
         assert "怎么处理" in text
         assert page.get_by_role("button", name="打开模型设置").count() >= 1
         # No scripted assistant answer should have been produced.
@@ -110,7 +110,7 @@ def test_missing_key_shows_banner_error_card_and_survives_reload(tmp_path, monke
 
         # The failure is persisted server-side, not only in the live store.
         status = _get_json(f"{base}/api/status")
-        assert status["last_error"]["code"] == "mock_fallback"
+        assert status["last_error"]["code"] == "missing_api_key"
         page.reload(wait_until="domcontentloaded")
         page.wait_for_timeout(700)
         page.get_by_test_id("model-error").wait_for(state="visible")

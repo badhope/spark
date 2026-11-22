@@ -57,6 +57,7 @@ from spark.web._handlers_local_models import (  # noqa: F401
     _handle_local_models_download,
 )
 from spark.web._handlers_models import (  # noqa: F401
+    _handle_demo_toggle,
     _handle_models_activate,
     _handle_models_delete,
     _handle_models_save,
@@ -72,6 +73,7 @@ from spark.web._handlers_sessions import (  # noqa: F401
     _handle_question_answer,
     _handle_session_export,
     _handle_session_import,
+    _handle_session_lease,
     _handle_sessions_delete,
     _handle_sessions_fork,
     _handle_sessions_new,
@@ -117,6 +119,7 @@ __all__ = [
     "_handle_question_answer",
     "_handle_sessions_delete",
     "_handle_session_export",
+    "_handle_session_lease",
     "_handle_session_import",
     "_handle_sessions_fork",
     "_handle_sessions_new",

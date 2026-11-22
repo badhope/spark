@@ -117,13 +117,13 @@ class RootErrorBoundary extends React.Component<{ children: React.ReactNode }, B
               className="rounded-[9px] bg-accent px-4 py-1.5 text-[13px] font-medium text-on-accent"
               onClick={() => window.location.reload()}
             >
-              刷新重试
+              {t("crash.retry", lang)}
             </button>
             <button
               className="rounded-[9px] border border-line px-4 py-1.5 text-[13px] text-ink2"
               onClick={() => this.setState({ error: null, info: "", showDetail: false })}
             >
-              尝试继续
+              {t("crash.continue", lang)}
             </button>
           </div>
         </div>

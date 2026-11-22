@@ -12,6 +12,7 @@ while preserving:
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any, cast
 
@@ -99,6 +100,104 @@ The single most important next action to take.
 
 ## Relevant Files
 List every file path that was created, modified, or is otherwise relevant. Use `- path/to/file` format. If none, write (none)."""
+
+#: 摘要必须包含的 5 段。缺段不直接丢摘要，先补齐再落盘，避免压缩后会话没有锚点。
+SUMMARY_SECTIONS = (
+    "Objective",
+    "Important Details",
+    "Work State",
+    "Next Move",
+    "Relevant Files",
+)
+_SUMMARY_HEADING_RE = re.compile(
+    r"(?m)^##[ \t]*("
+    + "|".join(re.escape(s) for s in SUMMARY_SECTIONS)
+    + r")[ \t]*\r?$"
+)
+
+#: 工具输出分层：小输出全文保留，中输出留头尾，大输出只留更短的头尾。
+TOOL_OUTPUT_FULL_CHARS = 2000
+TOOL_OUTPUT_MID_CHARS = 8000
+TOOL_OUTPUT_MID_HEAD = 1200
+TOOL_OUTPUT_MID_TAIL = 600
+TOOL_OUTPUT_LARGE_HEAD = 2000
+TOOL_OUTPUT_LARGE_TAIL = 800
+
+
+def _split_summary(text: str) -> tuple[str, dict[str, str]]:
+    """按 5 个二级标题切分摘要，返回（前言行，段名→正文）。"""
+    raw = (text or "").strip()
+    matches = list(_SUMMARY_HEADING_RE.finditer(raw))
+    if not matches:
+        return raw, {}
+    preamble = raw[: matches[0].start()].strip()
+    parts: dict[str, str] = {}
+    for i, match in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(raw)
+        parts[match.group(1)] = raw[match.end() : end].strip()
+    return preamble, parts
+
+
+def missing_summary_sections(text: str) -> list[str]:
+    """返回缺失或正文为空的必需段；用于压缩落盘前的硬校验。"""
+    preamble, parts = _split_summary(text)
+    missing: list[str] = []
+    for section in SUMMARY_SECTIONS:
+        body = parts.get(section, "").strip()
+        if section == "Objective" and not body and preamble:
+            continue
+        if not body:
+            missing.append(section)
+    return missing
+
+
+def normalize_structured_summary(text: str) -> str:
+    """把模型输出收敛成固定 5 段；缺段写 ``(not provided)``，不丢弃已有内容。
+
+    模型偶尔会漏标题或只输出一段自由文本。直接拒绝会让上下文继续膨胀；直接
+    原样落盘又会让后续 prompt 找不到 Work State/Files。这里补齐骨架，同时把
+    非空的前言并进 Objective，保留信息。
+    """
+    preamble, parts = _split_summary(text)
+    out: list[str] = []
+    for section in SUMMARY_SECTIONS:
+        body = parts.get(section, "").strip()
+        if section == "Objective" and preamble:
+            body = f"{preamble}\n\n{body}".strip() if body else preamble
+        if not body:
+            body = "(not provided)"
+        out.append(f"## {section}\n{body}")
+    return "\n\n".join(out)
+
+
+def truncate_tool_output(text: str) -> str:
+    """工具输出分层裁剪：保留头尾和省略字符数，摘要不因单条输出爆预算。"""
+    value = str(text or "")
+    if len(value) <= TOOL_OUTPUT_FULL_CHARS:
+        return value
+    if len(value) <= TOOL_OUTPUT_MID_CHARS:
+        head, tail = TOOL_OUTPUT_MID_HEAD, TOOL_OUTPUT_MID_TAIL
+    else:
+        head, tail = TOOL_OUTPUT_LARGE_HEAD, TOOL_OUTPUT_LARGE_TAIL
+    if head + tail >= len(value):
+        return value
+    omitted = len(value) - head - tail
+    return (
+        value[:head]
+        + f"\n\n...[tool output truncated: {omitted} chars omitted]...\n\n"
+        + value[-tail:]
+    )
+
+
+def _summary_transcript_line(msg: SparkChatMessage) -> str:
+    """压缩 transcript 的单行；工具消息先做分层裁剪，避免原始大输出灌进摘要。"""
+    if msg.role == "tool":
+        label = f"TOOL({msg.name})" if msg.name else "TOOL"
+        content = truncate_tool_output(msg.content or "")
+    else:
+        label = msg.role.upper()
+        content = msg.content or ""
+    return f"[{label}] {content}"
 
 
 def load_custom_compact_prompt(
@@ -368,18 +467,37 @@ class Compactor:
         # ── Build the structured prompt conversation ─────────────────────
         # Inject the structured prompt as a system message so the LLM
         # knows exactly what format to emit, then feed the transcript.
-        transcript_lines: list[str] = []
-        for m in non_summary_messages:
-            role_label = m.role.upper()
-            transcript_lines.append(f"[{role_label}] {m.content or ''}")
+        # Custom prompts may deliberately use another format; only validate
+        # the built-in 5-section contract.
+        use_structured_format = load_custom_compact_prompt(self._workdir) is None
+        transcript_lines: list[str] = [
+            _summary_transcript_line(m) for m in non_summary_messages
+        ]
         transcript_text = "\n".join(transcript_lines)
 
         # ── Call litellm directly for the structured summary ────────────
         structured_summary = await self._call_litellm_structured(transcript_text)
+        if use_structured_format:
+            missing = missing_summary_sections(structured_summary)
+            if missing:
+                logger.warning(
+                    "compact summary missing sections: %s; filling placeholders",
+                    ", ".join(missing),
+                )
+                structured_summary = normalize_structured_summary(structured_summary)
 
         # ── Merge if there was a prior summary ───────────────────────────
         if prior_summary:
-            return await self.merge_summaries(prior_summary, structured_summary)
+            merged = await self.merge_summaries(prior_summary, structured_summary)
+            if use_structured_format:
+                missing_merged = missing_summary_sections(merged)
+                if missing_merged:
+                    logger.warning(
+                        "merged compact summary missing sections: %s; filling placeholders",
+                        ", ".join(missing_merged),
+                    )
+                    merged = normalize_structured_summary(merged)
+            return merged
 
         return structured_summary
 

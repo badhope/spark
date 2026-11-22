@@ -10,6 +10,7 @@ Local-first AI coding agent and office workbench. Start with the [project README
 | Architecture | [ARCHITECTURE.md](ARCHITECTURE.md) | [架构](../ARCHITECTURE.md) |
 | Feature map | [FEATURES.md](../FEATURES.md) | [功能总览](../FEATURES.md) |
 | Enterprise / office | [ENTERPRISE.md](../ENTERPRISE.md) | [企业控制面](../ENTERPRISE.md) |
+| Remote control | [REMOTE.md](REMOTE.md) | [远程控制](../REMOTE.md) |
 | A2A protocol | [A2A.md](../A2A.md) | [A2A](../A2A.md) |
 | ACP / IDE setup | [ACP.md](../ACP.md) | [IDE 接入](../ACP.md) |
 | Evaluations | [evals.md](../evals.md) | [评测](../evals.md) |

@@ -29,6 +29,7 @@ nav:
   - Start:
       - Install: INSTALL.md
       - Configuration: CONFIG.md
+      - Built-in dev kit: builtin-dev-kit.md
   - Reference:
       - Architecture: ARCHITECTURE.md
       - API: API.md
@@ -45,6 +46,7 @@ nav:
       - PR review: PR_REVIEW.md
       - Workflow: WORKFLOW.md
       - Outbound relay: RELAY.md
+      - Remote control: REMOTE.md
   - Operations:
       - Diagrams and secrets: diagrams-ops.md
   - Decisions:

@@ -4,9 +4,14 @@
 文档（md/txt/pdf 抽文本后的纯文本），用于回答"这个项目的规范/接口/设计是怎么
 写的"。
 
-实现策略：**不引入新依赖**。向量检索复用 ``MemoryStore`` 已经验证过的
-chromadb + 本地 embedding 路径；当 embedding 不可用时（未配置 / 端点不支持
-``/embeddings``）退回纯词法 BM25 + 中文 bigram，和记忆模块的降级策略一致。
+实现策略：**不引入新依赖**。BM25 + 中文 bigram 永远可用；配置了
+``memory.embedding_enabled`` 且端点支持 ``/embeddings`` 时，额外复用记忆模块
+已经验证过的 embedding 路径做向量召回，两路分数混合排序。embedding 不可用、
+超时或返回维度不一致时静默退回纯 BM25，不阻塞对话。
+
+向量不是第二套数据库：``index.json`` 仍然是文档/分块的唯一事实，向量存在同目录
+``vectors.json`` sidecar，按 ``doc_name:chunk_index`` 建键；删文档/重加同名文档时
+一并清理，模型换掉时整份 sidecar 作废。
 
 存储：``<spark_home>/knowledge/<project_hash>/``，与 sessions.db 同级，不进
 用户工作区（否则会被 git 提交，也会被 repo-map 扫描污染）。
@@ -16,14 +21,24 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from spark.textutil import tokenize
+
+logger = logging.getLogger(__name__)
+
+#: embedding 批量大小。一次塞太多会被部分网关按 token 上限拒绝。
+EMBED_BATCH = 32
+#: BM25 和向量分数的混合权重。BM25 保精确命中/代码符号，向量补同义与跨语言。
+BM25_WEIGHT = 0.55
+VECTOR_WEIGHT = 0.45
 
 #: 单文件上限。超过则不收——知识库是"参考资料"不是"第二份源码"。
 MAX_DOC_BYTES = 2 * 1024 * 1024
@@ -34,6 +49,95 @@ CHUNK_OVERLAP = 120
 DEFAULT_TOP_K = 6
 
 _TEXT_SUFFIXES = {".md", ".markdown", ".txt", ".rst", ".json", ".yaml", ".yml", ".csv", ".ini", ".toml"}
+
+Embedder = Callable[[list[str]], list[list[float]] | None]
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    """本地余弦；不 import memory.store，避免知识库为一次点积拉起 chromadb。"""
+    if len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return max(0.0, min(1.0, dot / (na * nb)))
+
+
+class EmbeddingClient:
+    """把现有 ``embed_once`` 包成同步可调用；失败返回 None，永不抛给检索。"""
+
+    def __init__(self, *, base_url: str, api_key: str, model: str, provider: str = "") -> None:
+        self.base_url = base_url
+        self.api_key = api_key
+        self.model = model
+        self.provider = provider
+
+    def __call__(self, texts: list[str]) -> list[list[float]] | None:
+        if not texts:
+            return []
+        from spark.asyncutil import run_coroutine_sync
+        from spark.memory.llm import embed_texts
+
+        try:
+            vecs = run_coroutine_sync(
+                embed_texts(
+                    base_url=self.base_url,
+                    api_key=self.api_key,
+                    model=self.model,
+                    texts=texts,
+                ),
+                timeout=60,
+            )
+        except Exception:  # noqa: BLE001 — 检索不能因为 embedding 端点故障中断
+            logger.warning("knowledge embedding failed", exc_info=True)
+            return None
+        if vecs is None or len(vecs) != len(texts):
+            return None
+        try:
+            return [[float(x) for x in vec] for vec in vecs if vec]
+        except (TypeError, ValueError):
+            return None
+
+
+def make_embedder(cfg: Any) -> EmbeddingClient | None:
+    """按与长期记忆相同的配置解析 embedding 端点；未开启就返回 None。
+
+    知识库只读 ``memory.embedding_*`` 三项，不新开配置项；这样设置页的
+    “记忆→向量检索”开关就是唯一入口，避免两套开关各说各话。
+    """
+    memory = getattr(cfg, "memory", None)
+    provider = getattr(cfg, "provider", None)
+    if memory is None or provider is None:
+        return None
+    if not bool(getattr(memory, "embedding_enabled", False)):
+        return None
+    base_url = str(getattr(memory, "embedding_base_url", "") or getattr(provider, "base_url", "") or "")
+    if not base_url:
+        return None
+    model = str(getattr(memory, "embedding_model", "") or "text-embedding-3-small")
+    provider_name = str(getattr(provider, "name", "") or "")
+    same_target = base_url.rstrip("/") == str(getattr(provider, "base_url", "") or "").rstrip("/")
+    if getattr(memory, "embedding_api_key", ""):
+        api_key = str(memory.embedding_api_key)
+    elif same_target:
+        api_key = str(getattr(provider, "api_key", "") or "")
+        env_name = str(getattr(provider, "api_key_env", "") or "")
+        if not api_key and env_name:
+            import os
+
+            api_key = os.environ.get(env_name, "")
+    else:
+        api_key = ""
+    if not api_key and provider_name != "ollama":
+        api_key = "ollama"
+    return EmbeddingClient(
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        provider=provider_name,
+    )
 
 
 def project_key(workdir: Path) -> str:
@@ -117,17 +221,26 @@ def _read_doc(path: Path) -> str | None:
 
 
 class KnowledgeBase:
-    """纯文件 + 倒排索引的实现，索引落盘为 JSON。
+    """纯文件 + 倒排索引，索引落盘为 JSON；向量是可选 sidecar。
 
-    刻意不用向量库：知识库的检索质量主要由分块和词法匹配决定，而 chromadb
-    会给每个项目多开一个持久化库。词法 + 中文 bigram 在代码/规范类文档上
-    表现稳定，且零额外依赖、零冷启动。
+    刻意不新建 chromadb collection：每个项目多开一个持久化库会拖慢冷启动，
+    而且知识库的精确符号/路径命中仍然主要靠 BM25。向量只做补充召回，存在
+    ``vectors.json``，删文档/换 embedding 模型时跟着失效。
     """
 
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        embedder: Embedder | None = None,
+        embedding_model: str = "",
+    ) -> None:
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
         self.index_path = root / "index.json"
+        self.vectors_path = root / "vectors.json"
+        self._embedder = embedder
+        self.embedding_model = embedding_model or (getattr(embedder, "model", "") if embedder else "")
 
     # -- 持久化 --------------------------------------------------------
 
@@ -148,6 +261,105 @@ class KnowledgeBase:
         tmp = self.index_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         tmp.replace(self.index_path)
+
+    # -- 向量 sidecar --------------------------------------------------
+
+    def _load_vectors(self) -> dict[str, Any]:
+        empty: dict[str, Any] = {"model": self.embedding_model, "vectors": {}}
+        if not self.vectors_path.is_file():
+            return empty
+        try:
+            data = json.loads(self.vectors_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return empty
+        if not isinstance(data, dict):
+            return empty
+        raw = data.get("vectors")
+        if not isinstance(raw, dict):
+            return empty
+        model = str(data.get("model") or "")
+        # 换了 embedding 模型后旧向量不可比较，整份作废，等下一次回填。
+        if self.embedding_model and model and model != self.embedding_model:
+            return empty
+        return {"model": model or self.embedding_model, "vectors": raw}
+
+    def _save_vectors(self, data: dict[str, Any]) -> None:
+        tmp = self.vectors_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(self.vectors_path)
+
+    def _embed(self, texts: list[str]) -> list[list[float]] | None:
+        if not self._embedder or not texts:
+            return None
+        try:
+            vecs = self._embedder(texts)
+        except Exception:  # noqa: BLE001 — 调用方按“向量不可用”处理
+            logger.warning("knowledge embedder raised", exc_info=True)
+            return None
+        if vecs is None or len(vecs) != len(texts):
+            return None
+        out: list[list[float]] = []
+        for vec in vecs:
+            try:
+                if not vec:
+                    return None
+                out.append([float(x) for x in vec])
+            except (TypeError, ValueError):
+                return None
+        return out
+
+    def ensure_embeddings(self) -> int:
+        """给已有分块补向量；返回本次新写入的条数。
+
+        旧索引升级后第一次检索会调用一次；embedding 不可用时立即停，不循环重试。
+        新导入文档在 ``add_file`` 里已经算过，不会重复请求。
+        """
+        if not self._embedder:
+            return 0
+        data = self._load()
+        chunks = data.get("chunks") or []
+        vectors = dict(self._load_vectors().get("vectors") or {})
+        dim = 0
+        for vec in vectors.values():
+            if isinstance(vec, list) and vec:
+                dim = len(vec)
+                break
+        missing: list[tuple[str, str]] = []
+        for c in chunks:
+            key = f"{c.get('doc_name')}:{c.get('index')}"
+            vec = vectors.get(key)
+            if isinstance(vec, list) and vec:
+                continue
+            text = str(c.get("text") or "")
+            if text:
+                missing.append((key, text))
+        added = 0
+        for start in range(0, len(missing), EMBED_BATCH):
+            batch = missing[start : start + EMBED_BATCH]
+            vecs = self._embed([text for _, text in batch])
+            if vecs is None:
+                break
+            for (key, _), vec in zip(batch, vecs):
+                if not vec:
+                    continue
+                if dim and len(vec) != dim:
+                    continue
+                if not dim:
+                    dim = len(vec)
+                vectors[key] = vec
+                added += 1
+            # 每批落盘一次：中途断网时已算好的不丢，下次只补缺口。
+            if added:
+                self._save_vectors({"model": self.embedding_model, "vectors": vectors})
+        return added
+
+    def _drop_doc_vectors(self, doc_name: str) -> None:
+        vectors_data = self._load_vectors()
+        vectors = dict(vectors_data.get("vectors") or {})
+        prefix = f"{doc_name}:"
+        kept = {k: v for k, v in vectors.items() if not k.startswith(prefix)}
+        if len(kept) != len(vectors):
+            self._save_vectors({"model": self.embedding_model, "vectors": kept})
 
     # -- 写 ------------------------------------------------------------
 
@@ -184,16 +396,32 @@ class KnowledgeBase:
         )
         data["docs"].append(meta.__dict__)
         self._save(data)
+        # 同名文档重加时旧向量必须失效；embedding 失败就留空，检索仍走 BM25。
+        self._drop_doc_vectors(name)
+        if self._embedder:
+            vecs = self._embed(pieces)
+            if vecs is not None:
+                vectors_data = self._load_vectors()
+                vectors = dict(vectors_data.get("vectors") or {})
+                for i, vec in enumerate(vecs):
+                    vectors[f"{name}:{i}"] = vec
+                self._save_vectors({"model": self.embedding_model, "vectors": vectors})
         return meta
 
     def remove(self, doc_id: str) -> bool:
         data = self._load()
         before = len(data["docs"])
+        doc_name = next(
+            (str(d.get("name") or "") for d in data["docs"] if d.get("id") == doc_id),
+            "",
+        )
         data["docs"] = [d for d in data["docs"] if d.get("id") != doc_id]
         data["chunks"] = [c for c in data["chunks"] if c.get("doc_id") != doc_id]
         if len(data["docs"]) == before:
             return False
         self._save(data)
+        if doc_name:
+            self._drop_doc_vectors(doc_name)
         return True
 
     # -- 读 ------------------------------------------------------------
@@ -233,12 +461,14 @@ class KnowledgeBase:
         q_set = set(q_tokens)
 
         n_docs = max(1, len(chunks))
+        avg_len = sum(len(x.get("tokens") or []) for x in chunks) / n_docs
         df: dict[str, int] = {}
         for c in chunks:
             for t in set(c.get("tokens") or []):
                 df[t] = df.get(t, 0) + 1
 
-        scored: list[tuple[float, dict[str, Any]]] = []
+        # 先算 BM25：即使向量不可用，这条路径也必须保持原有排序。
+        bm25_scores: list[tuple[float, dict[str, Any]]] = []
         for c in chunks:
             toks: list[str] = c.get("tokens") or []
             if not toks:
@@ -246,7 +476,6 @@ class KnowledgeBase:
             counts: dict[str, int] = {}
             for t in toks:
                 counts[t] = counts.get(t, 0) + 1
-            avg_len = sum(len(x.get("tokens") or []) for x in chunks) / n_docs
             k1, b = 1.2, 0.75
             score = 0.0
             for t in q_set:
@@ -258,8 +487,29 @@ class KnowledgeBase:
             # 完整短语命中额外加权：搜 "鉴权流程" 时含原词的块应该压过只含两字的块。
             if q.lower() in (c.get("text") or "").lower():
                 score += 3.0
-            if score > 0:
-                scored.append((score, c))
+            bm25_scores.append((score, c))
+
+        q_vec: list[float] | None = None
+        vector_data: dict[str, Any] = {}
+        if self._embedder:
+            vector_data = self._load_vectors()
+            if vector_data.get("vectors"):
+                vecs = self._embed([q])
+                if vecs:
+                    q_vec = vecs[0]
+
+        if q_vec and vector_data.get("vectors"):
+            scored: list[tuple[float, dict[str, Any]]] = []
+            max_bm25 = max((s for s, _ in bm25_scores), default=0.0) or 1.0
+            for bm25, c in bm25_scores:
+                key = f"{c.get('doc_name')}:{c.get('index')}"
+                vec = vector_data["vectors"].get(key)
+                vscore = _cosine(q_vec, vec) if isinstance(vec, list) and vec else 0.0
+                score = BM25_WEIGHT * (bm25 / max_bm25) + VECTOR_WEIGHT * vscore
+                if score > 0:
+                    scored.append((score, c))
+        else:
+            scored = [(s, c) for s, c in bm25_scores if s > 0]
 
         scored.sort(key=lambda x: x[0], reverse=True)
         return [

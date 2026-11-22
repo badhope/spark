@@ -7,9 +7,10 @@
 
 The server listens on `127.0.0.1` only by default (`spark web --host 0.0.0.0` opts into LAN exposure at your own risk).
 
-- Auth lives in `routes.py` (`_guard` / `_authorized`); non-loopback callers must present the control token.
-- The token is generated at startup (`SparkWebState.control_token`) and is only available on the console object; it is never logged.
+- Auth lives in `routes.py` (`_guard` / `_authorized`); non-loopback callers must present the control token or a paired device token.
+- The control token is generated at startup (`SparkWebState.control_token`) and is only available on the console object; it is never logged.
 - Loopback requests (127.0.0.1 / ::1 / localhost) need no token; everything else gets `401` unless the `X-Spark-Token` header matches.
+- Device tokens are read/run only by default: chat, approvals, cancel, sessions, files/diffs, queue, push subscribe and presence heartbeat. Settings, plugins, PTY, pairing administration and the global audit trail stay local-control only unless the local machine grants a one-shot 30-minute `device_admin` scope for non-shell settings and plugin toggles (see `docs/en/REMOTE.md`).
 - Extra guards: non-local Host header → `403`; a cross-origin Origin header → `403` (CSRF); POST bodies must be `application/json` or `415`.
 
 ## Static files
@@ -29,6 +30,7 @@ The server listens on `127.0.0.1` only by default (`spark web --host 0.0.0.0` op
 | `GET` | `/api/agents_md` | Reads the AGENTS.md inside the workdir |
 | `GET` | `/api/memory` | Long-term memory: `items`, `search?q=` hits with score, `stats` |
 | `GET` | `/api/sessions` | Sessions for the current workdir (latest 50) + `current` id |
+| `GET` | `/api/session/lease` | Current session lease: `caller` / `lease.owner` / `expires_in`; readable by devices |
 | `GET` | `/api/checkpoints` | Checkpoint list for the current session |
 | `GET` | `/api/history` | Message history of the current session (images as base64 data URIs) |
 
@@ -39,10 +41,12 @@ The server listens on `127.0.0.1` only by default (`spark web --host 0.0.0.0` op
 | `POST` | `/api/chat/stream` | `{prompt, images?}` | Streaming chat over SSE. Events: `text_delta` / `tool` (call + result) / `approval` (with diff) / `turn_end` / `turn_error` / `done`; heartbeat `: ping` |
 | `POST` | `/api/chat` | `{prompt}` | Non-streaming chat; returns the full event array (debugging) |
 | `POST` | `/api/cancel` | — | Cancel the running turn and pending approval |
-| `POST` | `/api/approval` | `{decision}` | `allow` / `allow_always` / `deny` |
+| `POST` | `/api/approval` | `{decision}` | `allow` / `allow_always` / `deny`; lease holder or local only |
+| `POST` | `/api/session/lease` | `{action, session_id?, takeover?}` | `status` / `acquire` / `renew` / `release` / `takeover`; others get `409 lease_held` |
 | `POST` | `/api/models/save` | `{name, base_url, model, provider, api_key, id?}` | Create or update a model profile |
 | `POST` | `/api/models/delete` | `{id}` | Delete a profile; clearing the active one resets `active_profile_id` |
 | `POST` | `/api/models/activate` | `{id}` | Activate a profile and rebuild the AgentLoop; `409` while busy |
+| `POST` | `/api/demo` | `{demo: true/false}` | Enter/exit Mock demo mode in one click; saves the live provider as the `__last_real__` profile before entering and restores it on exit; `409` when no live profile exists, `400` for non-boolean input, `409` while busy |
 | `POST` | `/api/agents_md` | `{content}` | Write the AGENTS.md inside the workdir (filename validated) |
 | `POST` | `/api/memory` | `{action}` | `add` (content/type/importance) / `delete` (id) / `optimize` |
 | `POST` | `/api/sessions/new` | — | Start a new session |
@@ -53,6 +57,25 @@ The server listens on `127.0.0.1` only by default (`spark web --host 0.0.0.0` op
 | `POST` | `/api/test` | `{base_url, model, api_key?}` | Probe the model endpoint (refuses to send the stored credential to a different host) |
 
 Unknown paths return `404`; bodies above 32 MiB return `413`; malformed JSON returns `400`.
+
+## Remote-control endpoints
+
+| Method | Path | Body | Description |
+| --- | --- | --- | --- |
+| `GET` | `/api/remote/status` | — | Remote entry mode (`local` / `lan` / `public`), public origin, temporary LAN URL and paired-device count; local control only |
+| `GET` | `/api/pair/devices` | — | Paired devices, including `online` / `last_path` / `last_session_id` / `scope` / `admin_expires_in` / `admin_used`; local control only, never tokens |
+| `GET` | `/api/remote/audit?limit=` | — | Remote-write audit trail; local control only, default 50 / max 500, no prompts, file bodies or tokens |
+| `GET` | `/api/push/status` | — | Web Push status: `available` / `public_key` / `subscriptions` / `devices` |
+| `POST` | `/api/pair/code` | `{}` | Mint a 5-minute one-time pairing code; local control only |
+| `POST` | `/api/pair/claim` | `{code, name}` | Exchange the code for a 7-day device token; the only unauthenticated mutation, Host/Origin still checked |
+| `POST` | `/api/pair/revoke` | `{device_id}` | Revoke one device token; local control only |
+| `POST` | `/api/remote/link` | `{mode?}` | Mint a one-time QR/link; `auto` prefers public, otherwise opens the LAN listener on demand; local control only |
+| `POST` | `/api/remote/stop` | `{}` | Revoke all devices, clear codes and stop the LAN listener; local control only |
+| `POST` | `/api/remote/admin` | `{action, device_id}` | Local-only grant/revoke of the one-shot 30-minute `device_admin` scope; grant, expiry and revoke are audited |
+| `POST` | `/api/push/subscribe` | `{subscription, events?}` | Register a browser Push subscription; `events` defaults to `["approval"]`; device tokens allowed |
+| `POST` | `/api/push/unsubscribe` | `{endpoint}` | Remove a Push subscription; device tokens allowed |
+| `POST` | `/api/push/test` | `{}` | Send a test notification to local subscriptions; local control only |
+| `POST` | `/api/presence/heartbeat` | `{}` | Refresh device presence; requires a device token and returns public device info |
 
 ## `/api/settings` field contract
 

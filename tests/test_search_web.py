@@ -28,6 +28,27 @@ def test_grep_finds_matches_with_skip(sandbox: WorkdirSandbox) -> None:
     assert not any("node_modules" in r for r in results)
 
 
+def test_glob_and_grep_skip_protected_paths(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "config").write_text("remote=secret")
+    (tmp_path / ".spark").mkdir()
+    (tmp_path / ".spark" / "settings.yaml").write_text("token=secret")
+    (tmp_path / ".env").write_text("API_KEY=secret")
+    (tmp_path / "visible.txt").write_text("ok")
+
+    cfg = SparkConfig()
+    cfg.agent.protected_paths = [".git", ".spark", ".env"]
+    box = WorkdirSandbox(tmp_path, cfg)
+
+    globbed = search.glob_tool(box, search.GlobArgs(pattern="**/*"))
+    assert globbed.ok
+    assert globbed.payload["files"] == ["visible.txt"]
+
+    grepped = search.grep_tool(box, search.GrepArgs(pattern="secret", path="."))
+    assert grepped.ok
+    assert grepped.payload["results"] == []
+
+
 def test_grep_glob_filter(sandbox: WorkdirSandbox) -> None:
     result = search.grep_tool(sandbox, search.GrepArgs(pattern="needle", glob="*.py"))
     results = result.payload["results"]
@@ -102,25 +123,7 @@ def test_fetch_rejects_non_http() -> None:
         web.fetch_page("file:///etc/passwd", 1000)
 
 
-def test_search_web_prefers_ddgs(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        web,
-        "ddgs_search",
-        lambda query, max_results: [
-            {"title": "ddgs", "url": "https://ddgs.example", "snippet": "s"}
-        ],
-    )
-
-    def _boom(query, max_results):
-        raise AssertionError("Bing must not be called when ddgs returns results")
-
-    monkeypatch.setattr(web, "bing_search", _boom)
-    results = web.search_web("q", 1)
-    assert results[0]["title"] == "ddgs"
-
-
-def test_search_web_falls_back_to_bing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(web, "ddgs_search", lambda query, max_results: None)
+def test_search_web_prefers_bing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         web,
         "bing_search",
@@ -128,8 +131,26 @@ def test_search_web_falls_back_to_bing(monkeypatch: pytest.MonkeyPatch) -> None:
             {"title": "bing", "url": "https://bing.example", "snippet": "s"}
         ],
     )
+
+    def _boom(query, max_results):
+        raise AssertionError("ddgs must not be called when Bing returns results")
+
+    monkeypatch.setattr(web, "ddgs_search", _boom)
     results = web.search_web("q", 1)
     assert results[0]["title"] == "bing"
+
+
+def test_search_web_falls_back_to_ddgs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(web, "bing_search", lambda query, max_results: [])
+    monkeypatch.setattr(
+        web,
+        "ddgs_search",
+        lambda query, max_results: [
+            {"title": "ddgs", "url": "https://ddgs.example", "snippet": "s"}
+        ],
+    )
+    results = web.search_web("q", 1)
+    assert results[0]["title"] == "ddgs"
 
 
 def test_registry_schemas_include_new_tools() -> None:

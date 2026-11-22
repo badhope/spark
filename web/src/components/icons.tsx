@@ -23,6 +23,27 @@ function base({ size = 16, ...rest }: P, children: ReactNode) {
 }
 
 export const IconPlus = (p: P) => base(p, <path d="M12 5v14M5 12h14" />)
+export const IconHome = (p: P) =>
+  base(p, (
+    <>
+      <path d="m3 10 9-7 9 7" />
+      <path d="M5 9v11h14V9" />
+    </>
+  ))
+export const IconChat = (p: P) =>
+  base(p, (
+    <>
+      <path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8Z" />
+      <path d="M8 11h8M8 15h5" />
+    </>
+  ))
+export const IconMic = (p: P) =>
+  base(p, (
+    <>
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8" />
+    </>
+  ))
 export const IconPencil = (p: P) =>
   base(p, (
     <>
@@ -219,6 +240,20 @@ export const IconGlobe = (p: P) =>
     <>
       <circle cx="12" cy="12" r="9" />
       <path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18" />
+    </>
+  ))
+export const IconSmartphone = (p: P) =>
+  base(p, (
+    <>
+      <rect x="6.5" y="2" width="11" height="20" rx="2.2" />
+      <path d="M10 5h4M11 19h2" />
+    </>
+  ))
+export const IconBell = (p: P) =>
+  base(p, (
+    <>
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 10h18c0-3-3-3-3-10" />
+      <path d="M10 21h4" />
     </>
   ))
 export const IconTerminal = (p: P) =>

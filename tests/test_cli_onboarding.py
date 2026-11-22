@@ -145,7 +145,7 @@ def test_doctor_warns_missing_key_with_action(
     result = runner.invoke(cli.app, ["doctor", "--config", str(cfg_path), "--no-probe"])
     assert result.exit_code == 0
     assert "spark init" in result.stdout
-    assert "演示模式" in result.stdout
+    assert "真实对话会被阻止" in result.stdout
 
 
 def test_doctor_warns_when_workdir_missing(
@@ -351,7 +351,7 @@ def test_profile_list_and_unknown_use(tmp_path, monkeypatch) -> None:
     assert r.exit_code != 0
 
 
-def test_exec_without_key_runs_in_demo_mode(tmp_path, monkeypatch) -> None:
+def test_exec_without_key_fails_honestly_instead_of_mock(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("SPARK_API_KEY", raising=False)
     cfg_path = tmp_path / "c.toml"
     cfg_path.write_text(
@@ -364,8 +364,9 @@ def test_exec_without_key_runs_in_demo_mode(tmp_path, monkeypatch) -> None:
         monkeypatch,
         tmp_path,
     )
-    assert r.exit_code == 0
-    assert "mock" in r.stdout.lower() or "演示" in r.stdout
+    assert r.exit_code != 0
+    assert "API Key" in (r.stdout + r.stderr) or "key" in (r.stdout + r.stderr).lower()
+    assert "mock" not in r.stdout.lower()
 
 
 def test_web_rejects_busy_port(tmp_path, monkeypatch) -> None:
@@ -460,15 +461,14 @@ def test_exec_json_streams_ndjson_and_final_line(tmp_path, monkeypatch) -> None:
         monkeypatch,
         tmp_path,
     )
-    assert r.exit_code == 0, r.stdout + (r.stderr or "")
+    assert r.exit_code != 0
     lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
     assert lines, "expected at least one NDJSON line"
     events = [json.loads(ln) for ln in lines]
     assert all(isinstance(e, dict) and "type" in e for e in events)
     types = [e["type"] for e in events]
-    assert "turn_end" in types
-    assert types[-1] == "final"
-    assert events[-1].get("text")
+    assert "turn_error" in types
+    assert "turn_end" not in types
 
 
 def test_exec_json_rejects_suggest_mode(tmp_path, monkeypatch) -> None:

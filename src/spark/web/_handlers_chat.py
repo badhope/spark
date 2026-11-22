@@ -18,6 +18,7 @@ from spark.providers.errors import classify_provider_error
 from spark.slash import handle_test, parse_slash
 from spark.web._httpbase import HandlerBase
 from spark.web._routing import _route_state
+from spark.web.lease import lease_reject
 from spark.web.sse import SSE_DISCONNECT_ERRORS, _SSESession
 from spark.web.state import _generate_session_meta_async
 from spark.web.utils import (
@@ -69,6 +70,15 @@ def _handle_chat(handler: HandlerBase, body: dict) -> None:
     runtime = state.current_runtime
     if runtime is None or runtime.loop is None:
         handler._json(500, {"error": "agent not ready"})
+        return
+    denied = lease_reject(
+        handler,
+        runtime,
+        acquire=True,
+        takeover=bool(body.get("takeover")),
+    )
+    if denied is not None:
+        handler._json(denied["status"], denied["body"])
         return
     attachments = prepare_attachments(state.workdir, runtime.session_id, attachments)
     slash = parse_slash(prompt)
@@ -534,6 +544,15 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
     if runtime is None or runtime.loop is None:
         handler._json(500, {"error": "agent not ready"})
         return
+    denied = lease_reject(
+        handler,
+        runtime,
+        acquire=True,
+        takeover=bool(body.get("takeover")),
+    )
+    if denied is not None:
+        handler._json(denied["status"], denied["body"])
+        return
     turn_session_id = runtime.session_id
     attachments = prepare_attachments(state.workdir, turn_session_id, attachments)
 
@@ -606,6 +625,22 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
             _clear_session_error(state, turn_session_id)
         elif event.type == "turn_error":
             _remember_turn_error(state, turn_session_id, event)
+        elif event.type == "approval_needed" and event.approval is not None:
+            # The phone is usually locked when an approval arrives; the SSE
+            # connection alone cannot wake it. This is best-effort and never
+            # blocks the turn.
+            push = getattr(state, "push", None)
+            if push is not None:
+                try:
+                    push.notify(
+                        "approval",
+                        "Spark 等待审批",
+                        event.approval.summary or "有一个工具调用需要你确认",
+                        url="/#approval",
+                        tag="spark-approval",
+                    )
+                except Exception:  # noqa: BLE001 - notification must not break the turn
+                    logger.debug("approval push skipped", exc_info=True)
         elif event.type == "tool_end" and event.tool_call:
             memory_collector["tools"].append(
                 f"{event.tool_call.name}: {_json.dumps(event.result.payload if event.result else {}, ensure_ascii=False)[:200]}"

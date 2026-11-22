@@ -27,7 +27,18 @@ class TurnControlMixin:
         from langgraph.types import interrupt
 
         verdicts: list[dict[str, Any]] = []
+        schemas = self.registry.schemas()
         for call in tool_calls:
+            invalid = self._validation_error(call, schemas=schemas)
+            if invalid is not None:
+                verdicts.append(
+                    {
+                        "action": "invalid",
+                        "reason": invalid.get("error", "invalid tool call"),
+                        "validation": invalid,
+                    }
+                )
+                continue
             verdict = self._classify_call(call)
             if verdict["action"] == "prompt":
                 # 审批 interrupt：挂起点（有 checkpointer 时位点落盘，A10）。

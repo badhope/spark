@@ -56,7 +56,7 @@ def _bundled_chromium_works() -> bool:
         return False
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
+            browser = playwright.chromium.launch(headless=True, args=_LAUNCH_ARGS)
             browser.close()
         return True
     except Exception:
@@ -74,17 +74,27 @@ def launch(playwright):
     """Launch the best available browser, preferring an installed real one."""
     override = os.environ.get("SPARK_UI_CHANNEL")
     if override:
-        return playwright.chromium.launch(channel=override, headless=True)
+        return playwright.chromium.launch(channel=override, headless=True, args=_LAUNCH_ARGS)
     if any(path.exists() for path in EDGE_PATHS):
-        return playwright.chromium.launch(channel="msedge", headless=True)
+        return playwright.chromium.launch(channel="msedge", headless=True, args=_LAUNCH_ARGS)
+    # Prefer Playwright's pinned Chromium when it is installed. The distro
+    # `/usr/local/bin/chromium` on this cloud host crashes its renderer as soon
+    # as the full settings modal mounts, while the pinned build stays alive.
+    try:
+        return playwright.chromium.launch(headless=True, args=_LAUNCH_ARGS)
+    except Exception:
+        pass
     for candidate in (Path("/usr/local/bin/chromium"), Path("/usr/local/bin/chromium-browser")):
         if candidate.exists():
-            return playwright.chromium.launch(executable_path=str(candidate), headless=True)
+            return playwright.chromium.launch(executable_path=str(candidate), headless=True, args=_LAUNCH_ARGS)
     if any(path.exists() for path in CHROME_PATHS):
-        return playwright.chromium.launch(channel="chrome", headless=True)
+        return playwright.chromium.launch(channel="chrome", headless=True, args=_LAUNCH_ARGS)
     if shutil.which("google-chrome"):
-        return playwright.chromium.launch(channel="chrome", headless=True)
-    return playwright.chromium.launch(headless=True)
+        return playwright.chromium.launch(channel="chrome", headless=True, args=_LAUNCH_ARGS)
+    return playwright.chromium.launch(headless=True, args=_LAUNCH_ARGS)
+
+
+_LAUNCH_ARGS = ["--disable-dev-shm-usage", "--disable-gpu"]
 
 
 SKIP_REASON = (

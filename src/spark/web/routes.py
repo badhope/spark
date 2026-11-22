@@ -21,11 +21,22 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from spark.web.session_stream import serve_session_events
 from spark.web.git_api import git_changes
+from spark.web.device_admin import admin_write_paths, explicitly_denied_path
 from spark.web.remote_api import (
     handle_pair_claim,
     handle_pair_code,
     handle_pair_devices,
     handle_pair_revoke,
+    handle_remote_link,
+    handle_remote_admin,
+    handle_remote_status,
+    handle_remote_stop,
+    handle_push_status,
+    handle_push_subscribe,
+    handle_push_unsubscribe,
+    handle_push_test,
+    handle_remote_audit,
+    handle_presence_heartbeat,
 )
 
 if TYPE_CHECKING:
@@ -50,6 +61,7 @@ from spark.web._handlers import (
     _handle_messages_truncate,
     _handle_local_models_activate,
     _handle_local_models_download,
+    _handle_demo_toggle,
     _handle_models_activate,
     _handle_models_delete,
     _handle_models_save,
@@ -66,6 +78,7 @@ from spark.web._handlers import (
     _handle_session_export,
     _handle_session_import,
     _handle_question_answer,
+    _handle_session_lease,
     _handle_sessions_delete,
     _handle_sessions_fork,
     _handle_sessions_new,
@@ -78,6 +91,12 @@ from spark.web._handlers import (
 )
 from spark.web._httpbase import HandlerBase
 from spark.web._routing import _route_state  # noqa: E402
+from spark.web.browser_api import (
+    handle_browser_action,
+    handle_browser_navigate,
+    handle_browser_shot,
+    handle_browser_state,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -248,8 +267,21 @@ def build_handler_class(html: str):
         def _is_loopback(self) -> bool:
             if self._is_relayed():
                 return False
+            if self._is_public_request():
+                return False
             host = self.client_address[0] if self.client_address else ""
             return host in {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
+
+        def _is_public_request(self) -> bool:
+            """Requests arriving through the configured public origin are remote.
+
+            A reverse proxy usually connects over loopback.  Without this check
+            that proxy hop would inherit the local control role and turn the
+            public URL into an unauthenticated admin surface.
+            """
+            state = _route_state(self)
+            manager = getattr(state, "remote_access", None)
+            return bool(manager is not None and manager.is_public_request(self))
 
         def _is_relayed(self) -> bool:
             """Mark requests forwarded by the outbound relay as remote.
@@ -284,6 +316,12 @@ def build_handler_class(html: str):
                 return False
             if parsed.username or parsed.password or parsed.path or parsed.params or parsed.query or parsed.fragment:
                 return False
+            state = _route_state(self)
+            manager = getattr(state, "remote_access", None)
+            if manager is not None and manager.is_public_host(hostname, port):
+                return True
+            if manager is not None and manager.is_lan_host(hostname, port):
+                return True
             service_port = self._service_port()
             if service_port is None:
                 return False
@@ -310,7 +348,6 @@ def build_handler_class(html: str):
             service_port = self._service_port()
             if (
                 service_port is None
-                or parsed.scheme != "http"
                 or parsed.username
                 or parsed.password
                 or parsed.path
@@ -318,6 +355,18 @@ def build_handler_class(html: str):
                 or parsed.query
                 or parsed.fragment
             ):
+                return False
+            state = _route_state(self)
+            manager = getattr(state, "remote_access", None)
+            if manager is not None and manager.is_public_origin(
+                parsed.scheme, host, port
+            ):
+                return True
+            if manager is not None and manager.is_lan_origin(
+                parsed.scheme, host, port
+            ):
+                return True
+            if parsed.scheme != "http":
                 return False
             if self._is_loopback():
                 return self._local_host(host) and (
@@ -332,17 +381,22 @@ def build_handler_class(html: str):
             return host.lower() == request_host and port == request_port
 
         def _auth_role(self) -> str | None:
-            """Return the caller role: control (local) or device."""
-            if self._server_is_loopback() and not self._is_relayed():
+            """Return control (local), device, or the temporary device_admin."""
+            public = self._is_public_request()
+            if self._server_is_loopback() and not self._is_relayed() and not public:
                 return "control"
             supplied = self.headers.get("X-Spark-Token") or ""
             state = _route_state(self)
             role = state.authorize_token(supplied) if supplied else None
-            if self._is_relayed():
-                # A relayed caller must use a paired-device token. The
-                # break-glass control token is local-only even though the relay
-                # agent reaches the Web server over loopback.
-                return "device" if role == "device" else None
+            if role == "device":
+                device = state.pairing.device_for_token(supplied)
+                if device is not None and device.get("scope") == "device_admin":
+                    role = "device_admin"
+            if self._is_relayed() or public:
+                # A relayed/public caller must use a paired-device token. The
+                # break-glass control token is local-only even when a reverse
+                # proxy reaches the Web server over loopback.
+                return role if role in {"device", "device_admin"} else None
             return role
 
         def _authorized(self) -> bool:
@@ -362,13 +416,23 @@ def build_handler_class(html: str):
                 "/api/approval",
                 "/api/question/answer",
                 "/api/cancel",
+                "/api/browser/navigate",
+                "/api/browser/action",
                 "/api/sessions/new",
                 "/api/sessions/switch",
                 "/api/sessions/rename",
                 "/api/sessions/fork",
                 "/api/queue",
+                "/api/session/lease",
+                "/api/push/subscribe",
+                "/api/push/unsubscribe",
+                "/api/presence/heartbeat",
                 "/api/debug/client_log",
             }
+
+        def _device_admin_may_write(self, path: str) -> bool:
+            """device_admin may change non-shell settings and plugin toggles."""
+            return self._device_may_write(path) or admin_write_paths(path)
 
         def _guard(self, path: str) -> bool:
             if not self._host_is_local():
@@ -391,23 +455,63 @@ def build_handler_class(html: str):
                     },
                 )
                 return True
-            if role == "device":
-                if (
-                    path.startswith("/api/pty/")
-                    or path.startswith("/api/pair/")
-                    or (path.startswith("/api/debug") and path != "/api/debug/client_log")
-                ):
-                    self._json(403, {"error": "device token cannot use this endpoint"})
-                    return True
-                if self.command not in {"GET", "HEAD", "OPTIONS"} and not self._device_may_write(path):
+            if role in {"device", "device_admin"}:
+                if explicitly_denied_path(path):
                     self._json(
                         403,
                         {
-                            "error": "device token is read/run only",
-                            "hint": "use the local control token to change settings, plugins, or shell",
+                            "error": "this endpoint is not available to remote devices",
+                            "code": "remote_path_denied",
                         },
                     )
                     return True
+                mutating = self.command not in {"GET", "HEAD", "OPTIONS"}
+                if role == "device_admin":
+                    allowed = self._device_admin_may_write(path)
+                    hint = (
+                        "device_admin can change non-shell settings/plugins; "
+                        "shell, PTY and remote-link endpoints stay local-only"
+                    )
+                else:
+                    allowed = self._device_may_write(path)
+                    hint = (
+                        "use the local control token, or a 30-minute device_admin "
+                        "scope from the remote panel"
+                    )
+                if mutating and not allowed:
+                    self._json(
+                        403,
+                        {
+                            "error": "device token cannot change this endpoint",
+                            "hint": hint,
+                        },
+                    )
+                    return True
+                state = _route_state(self)
+                token = self.headers.get("X-Spark-Token") or ""
+                device = state.pairing.touch(
+                    token,
+                    path=path,
+                    session_id=state.session_id,
+                    user_agent=self.headers.get("User-Agent") or "",
+                )
+                if (
+                    self.command not in {"GET", "HEAD", "OPTIONS"}
+                    and device is not None
+                    and path != "/api/presence/heartbeat"
+                ):
+                    audit = getattr(state, "audit", None)
+                    if audit is not None:
+                        audit.record(
+                            str(device.get("id") or ""),
+                            str(device.get("name") or "remote device"),
+                            path.removeprefix("/api/").replace("/", "."),
+                            detail=(
+                                f"{self.command} {path} · session {state.session_id or '-'}"
+                                f" · scope {role}"
+                            ),
+                            source="device",
+                        )
             return False
 
         def _guard_mutation(self, path: str) -> bool:
@@ -515,6 +619,9 @@ def build_handler_class(html: str):
                     self._json(404, {"error": "unknown session"})
                     return
                 self._json(200, state.status(sid or None))
+                return
+            if path == "/api/session/lease":
+                _handle_session_lease(self, {})
                 return
             if path == "/api/diagnostics":
                 _handle_diagnostics(self, {})
@@ -827,6 +934,15 @@ def build_handler_class(html: str):
             if path == "/api/pair/devices":
                 handle_pair_devices(self, {})
                 return
+            if path == "/api/remote/status":
+                handle_remote_status(self, {})
+                return
+            if path == "/api/push/status":
+                handle_push_status(self, {})
+                return
+            if path == "/api/remote/audit":
+                handle_remote_audit(self, {})
+                return
             if path == "/api/queue":
                 state = _route_state(self)
                 queue = getattr(state, "queue", None)
@@ -844,6 +960,12 @@ def build_handler_class(html: str):
                 query = parse_qs(urlparse(self.path).query)
                 rel = (query.get("path", [""])[0] or "").strip()
                 self._json(200, _fs_read(str(state.workdir), rel, state.sandbox, for_ui=True))
+                return
+            if path == "/api/browser/state":
+                handle_browser_state(self)
+                return
+            if path == "/api/browser/shot":
+                handle_browser_shot(self)
                 return
             if path == "/api/browse":
                 query = parse_qs(urlparse(self.path).query)
@@ -919,6 +1041,7 @@ _POST_HANDLERS: dict[str, Any] = {
     "/api/models/save": _handle_models_save,
     "/api/models/delete": _handle_models_delete,
     "/api/models/activate": _handle_models_activate,
+    "/api/demo": _handle_demo_toggle,
     "/api/debug/client_log": handle_debug_client_log,
     "/api/automations": _handle_automations,
     "/api/queue": _handle_queue,
@@ -931,6 +1054,7 @@ _POST_HANDLERS: dict[str, Any] = {
     "/api/agents_md": _handle_agents_md,
     "/api/memory": _handle_memory,
     "/api/cancel": _handle_cancel,
+    "/api/session/lease": _handle_session_lease,
     "/api/checkpoints/rollback": _handle_checkpoints_rollback,
     "/api/messages/truncate": _handle_messages_truncate,
     "/api/messages/delete": _handle_messages_delete,
@@ -955,9 +1079,18 @@ _POST_HANDLERS: dict[str, Any] = {
     "/api/settings": _handle_settings,
     "/api/test": _handle_test,
     "/api/shell": _handle_shell,
+    "/api/browser/navigate": handle_browser_navigate,
+    "/api/browser/action": handle_browser_action,
     "/api/pair/code": handle_pair_code,
     "/api/pair/claim": handle_pair_claim,
     "/api/pair/revoke": handle_pair_revoke,
+    "/api/remote/link": handle_remote_link,
+    "/api/remote/admin": handle_remote_admin,
+    "/api/remote/stop": handle_remote_stop,
+    "/api/push/subscribe": handle_push_subscribe,
+    "/api/push/unsubscribe": handle_push_unsubscribe,
+    "/api/push/test": handle_push_test,
+    "/api/presence/heartbeat": handle_presence_heartbeat,
 }
 
 # P1-5：内置终端（PTY）写路径（读流是 GET /api/pty/stream，见 _handle_get）

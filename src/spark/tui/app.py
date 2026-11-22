@@ -290,6 +290,9 @@ class SparkApp(App):
         self.bridge = bridge
         self.initial_prompt = initial_prompt
         self.memory = memory
+        from spark.builtin_content import ensure_workspace_defaults
+
+        ensure_workspace_defaults(workdir)
         self.loop_engine = AgentLoop(
             workdir=workdir,
             cfg=cfg,

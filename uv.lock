@@ -2053,6 +2053,15 @@ wheels = [
 ]
 
 [[package]]
+name = "http-ece"
+version = "1.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7c/af/249d1576653b69c20b9ac30e284b63bd94af6a175d72d87813235caf2482/http_ece-1.2.1.tar.gz", hash = "sha256:8c6ab23116bbf6affda894acfd5f2ca0fb8facbcbb72121c11c75c33e7ce8cff", size = 8830, upload-time = "2024-08-08T00:10:47.301Z" }
+
+[[package]]
 name = "httpcore"
 version = "1.0.9"
 source = { registry = "https://pypi.org/simple" }
@@ -4839,6 +4848,17 @@ wheels = [
 ]
 
 [[package]]
+name = "py-vapid"
+version = "1.9.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6b/46/8843d8e00eb4fcece8e12c109ecf5b17a3d4cc9355dab23c2585cb51ed3c/py_vapid-1.9.6-py2.py3-none-any.whl", hash = "sha256:06d775951016f63f0d0d6dd8babd333fc2f831f0769fd5db2e1ec8cfbbccc70f", size = 19428, upload-time = "2026-10-14T19:13:04.404Z" },
+]
+
+[[package]]
 name = "pybase64"
 version = "1.5.1"
 source = { registry = "https://pypi.org/simple" }
@@ -5619,6 +5639,22 @@ wheels = [
 ]
 
 [[package]]
+name = "pywebpush"
+version = "2.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "cryptography" },
+    { name = "http-ece" },
+    { name = "py-vapid" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/54/ff/db9efe7454d329bfa6fe433e0f881eb9d28489fc4b8427ee2fbaedc5f42b/pywebpush-2.5.0.tar.gz", hash = "sha256:8260f8e42d70ed95a3bd00527ffcb43b5b3df8983a4a48b059fe29b06dc3d92c", size = 28565, upload-time = "2026-08-29T21:57:11.062Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/65/fc/32c8902ce796e8b21c229fa50478fd70e2be2fe7c3ac2259771cf1d5aa07/pywebpush-2.5.0-py3-none-any.whl", hash = "sha256:b5f5d45024223a04e73fe17f7a8e62540f35bbcc62b49e64d0a1080ff2dc26f2", size = 22520, upload-time = "2026-08-30T20:32:15.039Z" },
+]
+
+[[package]]
 name = "pywebview"
 version = "6.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -5814,6 +5850,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b4/37/c4cf124d820495c5549b3f606b1292949c9e2053467309a7e1baaf0c3784/pyzmq-27.3.0-pp312-pypy312_pp80-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:51e1358fabf41920d69cab170495b6e263680797ac5b80ace1b5cf1eb2d89642", size = 761485, upload-time = "2026-11-04T00:31:17.817Z" },
     { url = "https://files.pythonhosted.org/packages/a7/cf/caa0bd5f7a1b139b9240faf3b34586867656f682774364101572e8e84f80/pyzmq-27.3.0-pp312-pypy312_pp80-manylinux_2_28_i686.whl", hash = "sha256:cdb5efd4c23465573e928fb8429e40996ac0e1a4809365efe19e2753112b6ee1", size = 821382, upload-time = "2026-11-04T00:31:19.451Z" },
     { url = "https://files.pythonhosted.org/packages/8e/34/81fa1d9701024eb4f48949ba5f93da3a063ab997e0e0c9787ff37f11ecda/pyzmq-27.3.0-pp312-pypy312_pp80-win_amd64.whl", hash = "sha256:1b7ab96158dd50d7e6e430e6e4f744aaccee1df2e9d167ace9e7d2f3e3051712", size = 564187, upload-time = "2026-11-04T00:31:21.486Z" },
+]
+
+[[package]]
+name = "qrcode"
+version = "8.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8f/b2/7fc2931bfae0af02d5f53b174e9cf701adbb35f39d69c2af63d4a39f81a9/qrcode-8.2.tar.gz", hash = "sha256:35c3f2a4172b33136ab9f6b3ef1c00260dd2f66f858f24d88418a015f446506c", size = 43317, upload-time = "2025-05-01T15:44:24.726Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dd/b8/d2d6d731733f51684bbf76bf34dab3b70a9148e8f2cef2bb544fccec681a/qrcode-8.2-py3-none-any.whl", hash = "sha256:16e64e0716c14960108e85d853062c9e8bba5ca8252c0b4d0231b9df4060ff4f", size = 45986, upload-time = "2025-05-01T15:44:22.781Z" },
 ]
 
 [[package]]
@@ -6390,6 +6438,8 @@ dependencies = [
     { name = "packaging" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pywebpush" },
+    { name = "qrcode" },
     { name = "textual" },
     { name = "tomlkit" },
     { name = "tree-sitter" },
@@ -6535,9 +6585,11 @@ requires-dist = [
     { name = "python-docx", marker = "extra == 'office'", specifier = ">=1.1" },
     { name = "python-multipart", marker = "extra == 'enterprise'", specifier = ">=0.0.34" },
     { name = "python-pptx", marker = "extra == 'office'", specifier = ">=1.0" },
+    { name = "pywebpush", specifier = ">=2.5,<3.0" },
     { name = "pywebview", marker = "sys_platform != 'linux' and extra == 'desktop'", specifier = ">=5.0" },
     { name = "pywebview", extras = ["qt"], marker = "sys_platform == 'linux' and extra == 'desktop'", specifier = ">=5.0" },
     { name = "pywinpty", marker = "sys_platform == 'win32' and extra == 'pty'", specifier = ">=3.1" },
+    { name = "qrcode", specifier = ">=8.0,<9.0" },
     { name = "rapidocr-onnxruntime", marker = "extra == 'office'", specifier = ">=1.4" },
     { name = "reportlab", marker = "extra == 'office'", specifier = ">=4.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.17.5" },

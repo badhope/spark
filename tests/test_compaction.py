@@ -4,7 +4,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from spark.config import SparkConfig
-from spark.core.compact import STRUCTURED_SUMMARY_PROMPT, Compactor
+from spark.core.compact import (
+    STRUCTURED_SUMMARY_PROMPT,
+    Compactor,
+    missing_summary_sections,
+    normalize_structured_summary,
+    truncate_tool_output,
+)
 from spark.models import ChatDelta, ChatMessage
 from spark.providers.mock import MockProvider
 
@@ -61,6 +67,46 @@ def test_structured_summary_prompt_exists():
     assert "## Relevant Files" in STRUCTURED_SUMMARY_PROMPT
 
 
+def test_missing_summary_sections_detects_empty_and_absent():
+    partial = "## Objective\nShip AQ-02\n\n## Next Move\nRun tests"
+    assert missing_summary_sections(partial) == [
+        "Important Details",
+        "Work State",
+        "Relevant Files",
+    ]
+    full = (
+        "## Objective\nShip AQ-02\n"
+        "## Important Details\ncompact.py\n"
+        "## Work State\n- Active: tests\n"
+        "## Next Move\nRun tests\n"
+        "## Relevant Files\n- src/spark/core/compact.py"
+    )
+    assert missing_summary_sections(full) == []
+
+
+def test_normalize_structured_summary_preserves_preamble_and_fills_gaps():
+    text = "这是一段没有标题的摘要。\n\n## Work State\n- Active: coding"
+    normalized = normalize_structured_summary(text)
+    assert normalized.startswith("## Objective\n这是一段没有标题的摘要。")
+    assert "## Important Details\n(not provided)" in normalized
+    assert "## Work State\n- Active: coding" in normalized
+    assert missing_summary_sections(normalized) == []
+
+
+def test_truncate_tool_output_tiers():
+    assert truncate_tool_output("short") == "short"
+    mid = "M" * 5000
+    clipped = truncate_tool_output(mid)
+    assert len(clipped) < len(mid)
+    assert clipped.startswith("M" * 1200)
+    assert "chars omitted" in clipped
+    large = "L" * 20000
+    clipped_large = truncate_tool_output(large)
+    assert len(clipped_large) < len(large)
+    assert clipped_large.startswith("L" * 2000)
+    assert clipped_large.endswith("L" * 800)
+
+
 # ---------------------------------------------------------------------------
 # summarize — edge cases (no litellm needed)
 # ---------------------------------------------------------------------------
@@ -105,6 +151,65 @@ async def test_summarize_produces_output(tmp_path):
     assert result is not None
     assert len(result) > 0
     assert "## Objective" in result
+
+
+@pytest.mark.asyncio
+async def test_summarize_repairs_missing_sections(tmp_path):
+    partial = "## Objective\nOnly objective\n"
+    with _mock_litellm([partial]):
+        c = _compactor(tmp_path, [])
+        result = await c.summarize([ChatMessage(role="user", content="hello")])
+    assert result is not None
+    assert missing_summary_sections(result) == []
+    assert "## Work State\n(not provided)" in result
+    assert "## Relevant Files\n(not provided)" in result
+
+
+@pytest.mark.asyncio
+async def test_summarize_truncates_tool_output_in_transcript(tmp_path):
+    captured: dict[str, str] = {}
+
+    async def _fake_acompletion(*args, **kwargs):
+        captured["prompt"] = kwargs["messages"][0]["content"]
+        msg = AsyncMock()
+        msg.content = (
+            "## Objective\nTest\n## Important Details\nTool output\n"
+            "## Work State\n- Active: test\n## Next Move\nDone\n## Relevant Files\n(none)"
+        )
+        choice = AsyncMock()
+        choice.message = msg
+        resp = AsyncMock()
+        resp.choices = [choice]
+        return resp
+
+    huge = "HEAD" + "X" * 10000 + "TAIL"
+    with patch("spark.core.compact.litellm.acompletion", new=AsyncMock(side_effect=_fake_acompletion)):
+        c = _compactor(tmp_path, [])
+        msgs = [
+            ChatMessage(role="user", content="inspect"),
+            ChatMessage(role="tool", name="read_file", content=huge),
+        ]
+        await c.summarize(msgs)
+    assert "TOOL(read_file)" in captured["prompt"]
+    assert "tool output truncated" in captured["prompt"]
+    assert "X" * 10000 not in captured["prompt"]
+    assert "HEAD" in captured["prompt"]
+    assert "TAIL" in captured["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_custom_compact_prompt_is_not_forced_into_five_sections(tmp_path):
+    prompt_dir = tmp_path / ".spark" / "prompts"
+    prompt_dir.mkdir(parents=True)
+    (prompt_dir / "compact.md").write_text("Summarize as three bullets only.", encoding="utf-8")
+    cfg = SparkConfig()
+    cfg.provider.name = "mock"
+    cfg.provider.model = "mock"
+    provider = MockProvider(rounds=[[ChatDelta(type="text", text="stub")]])
+    c = Compactor(provider=provider, cfg=cfg, workdir=tmp_path)
+    with _mock_litellm(["- bullet one\n- bullet two"]):
+        result = await c.summarize([ChatMessage(role="user", content="hello")])
+    assert result == "- bullet one\n- bullet two"
 
 
 @pytest.mark.asyncio

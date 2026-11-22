@@ -5,6 +5,7 @@ import { DiffView } from "./DiffView"
 import { IconFileDiff } from "./icons"
 import { useUiStore } from "../store/uiStore"
 import { t } from "../i18n"
+import { useIsMobile } from "../useIsMobile"
 
 /** 工具审批卡片：底部操作审批，可展开查看工具真实参数 */
 export const ApprovalModal = memo(function ApprovalModal() {
@@ -12,6 +13,10 @@ export const ApprovalModal = memo(function ApprovalModal() {
   const busy = useSessionStore((s) => s.approvalBusy)
   const handleApproval = useSessionStore((s) => s.handleApproval)
   const lang = useUiStore((s) => s.lang)
+  const mobile = useIsMobile()
+  const mobileTab = useUiStore((s) => s.mobileTab)
+  const mobileApprovalOpen = useUiStore((s) => s.mobileApprovalOpen)
+  const hiddenOnMobileHome = mobile && mobileTab === "home" && !mobileApprovalOpen
   const [showArgs, setShowArgs] = useState(false)
   const denyRef = useRef<HTMLButtonElement>(null)
   const wasOpen = useRef(false)
@@ -23,6 +28,12 @@ export const ApprovalModal = memo(function ApprovalModal() {
   // dialog with aria-modal — claiming modality without inert-ing the rest was
   // a false affordance.
   useEffect(() => {
+    if (hiddenOnMobileHome) {
+      // The home card shows the summary and a review button; mounting the modal
+      // here would cover the dashboard that RC-03 requires on first paint.
+      wasOpen.current = false
+      return undefined
+    }
     if (approval && !wasOpen.current) {
       wasOpen.current = true
       const previous = document.activeElement as HTMLElement | null
@@ -34,14 +45,14 @@ export const ApprovalModal = memo(function ApprovalModal() {
     }
     if (!approval) wasOpen.current = false
     return undefined
-  }, [approval])
+  }, [approval, hiddenOnMobileHome])
 
   // A new approval must not inherit the previous one's expanded state.
   useEffect(() => {
     setShowArgs(false)
   }, [approval?.info?.id, approval?.tool?.id])
 
-  if (!approval) return null
+  if (!approval || hiddenOnMobileHome) return null
   const { info, tool } = approval
   const hasDiff = Boolean(info.diff && info.diff.trim())
   const diff = info.diff ? info.diff.replace(/^"|"$/g, "") : ""

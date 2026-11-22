@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from spark.models import ApprovalAction
 from spark.web._httpbase import HandlerBase
 from spark.web._routing import _route_state
+from spark.web.lease import caller_id, lease_reject
 from spark.web.utils import remove_session_attachments, split_attachments
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,10 @@ def _handle_cancel(handler: HandlerBase, body: dict) -> None:
     runtime = state.runtime_for(session_id) if session_id else None
     if requested and runtime is None:
         handler._json(404, {"error": "unknown session"})
+        return
+    denied = lease_reject(handler, runtime)
+    if denied is not None:
+        handler._json(denied["status"], denied["body"])
         return
     if runtime is not None and runtime.loop is not None:
         runtime.loop.cancel()
@@ -50,6 +55,10 @@ def _handle_approval(handler: HandlerBase, body: dict) -> None:
     runtime = state.runtime_for(session_id) if session_id else None
     if requested and runtime is None:
         handler._json(404, {"error": "unknown session"})
+        return
+    denied = lease_reject(handler, runtime)
+    if denied is not None:
+        handler._json(denied["status"], denied["body"])
         return
     approver = runtime.approver if runtime is not None else state.approver
     if approver is None:
@@ -538,6 +547,10 @@ def _handle_question_answer(handler: HandlerBase, body: dict) -> None:
     if requested and runtime is None:
         handler._json(404, {"error": "unknown session"})
         return
+    denied = lease_reject(handler, runtime)
+    if denied is not None:
+        handler._json(denied["status"], denied["body"])
+        return
     bridge = runtime.question_bridge if runtime is not None else state.question_bridge
     if bridge is None or not bridge.pending:
         handler._json(409, {"error": "no pending question"})
@@ -545,6 +558,97 @@ def _handle_question_answer(handler: HandlerBase, body: dict) -> None:
     answer = str(body.get("answer") or "")
     bridge.answer(answer)
     handler._json(200, {"ok": True, "session_id": session_id or None})
+
+
+def _handle_session_lease(handler: HandlerBase, body: dict) -> None:
+    """Read or mutate the RC-04 owner lease for a session."""
+    state = _route_state(handler)
+    session_id = str(body.get("session_id") or state.session_id or "").strip()
+    runtime = state.runtime_for(session_id) if session_id else None
+    if runtime is None:
+        handler._json(404, {"error": "unknown session"})
+        return
+    owner = caller_id(handler)
+    action = str(body.get("action") or "status").strip().lower()
+    if action not in {"status", "acquire", "renew", "release", "takeover"}:
+        handler._json(
+            400,
+            {"error": "action must be status, acquire, renew, release or takeover"},
+        )
+        return
+    if action == "status":
+        handler._json(
+            200,
+            {
+                "ok": True,
+                "caller": owner,
+                "session_id": runtime.session_id,
+                "lease": runtime.lease_snapshot(),
+            },
+        )
+        return
+    if not owner:
+        handler._json(403, {"error": "device identity is unavailable"})
+        return
+    if action == "renew":
+        if not runtime.lease_renew(owner):
+            handler._json(
+                409,
+                {
+                    "error": "lease is not held by this device",
+                    "code": "lease_not_held",
+                    "lease": runtime.lease_snapshot(),
+                },
+            )
+            return
+        handler._json(
+            200,
+            {"ok": True, "caller": owner, "lease": runtime.lease_snapshot()},
+        )
+        return
+    if action == "release":
+        runtime.lease_release(owner)
+        handler._json(
+            200,
+            {"ok": True, "caller": owner, "lease": runtime.lease_snapshot()},
+        )
+        return
+    result = runtime.lease_claim(owner, takeover=action == "takeover")
+    if not result.get("ok"):
+        handler._json(
+            409,
+            {
+                "error": "lease is held by another device",
+                "code": "lease_held",
+                "lease": result,
+            },
+        )
+        return
+    if action == "takeover" and result.get("took_over"):
+        audit = getattr(state, "audit", None)
+        if audit is not None:
+            device: dict[str, Any] = {}
+            pairing = getattr(state, "pairing", None)
+            if pairing is not None:
+                device = pairing.device_for_token(
+                    str(getattr(handler, "headers", {}).get("X-Spark-Token") or "")
+                ) or {}
+            audit.record(
+                str(device.get("id") or owner),
+                str(device.get("name") or owner),
+                "session.lease.takeover",
+                detail=f"session {runtime.session_id} · from {result.get('took_over')}",
+                source="device" if owner.startswith("dev:") else "local",
+            )
+    handler._json(
+        200,
+        {
+            "ok": True,
+            "caller": owner,
+            "session_id": runtime.session_id,
+            "lease": runtime.lease_snapshot(),
+        },
+    )
 
 
 def _handle_checkpoints_rollback(handler: HandlerBase, body: dict) -> None:

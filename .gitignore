@@ -80,3 +80,6 @@ npm-debug.log*
 # Enterprise compose runtime data / secrets
 /deploy/data/
 /deploy/.env
+
+# MkDocs local build output
+/site/

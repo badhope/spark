@@ -1,7 +1,7 @@
 # 竞品功能对比：spark vs Qoder / ZCode / opencode / Codex CLI
 
-> 调研日期：2026-10-14；**spark 侧复测 2026-10-23（第七轮）**（本轮逐项 grep 代码并实跑验证，
-> 见 `docs/reviews/2026-10-22-full-audit.md`）。竞品侧仍为公开文档/仓库声明。
+> 调研日期：2026-10-14；**spark 侧复测 2026-11-22（第八轮）：远程/PR/浏览器/快捷键/多语言增量校准，并完成 DOC-01 逐行核对——所有 ✅ 行均内联代码或测试落点；原“归档”确认只有删除、没有归档/恢复，已降为 ⚠️**（逐项 grep 代码并实跑验证，
+> 见 `docs/reviews/2026-10-22-full-audit.md` 与 `docs/reviews/2026-11-22-matrix-audit.md`）。竞品侧仍为公开文档/仓库声明。
 > 目的：给出 spark 与主流 AI 编程 agent 的功能差距矩阵，服务于后续路线规划。
 > 标注：✅ 已有 ｜ ⚠️ 部分/不完整 ｜ ❌ 缺失。
 >
@@ -28,19 +28,21 @@
 | 自动更新 | ✅ `spark update`（SHA256 + 原子替换 + 旧版备份）+ doctor 提示，可 `mode=off` | 内置 | 内置 | ✅ auto/notify 三态 | ✅ check_for_update_on_startup |
 | 卸载命令 | ✅ `spark uninstall`（清单 + 确认 + 家目录守卫） | 安装器 | — | ✅ `opencode uninstall` | — |
 
-**spark 缺口**：发布渠道与自动更新。建议 P1（EXE 用户体感关键）。
+**spark 缺口**：Windows 产物未 Authenticode 签名（SmartScreen 会拦），macOS 只有 `arm64 tar.gz`、无 `.app/.dmg`/公证；自动更新已有 SHA256 与旧版备份。建议 P1（EXE 用户体感关键），签名需要证书与 Apple 账号。
 
 ## 2. 认证 / 模型配置
 
 | 功能点 | spark | 竞品代表 |
 |---|---|---|
 | 登录方式 | 配置文件 + 环境变量 + `spark init` 向导 | Qoder/ZCode：账号登录（OAuth）；codex：Sign in with ChatGPT |
-| 多 provider 预设 | ✅ 12 个（5 家原生：Anthropic/OpenAI/Gemini/Azure/Bedrock；5 家国产；Ollama/Mock）+ 自定义 | Qoder 预设 9+；opencode models.dev 全目录 |
+| 多 provider 预设 | ✅ 12 个（5 家原生：Anthropic/OpenAI/Gemini/Azure/Bedrock；5 家国产；Ollama/Mock）+ 自定义（`providers/presets.py` / `tests/test_provider_presets.py`） | Qoder 预设 9+；opencode models.dev 全目录 |
+| 内置本地模型目录 | ✅ 5 个 GGUF（MiniCPM5-1B/2B、Qwen3.5-2B/4B、BotPsy-0.8B），双镜像直链、精确体积/SHA256、一键下载与启用（`local_models.py` / `tests/test_local_models.py`） | Qoder 需自配 Ollama；opencode 走 models.dev 目录但不代下权重 |
+| Mock 与真实模式分离 | ✅ 仅显式 Mock 为展示模式；缺 Key 返回 `UnavailableProvider` 并阻止回合；`/api/demo` 一键切换且保存/恢复真实档案 | 多数同类工具把 mock 当默认离线兜底，易与真实回复混淆 |
 | Prompt caching | ✅ Anthropic system + tools 稳定前缀 `cache_control`；命中/节省 token 可见 | Anthropic 原生缓存；opencode provider 能力 |
 | 模型路由 | ✅ `spark --tier capability\|cost\|offline`、`spark route`、Web `/api/routing/preview`；按任务类型/预算决策，可查降级链 | 多为手动选模型 |
 | 多模型档案切换 | ✅ `[[model_profiles]]` + Web 面板 | codex `--profile`；opencode agent 级 model |
 | 热键循环最近模型 | ✅ `Ctrl+Alt+M` 循环模型档案 | opencode `F2/Shift+F2`；codex `/model` 弹窗 |
-| 推理档（effort/variant） | ✅ effort 低/中/高（Web + 配置） | opencode `ctrl+t` variant 循环；codex `/model` 带 reasoning 档 |
+| 推理档（effort/variant） | ✅ effort 低/中/高（Web + 配置）（`config.py` + `providers/openai_compat.py` / `tests/test_provider_presets.py`） | opencode `ctrl+t` variant 循环；codex `/model` 带 reasoning 档 |
 | 连通性自检 | ✅ `spark test` + `doctor --probe` | 都有对应（`/status`、doctor） |
 | 小模型分工（标题/压缩） | ✅ `provider.small_model`：压缩摘要 + 会话标题/关键词 | opencode `small_model`；codex `review_model` |
 
@@ -65,49 +67,50 @@
 |---|---|---|
 | 新建/恢复/切换 | ✅ TUI ctrl+r、Web 侧栏、`spark resume` | 全都有 |
 | Fork | ✅ `POST /api/sessions/fork` + 顶栏按钮 + 侧栏入口 | codex `/fork`；opencode `--fork`；ZCode Edit History 分支 |
-| 分享链接 | ✅ 单文件 HTML 离线分享（零 JS、零外链、消息内容转义）；无云托管链接（与本地定位一致） | opencode `/share` → `opncd.ai/s/<id>` |
+| 分享链接 | ✅ 单文件 HTML 离线分享（零 JS、零外链、消息内容转义）；无云托管链接（与本地定位一致）（`web/_handlers_sessions.py` + `HeaderToolsMenu.tsx`） | opencode `/share` → `opncd.ai/s/<id>` |
 | 导出/导入 | ✅ 导出 md/JSON/HTML；✅ 导入 spark 导出 JSON（`POST /api/sessions/import`，仅恢复 user/assistant 文本） | opencode `/export`（md/JSON）；codex `/export`；codex `/import` 从 Claude Code 迁移 |
-| 归档 | ✅ Web 删除 | codex `/archive`；ZCode 自动归档候选（窗口可配） |
-| 重命名 | ✅ 自动标题 | codex `/rename`；opencode ctrl+r |
-| 会话内 token 用量 | ✅ ContextMeter | codex `/status`；ZCode Usage Stats 面板 |
-| 消息级撤销/回滚 | ✅ 时间轴 undo，可选连文件一并还原到该消息前的检查点 | ZCode Undo/Reapply（全有或全无）；Qoder `/rewind`（会话/文件分别恢复）；codex `thread/revert` |
+| 归档 | ⚠️ Web 仅删除会话，无归档/恢复（`Sidebar.tsx`） | codex `/archive`；ZCode 自动归档候选（窗口可配） |
+| 重命名 | ✅ 自动标题 + Web 手动改名（`Sidebar.tsx` / `web/_handlers_sessions.py`） | codex `/rename`；opencode ctrl+r |
+| 会话内 token 用量 | ✅ ContextMeter（`ContextMeter.tsx`） | codex `/status`；ZCode Usage Stats 面板 |
+| 消息级撤销/回滚 | ✅ 时间轴 undo，可选连文件一并还原到该消息前的检查点（`web/_handlers_sessions.py` / `tests/test_msg_ops.py`） | ZCode Undo/Reapply（全有或全无）；Qoder `/rewind`（会话/文件分别恢复）；codex `thread/revert` |
 | 侧聊/旁支 | ✅ `/side <问题>`：辅助模型一次性作答，不污染主对话历史 | codex `/side`(`/btw`)；ZCode Side Conversation；Qoder Side task |
 
 ## 5. 上下文 / 记忆 / 知识
 
 | 功能点 | spark | 竞品代表 |
 |---|---|---|
-| AGENTS.md | ✅ 项目级（可配文件名） | opencode 多级向上 + `~/.config` 全局；codex 逐级收集；ZCode 两源（全局+workspace） |
+| AGENTS.md | ✅ 项目级（可配文件名）（`core/context.py` / `tests/test_context.py`） | opencode 多级向上 + `~/.config` 全局；codex 逐级收集；ZCode 两源（全局+workspace） |
 | 全局规则文件 | ✅ `~/.agents/AGENTS.md`（+CLAUDE.md，与项目/子目录三级叠加） | opencode `~/.config/opencode/AGENTS.md`；ZCode `~/.zcode/AGENTS.md` |
 | Claude Code 兼容（CLAUDE.md/skills） | ⚠️ 声明式 subagent 读 `.claude/agents/*.md` | opencode `CLAUDE.md` 回退 + `.claude/skills`；ZCode 一键导入 + 预装 CC marketplace |
 | `@` 文件引用补全 | ✅ 输入框 `@` 列出工作区条目，方向键 + Tab/Enter | opencode `@` 模糊；codex `@` file-search；ZCode `@` 文件/文件夹 |
 | 外部目录/仓库引用 | ✅ `--add-dir` / `agent.extra_dirs` | opencode `references`（别名+description）；codex `--add-dir` |
-| 图片输入 | ✅ Web 粘贴/拖拽 | opencode 自动缩放/5MB 上限；codex 剪贴板截图 + `view_image` |
-| 自动压缩 | ✅ 85% 阈值 + 保留 8 条 | opencode 三态（auto/prune/reserved）；codex 双阈值 + pre/post_compact hooks |
+| 图片输入 | ✅ Web 粘贴/拖拽（`Composer.tsx` / `tests/test_web_attachments_feedback.py`） | opencode 自动缩放/5MB 上限；codex 剪贴板截图 + `view_image` |
+| 自动压缩 | ✅ 85% 阈值 + 保留 8 条；摘要走 opencode 5 段结构化格式并支持 prior-summary 合并（`core/compact.py` / `tests/test_compaction.py`） | opencode 三态（auto/prune/reserved）；codex 双阈值 + pre/post_compact hooks |
 | 压缩可编程干预 | ✅ `.spark/prompts/compact.md`（项目）→ `~/.spark/prompts/compact.md`（全局）覆盖，摘要+合并两路径 | opencode 插件可换压缩提示词；codex hooks |
-| 仓库地图/索引 | ✅ tree-sitter 符号地图（6000 字符） | opencode LSP 诊断；Qoder 云端向量索引（10 万文件）；ZCode Repo Wiki |
+| 仓库地图/索引 | ✅ tree-sitter 符号地图（6000 字符）（`repo_map.py` / `tests/test_p0_repo_map.py`） | opencode LSP 诊断；Qoder 云端向量索引（10 万文件）；ZCode Repo Wiki |
 | Repo Wiki（生成式知识文档） | ✅ `spark wiki` / 设置→代码文档：tree-sitter 结构事实 + 真实行号 + 增量缓存 + 引用校验（无 Mermaid，仅静态符号表；不做云端生成） | Qoder（含 Citation 开关，50 credits/仓）；ZCode（产物本地、带 file:line 溯源、Mermaid 图） |
-| 长期记忆 | ✅ 独立记忆库（embedding + auto_extract + Web 管理） | codex `/memories`（后台管线 + 合并）；ZCode Project Memory（默认关）；Qoder Auto-Memory |
-| 记忆可视化管理 UI | ✅ Web 记忆面板 | Qoder `/memory manage`；ZCode 无管理页（手改文件） |
+| 项目知识库（导入文档 RAG） | ✅ `knowledge.py`：md/txt/rst/json/yaml/csv/toml 导入；BM25 始终可用，开启 `memory.embedding_enabled` 后叠加向量混合召回；`vectors.json` sidecar、旧索引回填、embedding 失败降级；`tests/test_knowledge.py` 36 项 | 无完全同类；Qoder 云端代码库索引、ZCode Repo Wiki 都是代码索引，不是用户导入文档 RAG |
+| 长期记忆 | ✅ 独立记忆库（embedding + auto_extract + Web 管理）（`memory/store.py` / `tests/test_memory.py`） | codex `/memories`（后台管线 + 合并）；ZCode Project Memory（默认关）；Qoder Auto-Memory |
+| 记忆可视化管理 UI | ✅ Web 记忆面板（`MemorySection.tsx`） | Qoder `/memory manage`；ZCode 无管理页（手改文件） |
 
 ## 6. 工具集
 
 | 功能点 | spark | 竞品代表 |
 |---|---|---|
-| 读写/edit | ✅ 三种（整写/单处 SEARCH-REPLACE/aider 多块 + tree-sitter 语法门禁） | opencode edit/write/apply_patch；codex apply_patch（专用 crate + diff 审批） |
-| shell | ✅ 沙箱策略 + 超时/输出上限 | codex unified exec（可后台）；opencode bash |
-| 后台任务 | ✅ bg_start/output/kill/list（跨重启持久化） | codex `/ps` `/stop`；Qoder `/tasks` 面板 |
-| grep/glob | ✅ | opencode ripgrep 尊重 .gitignore + `.ignore`；codex file-search |
+| 读写/edit | ✅ 三种（整写/单处 SEARCH-REPLACE/aider 多块 + tree-sitter 语法门禁）（`tools/fs.py` + `edit/` / `tests/test_p1_02_searchreplace.py`） | opencode edit/write/apply_patch；codex apply_patch（专用 crate + diff 审批） |
+| shell | ✅ 沙箱策略 + 超时/输出上限（`tools/shell.py` / `tests/test_sandbox_policy.py`） | codex unified exec（可后台）；opencode bash |
+| 后台任务 | ✅ bg_start/output/kill/list（跨重启持久化）（`tools/bg.py` / `tests/test_git_bg_persist.py`） | codex `/ps` `/stop`；Qoder `/tasks` 面板 |
+| grep/glob | ✅（`tools/search.py` / `tests/test_tools.py`） | opencode ripgrep 尊重 .gitignore + `.ignore`；codex file-search |
 | **LSP 集成** | ✅ 9 个代码智能工具：definition/references/hover/symbols/diagnostics/rename/code action/affected_tests；LSP 优先，无服务器显式降级；编辑走沙箱+审批 | opencode 内建 40+ 语言 LSP（definition/references/hover/…） |
 | 代码格式化 | ✅ `agent.format_on_write`（ruff/prettier，默认关） | opencode 30+ formatter（写后自动，默认关） |
-| web 搜索/抓取 | ✅ Bing 搜索 + HTML→text | codex 原生 web_search + browser_use/computer_use 配置 |
-| 内置浏览器（agent 可驱动） | ❌ | ZCode built-in browser（点击/填表/截图/视口模拟/Chrome 数据导入）；Qoder Browser Agent |
-| Notebook | ✅ read + edit（cell 级） | — |
+| web 搜索/抓取 | ✅ Bing 搜索 + HTML→text（`tools/web.py` / `tests/test_search_web.py`） | codex 原生 web_search + browser_use/computer_use 配置 |
+| 内置浏览器（agent 可驱动） | ✅ 21 个 `browser_*`：Bing 默认首页/搜索、ref 快照、点击/填表/按键/悬停/下拉/滚动/历史/多标签/等待/截图/PDF/下载/视口/JS/文件上传/控制台/网络/对话框；iframe frame_index；侧栏实时画面 | ZCode built-in browser；Qoder Browser Agent |
+| Notebook | ✅ read + edit（cell 级）（`tools/notebook.py` / `tests/test_task_notebook.py`） | — |
 | Git 工具 | ✅ status/diff/log/branch/add/commit/worktree + run_tests（测试回灌闭环） | 多数靠 bash；codex `/diff` + `codex apply`；`--worktree` |
 | 任务即分支（绿测提交门控） | ✅ 已注册 `task_begin/task_step_commit/task_finish` | 无同类（独特能力） |
 | 用户交互（提问工具） | ✅ `ask_user` 工具 + 问答卡（无交互通道时优雅报错） | opencode `question`；codex `request_user_input` |
 | 子代理执行图（实时） | ✅ `主代理 → task → 子代理 → 工具 → 产出`，由 SSE 事件累积 | opencode 无（纯文本）；codex 无；ZCode 无 |
-| 会话导出 | ✅ Markdown / JSON + 命令面板下载 | opencode `/export`；codex `/export` |
+| 会话导出 | ✅ Markdown / JSON + 命令面板下载（`web/_handlers_sessions.py` + `CommandPalette.tsx` / `tests/test_content_handlers.py`） | opencode `/export`；codex `/export` |
 | 环境自愈 | ✅ 诊断 + 一键修复（目录/配置/运行时），`doctor --fix` | opencode/codex 仅报错 |
 | 数据备份 | ✅ `VACUUM INTO` 在线快照 + `doctor --backup` | 均无 |
 | 快捷键帮助面板 | ✅ `?` 打开 | codex `?`；opencode 无 |
@@ -118,15 +121,15 @@
 
 | 功能点 | spark | 竞品代表 |
 |---|---|---|
-| 审批档位 | ✅ 6 档（含 plan-only/approve-plan） | codex `-a on-request/never` + sandbox 双轴；opencode allow/ask/deny + `--auto`；Qoder 3 档；ZCode 4 档（Shift+Tab 循环） |
-| 审批弹窗粒度 | ✅ 允许/始终允许/拒绝（相同签名复用） | codex：命令前缀 / 文件集合两种粒度；ZCode：Allow/Always/Reject/Always Reject + 5 分钟倒计时（权限问题不受限） |
+| 审批档位 | ✅ 6 档（含 plan-only/approve-plan）（`config.py` + `policy.py` / `tests/test_policy.py`） | codex `-a on-request/never` + sandbox 双轴；opencode allow/ask/deny + `--auto`；Qoder 3 档；ZCode 4 档（Shift+Tab 循环） |
+| 审批弹窗粒度 | ✅ 允许/始终允许/拒绝（相同签名复用）（`policy.py:call_signature` + `core/tool_runner.py` / `tests/test_policy.py`） | codex：命令前缀 / 文件集合两种粒度；ZCode：Allow/Always/Reject/Always Reject + 5 分钟倒计时（权限问题不受限） |
 | 规则引擎 | ✅ `[[permissions]]` 通配 + 最后匹配生效 | opencode 13 键 pattern→动作；codex execpolicy `.rules` + `--ignore-rules` |
-| OS 级沙箱 | ✅ 三平台 v1：bwrap（Linux）+ Job Object（Windows：kill-on-close+内存上限）+ sandbox-exec（macOS：写面收敛+可断网）；payload 如实标注隔离类型 | codex 三平台（Seatbelt/Landlock/Windows 沙箱）+ 默认断网；Qoder/ZCode 为策略级 |
+| OS 级沙箱 | ✅ 三平台 v1：bwrap（Linux）+ Job Object（Windows：kill-on-close+内存上限）+ sandbox-exec（macOS：写面收敛+可断网）；payload 如实标注隔离类型（`tools/os_sandbox.py` + `sandbox.py` / `tests/test_os_sandbox.py`） | codex 三平台（Seatbelt/Landlock/Windows 沙箱）+ 默认断网；Qoder/ZCode 为策略级 |
 | 网络限制开关 | ✅ `agent.network_access`（bwrap 真隔离，其它平台如实降级） | codex `sandbox_workspace_write.network_access` |
 | AI 审 AI（自动审查） | ✅ `agent.auto_review`（独立调用审单次动作，block 即拒） | codex Guardian（自动审查 + `/approve` 放行 + OTLP 审计） |
-| 输出脱敏 | ✅ 三层（密钥/主目录/堆栈） | — |
-| 第三方输出防注入 | ✅ untrusted 围栏 | 无同等显式机制（ZCode 浏览器"页面文本不作指令"） |
-| Web 控制面保护 | ✅ loopback 默认 + X-Spark-Token（非本机启动时打印） | opencode `OPENCODE_SERVER_PASSWORD`；ZCode `--token` |
+| 输出脱敏 | ✅ 三层（密钥/主目录/堆栈）（`sanitize.py` / `tests/test_sanitize.py`） | — |
+| 第三方输出防注入 | ✅ untrusted 围栏（`tools/untrusted.py` / `tests/test_p0_untrusted_sandbox.py`） | 无同等显式机制（ZCode 浏览器"页面文本不作指令"） |
+| Web 控制面保护 | ✅ loopback 默认 + X-Spark-Token（非本机启动时打印）（`web/server.py` / `tests/test_web_security_hardening.py`） | opencode `OPENCODE_SERVER_PASSWORD`；ZCode `--token` |
 
 ## 8. 多 Agent / 协作
 
@@ -142,25 +145,25 @@
 
 | 功能点 | spark | 竞品代表 |
 |---|---|---|
-| 快照粒度 | ✅ 每轮（涉文件/命令后）tar.gz + baseline 增量 | opencode 基于 git snapshot；codex rollout + git apply |
-| 回滚范围 | ✅ 文件 + 对话截断 | opencode `/undo` `/redo`（可多次）；ZCode 全有或全无 + Reapply；Qoder 会话/文件分别 |
-| 非 git 目录回滚 | ✅ | — |
+| 快照粒度 | ✅ 每轮（涉文件/命令后）tar.gz + baseline 增量（`core/checkpoints.py` / `tests/test_checkpoints.py`） | opencode 基于 git snapshot；codex rollout + git apply |
+| 回滚范围 | ✅ 文件 + 对话截断（`core/checkpoints.py` / `tests/test_checkpoints.py`） | opencode `/undo` `/redo`（可多次）；ZCode 全有或全无 + Reapply；Qoder 会话/文件分别 |
+| 非 git 目录回滚 | ✅（`core/checkpoints.py` / `tests/test_checkpoints.py`） | — |
 
 ## 10. 自动化 / 通知 / 更新 / 其它
 
 | 功能点 | spark | 竞品代表 |
 |---|---|---|
 | 定时任务 | ✅ `automations.py`（cron + skipped 语义 + 停机补跑） | ZCode Automations（模板/聊天创建 + 四种频率 + skipped 语义）；Qoder `/crontab` |
-| 空闲算力队列 | ❌ | ZCode Idle-time task（免费跑、超时回队列续跑）—— 独特 |
-| 桌面通知/声音 | ✅ Web Notification（回合结束/等待审批，页面不可见时才发；设置可开） | opencode attention 声音包；codex notifications（osc9/bel）+ `/warnings` |
-| 主题 | ✅ Web light/dark/system × 5 套配色（正交）；TUI 固定 | opencode 10+ 主题 + 自定义 JSON；codex `/theme` + `$CODEX_HOME/themes` |
-| 快捷键重绑 | ❌ | codex `/keymap` 交互重绑；ZCode 自定义键位 |
+| 空闲算力队列 | ⚠️ | `task_queue.py` 在无会话忙碌时执行、持久暂停/恢复、失败重试 3 次；缺“免费额度 + 超时自动回队列续跑”语义 |
+| 桌面通知/声音 | ✅ Web Notification（回合结束/等待审批，页面不可见时才发；设置可开）（`notify.ts`） | opencode attention 声音包；codex notifications（osc9/bel）+ `/warnings` |
+| 主题 | ✅ Web light/dark/system × 5 套配色（正交）；TUI 固定（`theme.ts` + `index.css`） | opencode 10+ 主题 + 自定义 JSON；codex `/theme` + `$CODEX_HOME/themes` |
+| 快捷键重绑 | ✅（`shortcuts.ts` + 设置→快捷键） | `shortcuts.ts` + 设置→快捷键：7 个动作本地重绑、恢复默认 |
 | 状态栏定制 | ✅ `agent.status_items` 有序项（模型/接口/密钥/审批/访问/目录/会话） | codex `tui.status_line` 有序项；ZCode 命令中心 |
-| 通知/远程 | ❌ | ZCode 手机 Remote Control + 飞书/微信 Bot；Qoder Mobile |
-| IDE 集成 | ✅ VS Code 原生面板（0.15.2：选区/流式/内联 diff/诊断/跳转）+ ACP 一键接入 Zed / JetBrains 2025.3+ / Neovim CodeCompanion | opencode 自动装 VS Code 扩展 + ACP（Zed/JetBrains/neovim）；codex `/ide`；Qoder 本尊是 IDE |
-| Git PR 工作流 | ❌ | opencode `pr <num>` + GitHub Action（评论触发）；codex Cloud PR review |
-| 遥测 | ⚠️ otel.py（仅 provider span） | codex 全量 OTLP（log/trace/metrics + 审计导出） |
-| 多语言 UI | ⚠️ i18n 词典齐全但仅少量组件接入（见待办） | ZCode/Qoder 多语言完整 |
+| 通知/远程 | ✅（`web/remote.py` + `web/web_push.py` + `MobileShell.tsx` / `tests/test_remote_access.py`） | 扫码配对（一次性链接/7 天设备令牌）、LAN/公网入口、Web Push 审批、在线心跳与仅本机审计、390×844 手机首页/固定导航/两步审批/语音输入；缺官方托管 relay |
+| IDE 集成 | ✅ VS Code 原生面板（0.15.2：选区/流式/内联 diff/诊断/跳转）+ ACP 一键接入 Zed / JetBrains 2025.3+ / Neovim CodeCompanion（`ide.py` + `vscode-spark/` / `tests/test_ide_install.py`） | opencode 自动装 VS Code 扩展 + ACP（Zed/JetBrains/neovim）；codex `/ide`；Qoder 本尊是 IDE |
+| Git PR 工作流 | ✅（`pr.py` + `tools/pr_tools.py` / `tests/test_pr.py`） | `pr_context` / `pr_view` / `pr_diff` / `pr_checks` / `pr_review`，`spark pr publish --confirm` 才写评论；GitHub / GitCode / Gitee |
+| 遥测 | ⚠️ `otel.py` 已有 trace=turn、span=tool、token/延迟 histogram；缺 approval/workflow span、OTLP log/metrics 全量导出与审计导出 | codex 全量 OTLP（log/trace/metrics + 审计导出） |
+| 多语言 UI | ✅ 1007 个 zh/en key 完全对齐；`check-i18n` 进 `npm run build`，en 词典无中文、957 个 `t()` 调用可解析、硬编码中文失败；浏览器实测英文主界面与模型设置 0 中文 | ZCode/Qoder 多语言完整 |
 
 ## 11. spark 独有 / 领先项
 
@@ -200,7 +203,7 @@
 **P2（高成本 / 需要产品决策）**
 - ~~定时 Automations~~（已实现：automations.py + 设置→定时任务）
 - ~~JetBrains / Neovim 的一键接入~~（已完成：JetBrains 25.3+ 原生 ACP；Neovim CodeCompanion 模块；不写编辑器专属插件）
-- 插件市场（先做"本地目录 + git URL 安装"最小版）
+- 插件市场签名分发（策划式 MCP/插件索引 v1 已完成；缺签名、上架、撤销）
 - 多 agent 专业编排（Experts/Workflows 级）
 
 **不建议做**：云端沙箱/账号体系/移动 App（与 API-first 定位不符，本地/自托管只是部署选项）；Tab 补全/NES（那是 IDE 形态的功能，spark 无编辑器本体）。

@@ -178,7 +178,7 @@ def test_registry_disabled_tools_are_hidden_and_refused(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_status_reports_demo_mode_when_key_missing(tmp_path: Path) -> None:
+def test_status_reports_real_error_not_demo_when_key_missing(tmp_path: Path) -> None:
     from spark.web.state import SparkWebState
 
     cfg = SparkConfig()
@@ -190,8 +190,9 @@ def test_status_reports_demo_mode_when_key_missing(tmp_path: Path) -> None:
     state = SparkWebState(tmp_path, cfg, store)
     try:
         status = state.status()
-        assert status["demo_mode"] is True
-        assert "MockProvider" in status["demo_reason"] or "key" in status["demo_reason"].lower()
+        assert status["demo_mode"] is False
+        assert status["model_status"]["ready"] is False
+        assert status["model_status"]["issue"]["code"] == "missing_api_key"
     finally:
         store.close()
 
@@ -322,7 +323,7 @@ def test_factory_falls_back_to_mock_and_status_says_so(tmp_path: Path) -> None:
     cfg.provider.api_key = None
     cfg.provider.api_key_env = "SPARK_DEFINITELY_MISSING_KEY"
     provider = create_provider(cfg)
-    assert type(provider).__name__ == "MockProvider"
+    assert type(provider).__name__ == "UnavailableProvider"
 
     store = SessionStore(tmp_path / "demo.db")
     from spark.web.state import SparkWebState
@@ -331,8 +332,9 @@ def test_factory_falls_back_to_mock_and_status_says_so(tmp_path: Path) -> None:
     state = SparkWebState(tmp_path, cfg, store)
     try:
         status = state.status()
-        assert status["demo_mode"] is True
-        assert "API Key" in status["demo_reason"] or "Mock" in status["demo_reason"]
+        assert status["demo_mode"] is False
+        assert status["model_status"]["ready"] is False
+        assert status["model_status"]["issue"]["code"] == "missing_api_key"
     finally:
         store.close()
 

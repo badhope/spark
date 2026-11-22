@@ -6,6 +6,9 @@ import type { CheckpointRow } from "../api"
 
 export type WorkbenchTab = "files" | "changes" | "run" | "web" | "trace"
 
+/** Phone shell top-level view. Desktop ignores this. */
+export type MobileTab = "home" | "chat"
+
 export type SettingsTab =
   | "model"
   | "agent"
@@ -23,6 +26,7 @@ export type SettingsTab =
   | "wiki"
   | "debug"
   | "advanced"
+  | "remote"
 
 export interface ToastItem {
   id: number
@@ -47,6 +51,8 @@ interface UiState {
   palette: Palette
   setPalette: (p: Palette) => void
   settingsOpen: boolean
+  mobileTab: MobileTab
+  mobileApprovalOpen: boolean
   sidebarOpen: boolean
   rightPanelOpen: boolean
   workbenchTab: WorkbenchTab
@@ -70,6 +76,8 @@ interface UiState {
   closeSettings: () => void
   settingsTab: SettingsTab | null
   setSettingsTab: (tab: SettingsTab | null) => void
+  setMobileTab: (tab: MobileTab) => void
+  setMobileApprovalOpen: (open: boolean) => void
   toggleSidebar: () => void
   setSidebarOpen: (open: boolean) => void
   toggleRightPanel: () => void
@@ -106,6 +114,8 @@ export const useUiStore = create<UiState>((set) => ({
   theme: initTheme(),
   palette: getStoredPalette(),
   settingsOpen: false,
+  mobileTab: "home",
+  mobileApprovalOpen: false,
   sidebarOpen: window.innerWidth >= 1024,
   rightPanelOpen: false,
   workbenchTab: "files",
@@ -144,6 +154,9 @@ export const useUiStore = create<UiState>((set) => ({
   closeSettings: () => set({ settingsOpen: false }),
   settingsTab: null,
   setSettingsTab: (tab) => set({ settingsTab: tab }),
+  setMobileTab: (tab) => set({ mobileTab: tab, mobileApprovalOpen: false }),
+  setMobileApprovalOpen: (open) => set({ mobileApprovalOpen: open }),
+
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),

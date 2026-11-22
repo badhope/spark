@@ -67,3 +67,15 @@
 - `spark exec` 使用真实 MiniCPM5：普通回复 exit 0；`write_file` 写入 9 bytes 的 `cli-notes3.txt`，`--json` 最后一行为 `final`。
 - `spark providers`、`spark route`、`spark queue list`、`spark sessions` 均可用。
 - CLI 的 `turn_error` 现在输出结构化 hint，不再只有标题。
+
+## 目录扩展（2026-11-22）
+
+在内置目录原有 MiniCPM5-1B、BotPsy-0.8B 基础上新增三项，均来自官方或官方量化仓库，并已 HEAD 核验 ModelScope / hf-mirror 双直链与精确字节数：
+
+| ID | 参数 | Q4_K_M 体积 | 上下文 | 许可 | 工具解析 |
+| --- | --- | --- | --- | --- | --- |
+| `minicpm5-2b` | 2B | 1,561,318,368 | 131,072 | Apache-2.0 | `minicpm5` |
+| `qwen3.5-2b` | 1.89B | 1,280,835,840 | 262,144 | Apache-2.0 | `qwen3.5` |
+| `qwen3.5-4b` | 4.21B | 2,740,937,888 | 262,144 | Apache-2.0 | `qwen3.5` |
+
+`tests/test_local_models.py` 的目录上限从“全部 <2B”调整为“最大 4B、文件 ≤3.5GB”，并断言五档 ID 覆盖；`tests/test_ui_local_models.py` 断言卡片与一键切换入口。MiniCPM5-2B 本机已有同体积 Q4_K_M 文件，但本轮未跑真实工具调用回归；Qwen3.5-2B/4B 也未在 Spark 实测。安装前不应把“官方支持工具调用”当成 Spark 已验证结论。

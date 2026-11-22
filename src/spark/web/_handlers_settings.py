@@ -29,6 +29,7 @@ from spark.sandbox import WorkdirSandbox, safe_bare_filename
 from spark.web._handlers_common import _save_config
 from spark.web._httpbase import HandlerBase
 from spark.web._routing import _route_state
+from spark.web.device_admin import reject_denied_settings
 from spark.web.utils import (
     HOOK_EVENTS,
     MCP_REDACTED_HEADER,
@@ -535,6 +536,8 @@ def _apply_validated_settings(
 
 
 def _handle_settings(handler: HandlerBase, body: dict) -> None:
+    if reject_denied_settings(handler, body):
+        return
     state = _route_state(handler)
     with state.settings_lock:
         if not state.turn_lock.acquire(blocking=False):

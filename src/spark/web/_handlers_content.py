@@ -19,6 +19,7 @@ from typing import Any
 
 from spark.web._httpbase import HandlerBase
 from spark.web._routing import _route_state
+from spark.web.device_admin import is_device_admin
 
 #: 插件/技能/命令的扫描根（相对工作区）。
 SKILLS_DIR = Path(".spark") / "skills"
@@ -311,8 +312,14 @@ def _handle_plugins(handler: HandlerBase, body: dict) -> None:
     if action in {"enable", "disable"}:
         # Enabling a plugin permits code execution. Keep this local-only: remote
         # token holders can use the agent but must not flip execution grants.
-        if not getattr(handler, "_is_loopback", lambda: False)():
-            handler._json(403, {"error": "plugin enable/disable is local-only"})
+        if not getattr(handler, "_is_loopback", lambda: False)() and not is_device_admin(handler):
+            handler._json(
+                403,
+                {
+                    "error": "plugin enable/disable requires local control or a device_admin scope",
+                    "hint": "grant a 30-minute device_admin scope from the local remote panel",
+                },
+            )
             return
         name = str(body.get("name") or "").strip()
         from spark.config import ConfigError, default_home
@@ -331,6 +338,30 @@ def _handle_plugins(handler: HandlerBase, body: dict) -> None:
             set_plugin_enabled(name, action == "enable")
         except ConfigError as exc:
             handler._json(400, {"error": str(exc)})
+            return
+        # The loop copies [plugins].enabled into its registry at build time. Keep
+        # the in-memory config and the live loop in sync so the /health command
+        # and plugin tools appear immediately instead of after a restart.
+        enabled = set(state.cfg.plugins.enabled)
+        if action == "enable":
+            enabled.add(name)
+        else:
+            enabled.discard(name)
+        state.cfg.plugins.enabled = sorted(enabled)
+        try:
+            state.rebuild_loop(session_id=state.session_id or None)
+        except Exception as exc:  # noqa: BLE001 - config is saved; report reload issue
+            handler._json(
+                200,
+                {
+                    "ok": False,
+                    "name": name,
+                    "enabled": action == "enable",
+                    "error": f"plugin saved but loop reload failed: {exc}",
+                    "items": _plugin_entries(state.workdir),
+                    "config": str(default_home() / "config.toml"),
+                },
+            )
             return
         handler._json(
             200,
@@ -361,9 +392,13 @@ def _handle_knowledge(handler: HandlerBase, body: dict) -> None:
     action = str(body.get("action") or "list").strip()
 
     from spark.config import ensure_home
-    from spark.knowledge import KnowledgeBase, project_key
+    from spark.knowledge import KnowledgeBase, make_embedder, project_key
 
-    kb = KnowledgeBase(ensure_home() / "knowledge" / project_key(state.workdir))
+    kb = KnowledgeBase(
+        ensure_home() / "knowledge" / project_key(state.workdir),
+        embedder=make_embedder(state.cfg),
+        embedding_model=state.cfg.memory.embedding_model,
+    )
 
     if action == "list":
         handler._json(
@@ -422,6 +457,7 @@ def _handle_knowledge(handler: HandlerBase, body: dict) -> None:
         if not query:
             handler._json(400, {"error": "query required"})
             return
+        kb.ensure_embeddings()
         hits = kb.search(query, top_k=int(getattr(state.cfg.context, "knowledge_top_k", 6)))
         handler._json(200, {"hits": hits})
         return

@@ -36,13 +36,15 @@ interface SessionState {
   handleFork: (id?: string) => Promise<void>
   handleCancel: () => Promise<void>
   handleApproval: (decision: "allow" | "allow_always" | "deny") => Promise<void>
+  /** Rebuild approval/question after a full page load, without re-opening a busy stream. */
+  restorePending: () => Promise<void>
 }
 
 export const useSessionStore = create<SessionState>((set, get) => {
   let approvalBusyRef = false
 
   /** Rebuild pending approval/question UI from the backend after switch/refresh. */
-  async function hydratePending(sessionId: string) {
+  async function hydratePending(sessionId: string, resumeBusy = true) {
     try {
       const pending = await fetchSessionPending(sessionId)
       useSessionRuntimeStore.getState().hydratePending(sessionId, pending)
@@ -66,7 +68,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         set({ approval: null })
       }
       set({ question: pending.question ? { question: pending.question.question, options: pending.question.options } : null })
-      if (pending.busy && !pending.approval && !pending.question) {
+      if (resumeBusy && pending.busy && !pending.approval && !pending.question) {
         void useChatStore.getState().resumeSession(sessionId, pending.last_seq ?? 0)
       }
     } catch {
@@ -146,6 +148,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
         useUiStore.getState().pushToast("toast.sessionLoadFailed", "error")
         void e
       }
+    },
+
+    restorePending: async () => {
+      const sessionId = get().status?.session_id
+      if (!sessionId) return
+      await hydratePending(sessionId, false)
     },
 
     handleNewSession: async () => {

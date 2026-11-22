@@ -289,6 +289,8 @@ def glob_tool(sandbox: WorkdirSandbox, args: GlobArgs) -> ToolResult:
                 resolved.relative_to(base_resolved)
             except (OSError, ValueError):
                 continue
+            if not sandbox.is_path_allowed(resolved):
+                continue
             rel = file.relative_to(base).as_posix()
             if _glob_matches(rel, pattern) or _glob_matches(name, pattern):
                 out.append(file.relative_to(sandbox.root).as_posix())

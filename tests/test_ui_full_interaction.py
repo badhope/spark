@@ -114,18 +114,41 @@ def _open_settings(page):
 
 def _close_secondary_overlays(page) -> None:
     """Close pickers that sit above settings, leaving settings itself open."""
-    for _ in range(4):
-        overlays = page.locator(".fixed.inset-0:visible")
-        if overlays.count() <= 1:
+    for _ in range(6):
+        dialogs = page.locator('[role="dialog"]:visible')
+        if dialogs.count() <= 1:
             return
-        close = page.locator('button[title="关闭"]:visible').last
-        if close.count() == 0:
-            return
+        # ConfirmDialog is rendered before SettingsModal in the DOM, so `.last`
+        # is the settings panel, not the overlay. Pick the one whose label is
+        # not the settings title.
+        top = dialogs.first
+        for index in range(dialogs.count()):
+            label = dialogs.nth(index).get_attribute("aria-label") or ""
+            if label not in {"设置", "Settings"}:
+                top = dialogs.nth(index)
+                break
+        cancel = top.locator("button").filter(has_text=re.compile(r"^(取消|Cancel)$")).first
+        if cancel.count():
+            try:
+                cancel.click(timeout=2500)
+                page.wait_for_timeout(200)
+                continue
+            except Exception:  # noqa: BLE001 - overlay may disappear
+                pass
+        close = top.locator('button[title="关闭"], button[title="Close"]').first
+        if close.count():
+            try:
+                close.click(timeout=2500)
+                page.wait_for_timeout(200)
+                continue
+            except Exception:  # noqa: BLE001 - overlay may disappear
+                pass
+        # Last resort: click the backdrop, which ConfirmDialog wires to dismiss.
         try:
-            close.click(timeout=2500)
-        except Exception:  # noqa: BLE001 - overlay may disappear between checks
+            top.click(position={"x": 4, "y": 4}, timeout=2500)
+        except Exception:  # noqa: BLE001 - overlay may disappear
             return
-        page.wait_for_timeout(300)
+        page.wait_for_timeout(200)
 
 
 def test_every_settings_action_is_clickable(ui) -> None:
@@ -164,7 +187,18 @@ def test_every_settings_action_is_clickable(ui) -> None:
                 labels.append(_button_label(buttons.nth(index)))
 
             for label in labels:
-                if label in {"Browse Registry", "关闭"}:
+                if label in {"Browse Registry", "关闭"} or re.match(
+                    r"^(下载|Download|重新下载|Retry download)", label
+                ) or label in {
+                    "退出演示，恢复真实模型",
+                    "Exit demo, restore live model",
+                    "生成扫码链接",
+                    "Generate QR link",
+                }:
+                    # Real downloads are 0.5–2.7 GB per card and would fill the
+                    # runner's disk. Demo-exit and remote-link generation are
+                    # intentionally stateful (409 when already active) and have
+                    # their own focused tests; this sweep only checks clickability.
                     skipped.append(label)
                     continue
                 pane = _settings_content(dialog)
@@ -328,7 +362,7 @@ def test_header_tools_menu_keyboard_and_actions(ui) -> None:
 
     # Browser entry opens the workbench on its web tab.
     trigger.click()
-    page.get_by_role("menuitem").filter(has_text=re.compile("网页")).first.click()
+    page.get_by_role("menuitem").filter(has_text=re.compile("浏览器")).first.click()
     page.wait_for_timeout(500)
     wb = page.get_by_test_id("workbench")
     assert wb.is_visible()
@@ -473,7 +507,7 @@ def test_workbench_five_tabs_and_file_actions(ui, tmp_path: Path) -> None:
         wb.get_by_title("重启 shell").click()
 
     # --- web --------------------------------------------------------------
-    wb.get_by_title("网页", exact=True).first.click()
+    wb.get_by_title("浏览器", exact=True).first.click()
     page.wait_for_timeout(500)
     url = wb.locator('input[placeholder*="输入网址"]')
     url.fill("https://example.com")
@@ -548,6 +582,12 @@ def test_keyboard_and_responsive_layout(ui) -> None:
         page.keyboard.press("Escape")
         page.wait_for_timeout(250)
 
+        # On the <=768px mobile shell the composer lives on the chat tab; the
+        # home tab intentionally shows approval/session summary instead.
+        if width <= 390:
+            page.get_by_role("button", name="对话", exact=True).first.click()
+            page.wait_for_timeout(300)
+
         # Composer send/tools must stay visible and large enough to tap.
         send = page.get_by_title("发送").first
         assert send.is_visible(), f"send hidden at {width}x{height}"
@@ -571,7 +611,7 @@ def test_settings_mock_probe_does_not_call_network(ui) -> None:
     page.wait_for_timeout(500)
     assert requests == []
     text = dialog.inner_text()
-    assert "Mock 演示模式" in text or "Mock demo mode" in text
+    assert "Mock 展示模式" in text or "Mock demo mode" in text
     assert errors == [], errors
 
 
@@ -646,7 +686,7 @@ def test_sidebar_attachments_and_remaining_header_controls(ui, tmp_path: Path) -
         assert cost.count() == 0
 
     # Model chip opens the model settings tab.
-    model_chip = page.get_by_role("button", name=re.compile("Mock 演示|Mock demo")).last
+    model_chip = page.get_by_role("button", name=re.compile("Mock 展示|Mock demo")).last
     model_chip.click()
     page.locator('[role="dialog"]').first.wait_for(state="visible", timeout=5000)
     assert "模型" in page.get_by_role("dialog").first.inner_text()

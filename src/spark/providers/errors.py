@@ -216,9 +216,22 @@ def provider_preflight(cfg: SparkConfig, live_provider: Any = None) -> ProviderE
     if provider not in {"ollama", "bedrock"}:
         key = cfg.provider.api_key or env_api_key(cfg)
         if not key:
-            return missing_key_error(cfg, code="mock_fallback" if live_provider is not None else "missing_api_key")
-        if live_provider is not None and live_provider.__class__.__name__ == "MockProvider":
-            return missing_key_error(cfg, code="mock_fallback")
+            # 不再把“缺 Key”说成 Mock 回退：真实模式就该如实报配置错误。
+            return missing_key_error(cfg)
+    if live_provider is not None and live_provider.__class__.__name__ == "MockProvider":
+        _, model, endpoint = _provider_fields(cfg)
+        return ProviderErrorInfo(
+            code="provider_mismatch",
+            title="运行状态异常：真实配置下出现了 Mock",
+            message="配置指向真实模型，但当前运行实例是脚本化 Mock。为避免假回答，本轮已停止。",
+            hint="到「设置 → 模型」点「退出演示，恢复真实模型」，或重新保存真实模型配置。",
+            retryable=False,
+            action="settings",
+            provider=provider,
+            model=model,
+            endpoint=endpoint,
+            params={"provider": provider, "model": model},
+        )
     return None
 
 

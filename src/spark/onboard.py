@@ -320,7 +320,7 @@ def check_health(
         rows.append(
             (
                 "warn",
-                "未配置模型凭据 —— 将以演示模式(mock)运行",
+                "未配置模型凭据 —— 真实对话会被阻止，不会生成假回答",
                 "运行 spark init 或在 Web 设置中填入密钥，或设置环境变量 "
                 + cfg.provider.api_key_env,
             )
@@ -371,7 +371,7 @@ def friendly_config_error(cfg: SparkConfig) -> str:
         )
     if not cfg.provider.api_key and not env_api_key(cfg):
         return (
-            "未配置 API Key —— 将以演示模式(mock)运行，填入密钥后自动切换真实模型。\n"
+            "未配置 API Key —— 本轮真实请求已停止，不会生成假回答。\n"
             "下一步（二选一）：\n"
             "  1) 运行 spark init 或在 Web 设置中填入密钥（保存到本机配置文件）\n"
             f"  2) 设置环境变量 {cfg.provider.api_key_env} 后重试"

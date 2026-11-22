@@ -5,13 +5,23 @@ import { skillsAction, type SkillItem } from "../api"
 import { useUiStore } from "../store/uiStore"
 import { t } from "../i18n"
 
-const TEMPLATE = `---
+// i18n-exempt: default user-content template; EN variant below is selected by lang
+const TEMPLATE_ZH = `---
 name: my-skill
 description: 一句话说明这个技能解决什么问题
 when_to_use: 用户提到 X 时使用
 ---
 
 在这里写技能正文。模型调用 load_skill 后会按这段文字执行。
+`
+
+const TEMPLATE_EN = `---
+name: my-skill
+description: One sentence describing what this skill solves
+when_to_use: Use when the user mentions X
+---
+
+Write the skill body here. The model follows this text after calling load_skill.
 `
 
 /** 技能：工作区 .spark/skills 下的 Markdown，与模型侧 load_skill 工具同源。 */
@@ -108,7 +118,7 @@ export default function SkillsSection() {
             size="sm"
             variant="soft"
             className="shrink-0"
-            onClick={() => setEditing({ name: "", content: TEMPLATE, isNew: true })}
+            onClick={() => setEditing({ name: "", content: lang === "zh" ? TEMPLATE_ZH : TEMPLATE_EN, isNew: true })}
           >
             <IconPlus size={12} /> {t("skills.new", lang)}
           </Button>

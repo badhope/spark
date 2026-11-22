@@ -17,7 +17,7 @@ spark init    # connect any OpenAI-compatible endpoint
 spark web     # open the browser UI
 ```
 
-No API key? Spark starts in demo mode with a local mock model. Add a key in settings and the next turn uses the real model without a restart.
+No API key? Spark still starts, but reports the real configuration error and refuses to fake an answer. Settings has an explicit **Mock demo mode** you can switch in and out of with one click; live-mode errors (missing key, model not downloaded, unreachable endpoint) are shown as they are.
 
 ![Spark chat with reasoning, tool calls and a live context meter](assets/screenshots/11-chat.png)
 
@@ -34,6 +34,8 @@ No API key? Spark starts in demo mode with a local mock model. Add a key in sett
 ```bash
 spark                         # terminal TUI
 spark web                     # browser UI on loopback
+spark web --host 0.0.0.0      # LAN; Settings → Remote generates a QR link
+spark web --public-url https://spark.example.com  # behind your HTTPS reverse proxy
 spark desktop                 # native window, loopback only
 spark exec "task" --json      # NDJSON events for scripts and CI
 spark review                  # inspect the uncommitted diff
@@ -60,6 +62,22 @@ spark enterprise --host 127.0.0.1 --port 18800
 | IDE / ACP | `spark acp` · `spark ide install` | Zed, JetBrains, Neovim |
 | MCP / A2A | `spark mcp-serve` · `spark a2a-serve` | Tool and agent-to-agent integration |
 
+## Remote control
+
+Open **Settings → System → Remote control** and generate a one-time link and QR code. The phone joins the same workspace; files, commands, model calls and approvals still run on the desktop. Same Wi-Fi works with `spark web --host 0.0.0.0`; public access uses `spark web --public-url https://your-domain` behind your own HTTPS reverse proxy.
+
+The phone can chat, approve, cancel, switch sessions and read files/diffs. Settings, plugins and direct shell/PTY stay local. Pairing codes expire after 5 minutes; each device gets its own 7-day token that can be revoked independently. Paired pages show live presence and a local-only audit trail of remote writes; an HTTPS or localhost page can enable Web Push so a locked phone still receives approval alerts.
+
+The phone gets its own home instead of a shrunken desktop: at 390×844 the first screen shows pending approvals, the current session and a new task, with a fixed four-item tab bar. Approvals take two taps — review on the home card, then allow or deny. It is installable as a PWA; the composer microphone uses browser `SpeechRecognition` and falls back to the keyboard when unsupported or denied.
+
+![Spark remote control: QR code, one-time link and paired-device list](assets/screenshots/25-remote-control.png)
+
+![Spark remote control: online device, last request and local audit trail](assets/screenshots/26-remote-audit.png)
+
+![Spark mobile home: pending approval, current session and new task on one screen](assets/screenshots/27-mobile-home.png)
+
+![Spark mobile approval: review from the home card, then deny or allow in two taps](assets/screenshots/28-mobile-approval.png)
+
 ## Safety model
 
 Three layers narrow each other:
@@ -79,6 +97,7 @@ OS-level isolation is used where available: bwrap on Linux, Job Objects on Windo
 | [HTTP API](docs/en/API.md) | [API](docs/API.md) |
 | [Architecture](docs/en/ARCHITECTURE.md) | [架构](docs/ARCHITECTURE.md) |
 | [Features](docs/FEATURES.md) | [功能总览](docs/FEATURES.md) |
+| [Remote control](docs/REMOTE.md) | [远程控制](docs/REMOTE.md) |
 | [Enterprise control plane](docs/ENTERPRISE.md) | [企业控制面](docs/ENTERPRISE.md) |
 | [A2A protocol](docs/A2A.md) | [A2A](docs/A2A.md) |
 | [ACP / IDE setup](docs/ACP.md) | [IDE 接入](docs/ACP.md) |

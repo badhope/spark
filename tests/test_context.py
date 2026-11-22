@@ -38,6 +38,48 @@ def test_summary_role_roundtrip(tmp_path: Path) -> None:
     assert "digest" in (loaded[0].content or "")
 
 
+def test_search_session_history_respects_compaction_cursor(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path / "s.db")
+    sid = store.create_session(tmp_path, "mock")
+    old_user = store.append_message(
+        sid, ChatMessage(role="user", content="refresh_token 在 auth/token.py 里怎么刷新？")
+    )
+    store.append_message(
+        sid, ChatMessage(role="assistant", content="看 auth/token.py 的 RefreshTokenExpired 分支。")
+    )
+    summary_id = store.append_message(
+        sid, ChatMessage(role="summary", content="<conversation_summary>digest</conversation_summary>")
+    )
+    store.set_compact_from(sid, summary_id)
+    store.append_message(sid, ChatMessage(role="user", content="刚才 refresh_token 的结论是什么？"))
+    hits = store.search_session_history(sid, "refresh_token 结论", before_id=summary_id)
+    assert hits
+    assert hits[0]["id"] == old_user
+    assert "auth/token.py" in hits[0]["snippet"]
+    assert all(hit["id"] < summary_id for hit in hits)
+    assert store.search_session_history(sid, "refresh_token 结论", before_id=0) == []
+
+
+def test_compacted_history_recall_survives_long_session(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path / "s.db")
+    sid = store.create_session(tmp_path, "mock")
+    critical_id = store.append_message(
+        sid,
+        ChatMessage(role="user", content="关键路径 src/spark/core/compact.py，AQ-02 还没跑完。"),
+    )
+    for i in range(45):
+        store.append_message(sid, ChatMessage(role="assistant", content=f"第 {i} 轮：继续做无关的排查。"))
+    summary_id = store.append_message(
+        sid, ChatMessage(role="summary", content="<conversation_summary>长任务摘要</conversation_summary>")
+    )
+    store.set_compact_from(sid, summary_id)
+    hits = store.search_session_history(sid, "compact.py AQ-02 关键路径", before_id=summary_id)
+    assert hits
+    assert any(hit["id"] == critical_id for hit in hits)
+    assert all(hit["id"] < summary_id for hit in hits)
+    assert max(len(hit["snippet"]) for hit in hits) < 1200
+
+
 def test_build_messages_includes_summary(tmp_path: Path) -> None:
     cfg = SparkConfig()
     history = [
@@ -75,6 +117,40 @@ def _loop(tmp_path: Path, provider: MockProvider, **overrides) -> AgentLoop:
         registry=ToolRegistry(ctx),
         store=store,
         session_id=sid,
+    )
+
+
+@pytest.mark.asyncio
+async def test_compacted_history_recall_is_injected(tmp_path: Path) -> None:
+    class CaptureProvider(MockProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.seen: list[list[ChatMessage]] = []
+
+        async def stream(self, messages, tools, effort=None):  # type: ignore[no-untyped-def]
+            self.seen.append(messages)
+            yield ChatDelta(type="text", text="ok")
+            yield ChatDelta(type="end")
+
+    provider = CaptureProvider()
+    loop = _loop(tmp_path, provider)  # type: ignore[arg-type]
+    loop.store.append_message(
+        loop.session_id,
+        ChatMessage(role="user", content="refresh_token 在 auth/token.py 里怎么刷新？"),
+    )
+    loop.store.append_message(
+        loop.session_id,
+        ChatMessage(role="assistant", content="RefreshTokenExpired 时走 refresh 分支。"),
+    )
+    summary_id = loop.store.append_message(
+        loop.session_id,
+        ChatMessage(role="summary", content="<conversation_summary>digest</conversation_summary>"),
+    )
+    loop.store.set_compact_from(loop.session_id, summary_id)
+    await loop.run("继续查 refresh_token 的结论")
+    assert provider.seen
+    assert any(
+        "<compacted_history_recall>" in (m.content or "") for m in provider.seen[0]
     )
 
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { CostReport, FullConfig, HookEntry, McpServer, ModelProfile, ProbeResult, ProviderPreset, SettingsPayload, Status } from "../types"
-import { fetchConfig, fetchAgentsMd, fetchCostReport, fetchProviderPresets, saveAgentsMd, saveSettings, testConnection, listModelProfiles, saveModelProfile, deleteModelProfile, activateModelProfile, fetchDiagnostics, runSelfHeal, savePermissionRules, deletePermissionRule, saveApprovalProfile, deleteApprovalProfile, activateApprovalProfile, type HealthRow } from "../api"
+import { fetchConfig, fetchAgentsMd, fetchCostReport, fetchProviderPresets, saveAgentsMd, saveSettings, testConnection, listModelProfiles, saveModelProfile, deleteModelProfile, activateModelProfile, fetchDiagnostics, runSelfHeal, savePermissionRules, deletePermissionRule, saveApprovalProfile, deleteApprovalProfile, activateApprovalProfile, setDemoMode, type HealthRow } from "../api"
 import MemorySection from "./MemorySection"
 import SkillsSection from "./SkillsSection"
 import PromptsSection from "./PromptsSection"
@@ -50,6 +50,73 @@ const HOOK_EVENTS = [
   "turn_error", "provider_error",
 ]
 
+/** 精选的本地 MCP server：无需 API Key，不依赖境外账号。
+ *  这里只做“一键加入配置”，不默认拉起进程，避免首次启动被 npx/uvx 拖慢；
+ *  保存后仍由用户显式确认启动。 */
+const BUILTIN_MCP_PRESETS: { item: McpRegistryItem; desc: { zh: string; en: string } }[] = [
+  {
+    item: {
+      name: "git",
+      title: "Git 本地仓库",
+      title_en: "Git local repository",
+      description: "本地 Git 只读查询：status / diff / log / show / branch",
+      description_en: "Read-only local Git: status / diff / log / show / branch",
+      version: "builtin",
+      repository_url: "",
+      transport: "stdio",
+      remote_url: null,
+      suggested_command: "uvx",
+      suggested_args: ["mcp-server-git", "--repository", "."],
+      suggested_readonly_tools: ["git_status", "git_diff", "git_diff_staged", "git_diff_unstaged", "git_log", "git_show", "git_branch"],
+      suggested_allowed_tools: ["git_status", "git_diff", "git_diff_staged", "git_diff_unstaged", "git_log", "git_show", "git_branch"],
+      required_env: [],
+      glama: null,
+      china: { verdict: "available", reasons: ["local stdio; no API key required"] },
+    },
+    desc: { zh: "只读 Git 查询，适合让模型看历史、diff 和分支", en: "Read-only Git queries for history, diffs and branches" },
+  },
+  {
+    item: {
+      name: "sequential-thinking",
+      title: "Sequential Thinking",
+      title_en: "Sequential Thinking",
+      description: "把复杂问题拆成可回退的思考步骤",
+      description_en: "Break complex problems into reversible reasoning steps",
+      version: "builtin",
+      repository_url: "",
+      transport: "stdio",
+      remote_url: null,
+      suggested_command: "npx",
+      suggested_args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      suggested_readonly_tools: ["*"],
+      required_env: [],
+      glama: null,
+      china: { verdict: "available", reasons: ["local stdio; no API key required"] },
+    },
+    desc: { zh: "结构化拆解复杂任务，不需要密钥", en: "Structured step-by-step reasoning, no API key" },
+  },
+  {
+    item: {
+      name: "memory",
+      title: "Memory 知识图谱",
+      title_en: "Memory knowledge graph",
+      description: "本地持久化实体与关系，跨会话积累项目知识",
+      description_en: "Persist entities and relations locally across sessions",
+      version: "builtin",
+      repository_url: "",
+      transport: "stdio",
+      remote_url: null,
+      suggested_command: "npx",
+      suggested_args: ["-y", "@modelcontextprotocol/server-memory"],
+      suggested_readonly_tools: ["read_graph", "search_nodes", "open_nodes"],
+      required_env: [],
+      glama: null,
+      china: { verdict: "available", reasons: ["local stdio; no API key required"] },
+    },
+    desc: { zh: "本地保存项目实体/关系，写入类工具仍需审批", en: "Local entity/relation memory; writes still need approval" },
+  },
+]
+
 type Tab =
   | "model"
   | "agent"
@@ -74,30 +141,34 @@ type Tab =
 // if /api/provider-presets is unreachable during startup.
 const DEFAULT_PRESETS: ProviderPreset[] = [
   { id: "deepseek", label: "DeepSeek", provider: "openai_compat", base_url: "https://api.deepseek.com/v1", model: "deepseek-chat", api_key_env: "DEEPSEEK_API_KEY", native: false, prompt_cache: false, tier: "cost", note: "" },
-  { id: "qwen", label: "Qwen / 百炼", provider: "openai_compat", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen3-coder-plus", api_key_env: "DASHSCOPE_API_KEY", native: false, prompt_cache: false, tier: "capability", note: "" },
+  { id: "qwen", label: "Qwen / 百炼", label_en: "Qwen / Bailian", provider: "openai_compat", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen3-coder-plus", api_key_env: "DASHSCOPE_API_KEY", native: false, prompt_cache: false, tier: "capability", note: "" },
   { id: "kimi", label: "Kimi / Moonshot", provider: "openai_compat", base_url: "https://api.moonshot.cn/v1", model: "kimi-k2-0905-preview", api_key_env: "MOONSHOT_API_KEY", native: false, prompt_cache: false, tier: "capability", note: "" },
-  { id: "glm", label: "GLM / 智谱", provider: "openai_compat", base_url: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4.5", api_key_env: "ZHIPUAI_API_KEY", native: false, prompt_cache: false, tier: "capability", note: "" },
-  { id: "doubao", label: "豆包 / 方舟", provider: "openai_compat", base_url: "https://ark.cn-beijing.volces.com/api/v3", model: "doubao-seed-code-preview", api_key_env: "ARK_API_KEY", native: false, prompt_cache: false, tier: "cost", note: "" },
+  { id: "glm", label: "GLM / 智谱", label_en: "GLM / Zhipu", provider: "openai_compat", base_url: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4.5", api_key_env: "ZHIPUAI_API_KEY", native: false, prompt_cache: false, tier: "capability", note: "" },
+  { id: "doubao", label: "豆包 / 方舟", label_en: "Doubao / Ark", provider: "openai_compat", base_url: "https://ark.cn-beijing.volces.com/api/v3", model: "doubao-seed-code-preview", api_key_env: "ARK_API_KEY", native: false, prompt_cache: false, tier: "cost", note: "" },
   { id: "anthropic", label: "Anthropic Claude", provider: "anthropic", base_url: "", model: "claude-sonnet-4-5", api_key_env: "ANTHROPIC_API_KEY", native: true, prompt_cache: true, tier: "capability", note: "" },
   { id: "openai", label: "OpenAI", provider: "openai", base_url: "", model: "gpt-5", api_key_env: "OPENAI_API_KEY", native: true, prompt_cache: false, tier: "capability", note: "" },
   { id: "gemini", label: "Google Gemini", provider: "gemini", base_url: "", model: "gemini-2.5-pro", api_key_env: "GEMINI_API_KEY", native: true, prompt_cache: false, tier: "capability", note: "" },
   { id: "azure", label: "Azure OpenAI", provider: "azure", base_url: "https://YOUR-RESOURCE.openai.azure.com", model: "gpt-4.1", api_key_env: "AZURE_OPENAI_API_KEY", native: true, prompt_cache: false, tier: "capability", note: "" },
   { id: "bedrock", label: "AWS Bedrock", provider: "bedrock", base_url: "", model: "anthropic.claude-3-5-sonnet-20240620-v1:0", api_key_env: "AWS_ACCESS_KEY_ID", native: true, prompt_cache: false, tier: "capability", note: "" },
-  { id: "ollama", label: "Ollama 本地", provider: "ollama", base_url: "http://127.0.0.1:11434/v1", model: "qwen3-coder:latest", api_key_env: "", native: false, prompt_cache: false, tier: "offline", note: "" },
-  { id: "mock", label: "Mock 演示", provider: "mock", base_url: "http://localhost", model: "mock-model", api_key_env: "", native: false, prompt_cache: false, tier: "offline", note: "" },
+  { id: "ollama", label: "Ollama 本地", label_en: "Ollama (local)", provider: "ollama", base_url: "http://127.0.0.1:11434/v1", model: "qwen3-coder:latest", api_key_env: "", native: false, prompt_cache: false, tier: "offline", note: "" },
+  { id: "mock", label: "Mock 演示", label_en: "Mock demo", provider: "mock", base_url: "http://localhost", model: "mock-model", api_key_env: "", native: false, prompt_cache: false, tier: "offline", note: "" },
 ]
 
-const PROVIDER_OPTIONS = [
-  ["openai_compat", "OpenAI 兼容 / 国产"],
-  ["anthropic", "Anthropic"],
-  ["openai", "OpenAI"],
-  ["gemini", "Gemini"],
-  ["azure", "Azure OpenAI"],
-  ["bedrock", "AWS Bedrock"],
-  ["ollama", "Ollama"],
-  ["llama_cpp", "本地 GGUF（内置）"],
-  ["mock", "Mock"],
-] as const
+function presetLabel(preset: ProviderPreset, lang: "zh" | "en"): string {
+  return lang === "zh" ? preset.label : (preset.label_en || preset.label)
+}
+
+const PROVIDER_OPTIONS: [string, TranslationKey][] = [
+  ["openai_compat", "provider.openaiCompat"],
+  ["anthropic", "provider.anthropic"],
+  ["openai", "provider.openai"],
+  ["gemini", "provider.gemini"],
+  ["azure", "provider.azure"],
+  ["bedrock", "provider.bedrock"],
+  ["ollama", "provider.ollama"],
+  ["llama_cpp", "provider.llamaCpp"],
+  ["mock", "provider.mock"],
+]
 
 const TAB_GROUPS: {
   key: string
@@ -303,6 +374,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
   const [presets, setPresets] = useState<ProviderPreset[]>(DEFAULT_PRESETS)
   const [costReport, setCostReport] = useState<CostReport | null>(null)
   const [showProfileForm, setShowProfileForm] = useState(false)
+  const [demoBusy, setDemoBusy] = useState(false)
   const [profileForm, setProfileForm] = useState({ id: "", name: "", provider: "openai_compat", base_url: "", model: "", api_key: "", api_key_env: "", api_keysText: "", fallbackModelsText: "", small_model: "" })
   const [protectedText, setProtectedText] = useState("")
   const [providerApiKeysText, setProviderApiKeysText] = useState("")
@@ -379,7 +451,8 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
           command: isRemote ? "" : item.suggested_command!,
           args: isRemote ? [] : [...item.suggested_args],
           env,
-          readonly_tools: [],
+          readonly_tools: [...(item.suggested_readonly_tools ?? [])],
+          allowed_tools: [...(item.suggested_allowed_tools ?? [])],
           transport: isRemote ? "streamable_http" : "stdio",
           http: isRemote ? { url: remoteUrl, headers: {}, timeout_sec: 30 } : null,
         },
@@ -953,7 +1026,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                   className="w-full rounded-lg border border-line bg-panel2 py-1.5 pr-2 pl-7 text-[11px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
                 />
               </div>
-              <div className="flex gap-1 overflow-x-auto">
+              <div className="flex flex-wrap gap-1">
                 {settingsGroups.map((group) => (
                   <button
                     key={group.key}
@@ -971,7 +1044,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                   </button>
                 ))}
               </div>
-              <div className="flex gap-1 overflow-x-auto">
+              <div className="flex flex-wrap gap-1">
                 {activeTabs.map((tb) => (
                   <button
                     key={tb.key}
@@ -1004,6 +1077,45 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
 
           {tab === "model" && (
             <div className="flex flex-col gap-4">
+              <section className="rounded-lg border border-line bg-panel p-3" data-testid="demo-mode-switch">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[12px] font-semibold text-ink">
+                      {cfg?.provider.name === "mock" ? (lang === "zh" ? "当前：Mock 展示模式" : "Current: Mock demo mode") : (lang === "zh" ? "当前：真实模型模式" : "Current: live model mode")}
+                    </div>
+                    <div className="mt-1 text-[11px] text-ink2">
+                      {lang === "zh"
+                        ? "Mock 只用脚本演示界面，不会伪装成真实回答。进入/退出都不丢配置；缺 Key、模型未下载、连接失败会如实报错。"
+                        : "Mock only scripts the UI; it never pretends to be a real reply. Switching preserves config; missing keys, models and connections are reported honestly."}
+                    </div>
+                  </div>
+                  <Button
+                    data-testid="demo-mode-toggle"
+                    variant={cfg?.provider.name === "mock" ? "primary" : "ghost"}
+                    disabled={demoBusy}
+                    onClick={() => {
+                      const next = !(cfg?.provider.name === "mock")
+                      setDemoBusy(true)
+                      setNotice("")
+                      void setDemoMode(next)
+                        .then(async (data) => {
+                          const fresh = await fetchConfig()
+                          setCfg(fresh)
+                          onSaved(data.status)
+                          setNotice(next
+                            ? (lang === "zh" ? "已进入 Mock 展示模式：脚本回复，不连接真实模型" : "Mock demo mode: scripted replies, no real model")
+                            : (lang === "zh" ? "已退出演示，恢复真实模型配置" : "Demo exited; live model config restored"))
+                        })
+                        .catch((e) => setNotice(lang === "zh" ? `切换失败：${e instanceof Error ? e.message : String(e)}` : `Switch failed: ${e instanceof Error ? e.message : String(e)}`))
+                        .finally(() => setDemoBusy(false))
+                    }}
+                  >
+                    {cfg?.provider.name === "mock"
+                      ? (lang === "zh" ? "退出演示，恢复真实模型" : "Exit demo, restore live model")
+                      : (lang === "zh" ? "进入 Mock 展示模式" : "Enter Mock demo mode")}
+                  </Button>
+                </div>
+              </section>
               <LocalModelsSection
                 lang={lang}
                 onActivated={(name, config, status) => {
@@ -1028,7 +1140,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                 <Field label={t("model.provider", lang)}>
                   <Select value={cfg.provider.name} onChange={(e) => { dirtyRef.current.cfg = true; setCfg((c) => (c ? { ...c, provider: { ...c.provider, name: e.target.value } } : c)) }}>
                     {PROVIDER_OPTIONS.map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
+                      <option key={value} value={value}>{t(label, lang)}</option>
                     ))}
                   </Select>
                 </Field>
@@ -1041,13 +1153,13 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                       dirtyRef.current.cfg = true
                       setCfg((c) => (c ? { ...c, provider: { ...c.provider, name: p.provider, base_url: p.base_url, model: p.model, api_key_env: p.api_key_env || c.provider.api_key_env } } : c))
                       setNotice(lang === "zh"
-                        ? `已填入 ${p.label}${p.native ? "（原生通道）" : ""}，只需补 API Key`
-                        : `Filled ${p.label}${p.native ? " (native)" : ""}; add the API key`)
+                        ? `已填入 ${presetLabel(p, lang)}${p.native ? t("settings.nativeSuffix", lang) : ""}，只需补 API Key`
+                        : `Filled ${presetLabel(p, lang)}${p.native ? t("settings.nativeSuffix", lang) : ""}; add the API key`)
                     }}
                   >
                     <option value="">{t("settings.selectPreset", lang)}</option>
                     {presets.map((p) => (
-                      <option key={p.id} value={p.id}>{p.label}{p.native ? " · native" : ""}</option>
+                      <option key={p.id} value={p.id}>{presetLabel(p, lang)}{p.native ? " · native" : ""}</option>
                     ))}
                   </Select>
                 </Field>
@@ -1207,7 +1319,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                     <Field label={t("model.provider", lang)}>
                       <Select value={profileForm.provider} onChange={(e) => setProfileForm((p) => ({ ...p, provider: e.target.value }))}>
                         {PROVIDER_OPTIONS.map(([value, label]) => (
-                          <option key={value} value={value}>{label}</option>
+                          <option key={value} value={value}>{t(label, lang)}</option>
                         ))}
                       </Select>
                     </Field>
@@ -1543,7 +1655,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                 <div className="flex gap-2">
                   {(["zh", "en"] as const).map((l) => (
                     <Button key={l} variant={lang === l ? "primary" : "outline"} size="sm" onClick={() => setLang(l)}>
-                      {l === "zh" ? "中文" : "English"}
+                      {l === "zh" ? t("settings.langZh", lang) : "English"}
                     </Button>
                   ))}
                 </div>
@@ -1713,7 +1825,6 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                 <h3 className="text-sm font-semibold text-ink">{t("mcp.title", lang)}</h3>
                 <p className="text-xs leading-relaxed text-ink3">{t("mcp.desc", lang)}</p>
                 <div className="flex flex-col gap-2">
-                  {mcpRows.length === 0 && <p className="py-2 text-xs text-ink3">{t("mcp.empty", lang)}</p>}
                   {mcpRows.map((s, i) => (
                     <div key={i} className="flex flex-col gap-2 rounded-lg border border-line bg-panel2 p-3">
                       <div className="flex items-center gap-2">
@@ -1837,6 +1948,27 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                       )}
                     </div>
                   ))}
+                  <div className="mt-1 rounded-lg border border-dashed border-line bg-panel2/50 p-3">
+                    <div className="mb-2 flex items-center gap-2">
+                      <IconSpark size={13} />
+                      <span className="text-[12px] font-medium text-ink">{t("mcp.builtinTitle", lang)}</span>
+                    </div>
+                    <p className="mb-2 text-[11px] leading-relaxed text-ink3">{t("mcp.builtinHint", lang)}</p>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {BUILTIN_MCP_PRESETS.map((p) => (
+                        <button
+                          key={p.item.name}
+                          type="button"
+                          onClick={() => handleRegistryPick(p.item)}
+                          className="flex flex-col gap-1 rounded-lg border border-line bg-panel p-2.5 text-left transition-colors hover:border-accent/50 hover:bg-hover"
+                        >
+                          <span className="text-[12px] font-medium text-ink">{lang === "zh" ? p.item.title : (p.item.title_en || p.item.title)}</span>
+                          <span className="text-[10.5px] leading-snug text-ink3">{p.desc[lang]}</span>
+                          <span className="mt-1 text-[10.5px] font-medium text-accent">{t("mcp.builtinAdd", lang)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="flex items-center gap-2">
                     <Button size="sm" variant="soft" onClick={() => setMcpRows((rows) => [...rows, { name: `mcp-${rows.length + 1}`, command: "", args: [], env: {}, readonly_tools: [] }])}>
                       <IconPlus size={12} /> {t("mcp.add", lang)}

@@ -88,3 +88,17 @@ def test_format_skill_invocation():
     assert "<agent_skill" in result
     assert 'name="formatter"' in result
     assert "Format this" in result
+
+
+def test_discover_strips_quoted_frontmatter(tmp_path):
+    _write_skill(tmp_path, "quoted", """---
+name: "quoted-skill"
+description: "Quoted description"
+when_to_use: 'When testing quotes'
+---
+Body.
+""")
+    skills = discover_skills(tmp_path)
+    assert skills[0].name == "quoted-skill"
+    assert skills[0].description == "Quoted description"
+    assert skills[0].when_to_use == "When testing quotes"

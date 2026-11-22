@@ -96,6 +96,60 @@ def _needs_tools(messages: list[ChatMessage], tools: list[dict]) -> list[dict]:
     return tools
 
 
+_WRITE_INTENT_RE = re.compile(
+    r"(写入|修改|创建|删除|修复|实现|优化|补全|重命名|重构|改成|替换|生成|添加|加个|"
+    r"\b(write|edit|patch|apply|fix|implement|refactor|rename|create|delete|modify|generate)\b)",
+    re.I,
+)
+_EXEC_INTENT_RE = re.compile(
+    r"(运行|执行|测试|构建|安装|部署|提交|命令|终端|"
+    r"\b(run|exec|shell|test|build|install|deploy|lint|git|commit)\b)",
+    re.I,
+)
+_WEB_INTENT_RE = re.compile(
+    r"(联网|上网|网上|网页|最新|查一下|搜一下|\b(web|search online|fetch|url|http)\b)",
+    re.I,
+)
+_READ_TOOLS = frozenset({"read_file", "list_dir", "grep", "glob", "find_symbol", "ask_user"})
+
+
+def _trim_tools_for_task(messages: list[ChatMessage], tools: list[dict]) -> list[dict]:
+    """Narrow the schema block to the verbs the current user turn needs.
+
+    The allowlist already removes LSP/browser/task; this is the per-task cut.
+    A read-only prompt gets file inspection + ``ask_user`` only, while edit or
+    command prompts add the matching write/execute schemas. Tool-result
+    follow-ups keep the full set so the model can chain a second call.
+    """
+    if not tools:
+        return tools
+    for msg in messages[-4:]:
+        if msg.role == "tool" or msg.tool_calls:
+            return tools
+    text = next((msg.content or "" for msg in reversed(messages) if msg.role == "user"), "")
+    if not _TOOL_INTENT_RE.search(text) and not _FILE_TOKEN_RE.search(text):
+        return []
+    needed = set(_READ_TOOLS)
+    if _WRITE_INTENT_RE.search(text):
+        needed.update({"write_file", "apply_patch", "apply_edit"})
+    if _EXEC_INTENT_RE.search(text):
+        needed.update({"run_shell", "run_tests"})
+    if _WEB_INTENT_RE.search(text):
+        needed.update({"web_search", "web_fetch"})
+    selected = [
+        tool
+        for tool in tools
+        if isinstance(tool, dict)
+        and isinstance(tool.get("function"), dict)
+        and str(tool["function"].get("name") or "") in needed
+    ]
+    return selected
+
+
+def _active_tools(messages: list[ChatMessage], tools: list[dict]) -> list[dict]:
+    return _trim_tools_for_task(messages, _needs_tools(messages, _filter_tools(tools)))
+
+
 def _model_path(model: str) -> Path:
     from spark.local_models import models_dir
 
@@ -300,7 +354,7 @@ class LlamaCppProvider:
 
     def _generate(self, messages: list[ChatMessage], tools: list[dict], effort: str | None) -> dict:
         llm = self._ensure()
-        tools = _needs_tools(messages, _filter_tools(tools))
+        tools = _active_tools(messages, tools)
         max_tokens = {"low": 256, "medium": 768, "high": 1280}.get(effort or "medium", 768)
         template = str(llm.metadata.get("tokenizer.chat_template") or "")
         if template:
@@ -397,7 +451,7 @@ class LlamaCppProvider:
         effort: str | None = None,
     ) -> AsyncIterator[ChatDelta]:
         result = await asyncio.to_thread(self._generate, messages, tools, effort)
-        active_tools = _needs_tools(messages, _filter_tools(tools))
+        active_tools = _active_tools(messages, tools)
         allowed = {
             str(t.get("function", {}).get("name") or "")
             for t in active_tools

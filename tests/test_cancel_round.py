@@ -48,6 +48,26 @@ async def test_cancel_skips_remaining_tool_calls(tmp_path) -> None:
         session_id=sid,
         approver=always_allow,
     )
+    # AQ-03 起未知工具会在审批前被拒绝；这里先用合法 schema 注册两个假工具，
+    # 才能把测试聚焦在“取消后排队调用是否继续执行”本身。
+    loop.registry.register_scope(
+        "cancel-test",
+        [
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": name,
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False,
+                    },
+                },
+            }
+            for name in ("fake1", "fake2")
+        ],
+    )
     executed: list[str] = []
 
     async def fake_execute(call):

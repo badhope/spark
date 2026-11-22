@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run check:i18n && tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
-    "gen:api": "orval --config orval.config.ts"
+    "gen:api": "orval --config orval.config.ts",
+    "check:i18n": "node scripts/check-i18n.mjs"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.17",

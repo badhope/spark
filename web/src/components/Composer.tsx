@@ -5,9 +5,10 @@ import { useChatStore } from "../store/chatStore"
 import { useSessionStore } from "../store/sessionStore"
 import { useUiStore } from "../store/uiStore"
 import { fetchCommands, fetchFsTree, type SlashCommandInfo } from "../api"
-import { IconFile, IconFolder, IconGlobe, IconPaperclip, IconSend, IconStop, IconX } from "./icons"
+import { IconFile, IconFolder, IconGlobe, IconMic, IconPaperclip, IconSend, IconStop, IconX } from "./icons"
 import { cls, Spinner } from "./ui"
 import { t } from "../i18n"
+import { useVoiceInput } from "../voice"
 
 const MAX_H = 200
 
@@ -53,6 +54,17 @@ export const Composer = memo(function Composer() {
   const status = useSessionStore((s) => s.status)
   const openSettings = useUiStore((s) => s.openSettings)
   const lang = useUiStore((s) => s.lang)
+  const appendVoice = useCallback(
+    (text: string) => {
+      const current = useChatStore.getState().input
+      setInput(current.trim() ? `${current.replace(/\s+$/, "")} ${text}` : text)
+    },
+    [setInput],
+  )
+  const voice = useVoiceInput(lang, appendVoice, (code) => {
+    const key = code === "unsupported" || code === "start_failed" ? "composer.voiceUnsupported" : "composer.voiceFailed"
+    useUiStore.getState().pushToast(key, "info")
+  })
 
   const taRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -542,6 +554,24 @@ export const Composer = memo(function Composer() {
                 className="flex h-9 w-9 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-hover hover:text-ink disabled:opacity-45 sm:h-8 sm:w-8"
               >
                 <IconPaperclip size={16} />
+              </button>
+              <button
+                type="button"
+                title={voice.listening ? t("composer.voiceListening", lang) : t("composer.voice", lang)}
+                aria-label={voice.listening ? t("composer.voiceListening", lang) : t("composer.voice", lang)}
+                aria-pressed={voice.listening}
+                disabled={streaming}
+                onClick={voice.toggle}
+                className={cls(
+                  "flex h-9 w-9 items-center justify-center rounded-lg transition-colors disabled:opacity-45 sm:h-8 sm:w-8",
+                  voice.listening
+                    ? "bg-err/10 text-err"
+                    : voice.supported
+                      ? "text-ink3 hover:bg-hover hover:text-ink"
+                      : "text-ink3/60 hover:bg-hover hover:text-ink",
+                )}
+              >
+                <IconMic size={16} />
               </button>
               <button
                 type="button"

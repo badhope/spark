@@ -10,10 +10,11 @@ import { ApprovalModal } from "./components/ApprovalModal"
 import { ShortcutsHelp } from "./components/ShortcutsHelp"
 import { QuestionCard } from "./components/QuestionCard"
 import { Onboarding } from "./components/Onboarding"
+import { MobileShell } from "./components/MobileShell"
 import Toast from "./components/Toast"
 import { ConfirmDialog } from "./components/ConfirmDialog"
 import { RemoteUnlock } from "./components/RemoteUnlock"
-import { fetchStatus, isAuthError, setRemoteToken } from "./api"
+import { fetchStatus, getRemoteToken, heartbeatPresence, isAuthError, setRemoteToken } from "./api"
 import type { Status } from "./types"
 import { useChatStore } from "./store/chatStore"
 import { useSessionStore } from "./store/sessionStore"
@@ -23,6 +24,7 @@ import { installNotificationWatcher } from "./notify"
 import { t } from "./i18n"
 import { useGlobalFocusTrap } from "./focusTrap"
 import { activateModelProfile, listModelProfiles } from "./api"
+import { useIsMobile } from "./useIsMobile"
 
 // Heavy, rarely-first-action surfaces are split out of the initial bundle:
 // xterm, xyflow and the diff/checkpoint/replay UIs would otherwise all load
@@ -65,6 +67,9 @@ export default function App() {
         useSessionStore.getState().setPlan(s.plan || [])
         refreshSessions()
         loadInitialHistory()
+        // A reload while a tool waits for approval must not lose the decision:
+        // the phone home reads this before deciding whether to show its priority card.
+        useSessionStore.getState().restorePending()
       })
       .catch((e) => {
         if (isAuthError(e)) setRemoteAuth(true)
@@ -74,6 +79,32 @@ export default function App() {
 
   // 回合结束 / 等待审批时的桌面通知（设置 → 展示页可开；默认关）
   useEffect(() => installNotificationWatcher(), [])
+
+  // PWA installability / offline shell. Push already registers the same SW on
+  // demand; this covers ordinary visits so “Add to Home Screen” has a worker.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return
+    const register = () => {
+      navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => undefined)
+    }
+    if (document.readyState === "complete") {
+      register()
+      return
+    }
+    window.addEventListener("load", register, { once: true })
+    return () => window.removeEventListener("load", register)
+  }, [])
+
+  // Paired phones report presence while the tab is open; the desktop device
+  // list uses this to distinguish an idle-but-open page from a dead token.
+  useEffect(() => {
+    const ping = () => {
+      if (getRemoteToken()) void heartbeatPresence().catch(() => undefined)
+    }
+    ping()
+    const timer = window.setInterval(ping, 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   // 深链：`?panel=settings&tab=wiki` / `?panel=palette` / `?panel=files`。
   //
@@ -178,12 +209,52 @@ export default function App() {
     replay: replayOpen,
   })
 
+  const mobile = useIsMobile()
+
+  const overlays = (
+    <>
+      <Toast toasts={toasts} onDismiss={dismissToast} />
+      <ConfirmDialog />
+      <ApprovalModal />
+      <QuestionCard />
+      <ShortcutsHelp />
+      <Onboarding />
+      <Suspense fallback={<SurfaceLoading />}>
+        {seen.palette && <CommandPalette />}
+        {seen.checkpoints && <CheckpointModal />}
+        {seen.replay && <ReplayModal />}
+      </Suspense>
+      {settingsOpen && (
+        <Suspense fallback={null}>
+          <SettingsModal onClose={closeSettings} onSaved={handleSaved} />
+        </Suspense>
+      )}
+    </>
+  )
+
   if (remoteAuth) return <RemoteUnlock />
+
+  if (mobile) {
+    return (
+      <div
+        className="w-full overflow-hidden bg-canvas text-ink"
+        style={{
+          height: "100dvh",
+          paddingTop: "env(safe-area-inset-top)",
+          paddingBottom: "calc(64px + env(safe-area-inset-bottom))",
+        }}
+      >
+        {overlays}
+        <div className="h-full min-h-0 overflow-hidden">
+          <MobileShell recovering={recovering} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-full overflow-hidden bg-canvas text-ink">
-      <Toast toasts={toasts} onDismiss={dismissToast} />
-      <ConfirmDialog />
+      {overlays}
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Header />
@@ -198,25 +269,6 @@ export default function App() {
         <Composer />
       </div>
       <RightPanel />
-      <ApprovalModal />
-      <QuestionCard />
-      <ShortcutsHelp />
-      <Onboarding />
-      {/* Chunks are fetched on first open (keeps the initial bundle at ~140 KB),
-          but each surface then stays mounted: unmounting on close threw away
-          the browse URL, the file viewer's current directory and the replay
-          drill-down, which felt like the app forgot what you were doing.
-          Every component already returns null while its own flag is false. */}
-      <Suspense fallback={<SurfaceLoading />}>
-        {seen.palette && <CommandPalette />}
-        {seen.checkpoints && <CheckpointModal />}
-        {seen.replay && <ReplayModal />}
-      </Suspense>
-      {settingsOpen && (
-        <Suspense fallback={null}>
-          <SettingsModal onClose={closeSettings} onSaved={handleSaved} />
-        </Suspense>
-      )}
     </div>
   )
 }

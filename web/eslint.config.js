@@ -10,6 +10,12 @@ export default tseslint.config(
     ignores: ["dist/**", "node_modules/**", "src/spark/web/dist/**"],
   },
   js.configs.recommended,
+  {
+    files: ["public/sw.js"],
+    languageOptions: {
+      globals: { self: "readonly", URL: "readonly" },
+    },
+  },
   ...tseslint.configs.recommended,
   {
     files: ["**/*.{ts,tsx}"],

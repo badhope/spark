@@ -68,12 +68,14 @@
 | `capacity` | `500` | 记忆容量上限（1–100,000） |
 | `embedding_model` | `text-embedding-3-small` | 嵌入模型 |
 | `auto_extract` | `true` | 每回合后自动抽取事实入记忆 |
-| `embedding_enabled` | `false` | 向量检索显式开关（多数 chat 端点没有 `/embeddings`） |
+| `embedding_enabled` | `false` | 向量检索显式开关（长期记忆与项目知识库共用；多数 chat 端点没有 `/embeddings`） |
 | `embedding_base_url` | `""` | 独立 embedding 服务地址（留空 = 复用 `provider.base_url`） |
 | `embedding_api_key` | `""` | embedding 密钥；留空时仅当地址与 provider 相同（忽略末尾 `/`）才复用 `provider.api_key`，否则使用 `ollama` 占位值 |
 | `rerank_model` | `""` | 重排模型名；需另行安装 `FlagEmbedding`，不可用或加载失败时保持原顺序 |
 
 配置文件会保存明文密钥，应限制文件访问权限且不要提交；`spark config show` 脱敏，网页掩码对较长密钥仍显示首尾各四位。网页保存空的 embedding 密钥会保留旧值，不能用空值清除。
+
+项目知识库复用同一组 `embedding_model` / `embedding_base_url` / `embedding_api_key`，但只看 `embedding_enabled`，不受 `memory.enabled` 影响；向量失败时仍走 BM25。旧知识库索引第一次检索会自动补向量，写入同目录 `vectors.json`。
 
 ## `[replay]` 与 `[updater]` — 高级设置
 

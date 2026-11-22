@@ -71,7 +71,7 @@ multi-round merging.
 | `capacity` | `500` | Memory capacity cap (1–100,000) |
 | `embedding_model` | `text-embedding-3-small` | Embedding model |
 | `auto_extract` | `true` | Auto-extract facts after each turn |
-| `embedding_enabled` | `false` | Explicit opt-in for vector retrieval (most chat endpoints lack `/embeddings`) |
+| `embedding_enabled` | `false` | Explicit opt-in for vector retrieval (shared by long-term memory and project knowledge; most chat endpoints lack `/embeddings`) |
 | `embedding_base_url` | `""` | Dedicated embedding endpoint (blank = reuse `provider.base_url`) |
 | `embedding_api_key` | `""` | Embedding key; when blank, `provider.api_key` is reused only for the same endpoint (ignoring trailing `/`), otherwise the `ollama` placeholder is used |
 | `rerank_model` | `""` | Rerank model; requires a separate `FlagEmbedding` installation, and leaves the original order unchanged if unavailable or loading fails |
@@ -80,6 +80,11 @@ The config file stores secrets in plaintext: restrict file access and never comm
 `spark config show` redacts secrets; web masks still reveal the first and last four
 characters of long keys. A blank embedding key in web settings keeps the old value;
 it cannot clear it.
+
+The project knowledge base reuses the same `embedding_model` / `embedding_base_url` /
+`embedding_api_key`, but only checks `embedding_enabled`; it is not disabled by
+`memory.enabled`. If embeddings fail it still falls back to BM25. Existing knowledge
+indexes are backfilled on first retrieval into `vectors.json` in the same directory.
 
 ## `[replay]` and `[updater]` — advanced settings
 

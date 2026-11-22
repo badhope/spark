@@ -107,12 +107,111 @@ export async function createPairCode(): Promise<{ code: string; expires_at: numb
   return readJson(await fetchWithTimeout("/api/pair/code", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }))
 }
 
-export async function fetchPairDevices(): Promise<{ devices: { id: string; name: string; created_at: number; expires_at: number; last_seen_at: number }[] }> {
+export type RemoteDevice = {
+  id: string
+  name: string
+  created_at: number
+  expires_at: number
+  last_seen_at: number
+  last_path: string
+  last_session_id: string
+  online: boolean
+  idle_sec: number | null
+  scope: "device" | "device_admin" | string
+  admin_expires_in: number
+  admin_used: boolean
+}
+
+export type RemoteAuditEntry = {
+  at: number
+  actor_id: string
+  actor_name: string
+  action: string
+  detail: string
+  source: "device" | "local" | string
+}
+
+export async function fetchPairDevices(): Promise<{ devices: RemoteDevice[] }> {
   return readJson(await fetchWithTimeout("/api/pair/devices"))
 }
 
-export async function revokePairDevice(device_id: string): Promise<{ ok: boolean; devices: { id: string; name: string; created_at: number; expires_at: number; last_seen_at: number }[] }> {
+export async function revokePairDevice(device_id: string): Promise<{ ok: boolean; devices: RemoteDevice[] }> {
   return readJson(await fetchWithTimeout("/api/pair/revoke", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device_id }) }))
+}
+
+export async function grantRemoteAdmin(
+  device_id: string,
+  action: "grant" | "revoke",
+): Promise<{ ok: boolean; device: RemoteDevice; devices: RemoteDevice[] }> {
+  return readJson(
+    await fetchWithTimeout("/api/remote/admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, device_id }),
+    }),
+  )
+}
+
+export async function fetchRemoteAudit(limit = 20): Promise<{ entries: RemoteAuditEntry[] }> {
+  return readJson(await fetchWithTimeout(`/api/remote/audit?limit=${limit}`))
+}
+
+export async function heartbeatPresence(): Promise<{ ok: boolean; device: RemoteDevice }> {
+  return readJson(
+    await fetchWithTimeout("/api/presence/heartbeat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }),
+  )
+}
+
+export type RemoteAccessStatus = {
+  mode: "public" | "lan" | "local"
+  public_url: string
+  public_configured: boolean
+  lan: { running: boolean; url: string }
+  server: { host: string; port: number }
+  devices: number
+  reachable: boolean
+  warning: string
+}
+
+export type RemoteLink = {
+  url: string
+  qr_data_url: string
+  code: string
+  expires_at: number
+  ttl_sec: number
+  mode: "public" | "lan"
+  base_url: string
+  lan_url: string
+  device_ttl_sec: number
+  status: RemoteAccessStatus
+}
+
+export async function fetchRemoteStatus(): Promise<RemoteAccessStatus> {
+  return readJson(await fetchWithTimeout("/api/remote/status"))
+}
+
+export async function createRemoteLink(mode: "auto" | "public" | "lan" = "auto"): Promise<RemoteLink> {
+  return readJson(
+    await fetchWithTimeout("/api/remote/link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    }),
+  )
+}
+
+export async function stopRemoteAccess(): Promise<{ ok: boolean; status: RemoteAccessStatus }> {
+  return readJson(
+    await fetchWithTimeout("/api/remote/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }),
+  )
 }
 
 export type QueueTask = {
@@ -161,10 +260,14 @@ export interface LocalModelInfo {
   context: number
   license: string
   languages: string
+  languages_en?: string
   summary: string
+  summary_en?: string
   strengths: string[]
+  strengths_en?: string[]
   recommended: boolean
   note: string
+  note_en?: string
   path: string
   installed: boolean
   active: boolean
@@ -186,6 +289,17 @@ export interface LocalModelsState {
 export async function fetchLocalModels(): Promise<LocalModelsState> {
   return readJson(await fetchWithTimeout("/api/local-models"))
 }
+
+export async function setDemoMode(demo: boolean): Promise<{ ok: boolean; demo_mode: boolean; status: Status }> {
+  return readJson(
+    await fetchWithTimeout("/api/demo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ demo }),
+    }),
+  )
+}
+
 
 export async function downloadLocalModel(id: string): Promise<{ id: string; status: string }> {
   return readJson(
@@ -766,13 +880,18 @@ export async function streamPty(
 export interface McpRegistryItem {
   name: string
   title: string
+  title_en?: string
   description: string
+  description_en?: string
   version: string
   repository_url: string
   transport: "stdio" | "remote" | "unknown"
   remote_url: string | null
   suggested_command: string | null
   suggested_args: string[]
+  /** Optional hints for built-in presets; live registry items omit them. */
+  suggested_readonly_tools?: string[]
+  suggested_allowed_tools?: string[]
   required_env: { name: string; required: boolean; secret: boolean }[]
   glama: { score: number; count: number; source: string } | null
   china: { verdict: "available" | "risk" | "unreachable"; reasons: string[] }
@@ -1017,6 +1136,62 @@ export async function browseUrl(
   url: string,
 ): Promise<{ title?: string; url?: string; content?: string; error?: string }> {
   return readJson(await fetchWithTimeout(`/api/browse?url=${encodeURIComponent(url)}`))
+}
+
+export type BrowserLiveState = {
+  active: boolean
+  url?: string
+  title?: string
+  viewport?: { width?: number; height?: number }
+  tabs?: number
+  home?: string
+  search_engine?: string
+  search_url?: string
+  revision?: number
+  error?: string
+}
+
+/** Sidebar live view state; does not start a browser when idle. */
+export async function browserState(): Promise<BrowserLiveState> {
+  return readJson(await fetchWithTimeout("/api/browser/state"))
+}
+
+export async function browserNavigate(url: string): Promise<{
+  ok: boolean
+  error?: string
+  revision?: number
+  url?: string
+  title?: string
+}> {
+  return readJson(
+    await fetchWithTimeout("/api/browser/navigate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    }),
+  )
+}
+
+export async function browserAction(
+  action: "back" | "forward" | "reload" | "click" | "type" | "key",
+  payload: { x?: number; y?: number; text?: string; key?: string } = {},
+): Promise<{ ok: boolean; error?: string; revision?: number }> {
+  return readJson(
+    await fetchWithTimeout("/api/browser/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...payload }),
+    }),
+  )
+}
+
+/** Fetch a screenshot with the auth header (an <img src> cannot send it remotely). */
+export async function browserShot(): Promise<string> {
+  const res = await fetchWithTimeout("/api/browser/shot", { cache: "no-store" })
+  if (res.status === 204) return ""
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const blob = await res.blob()
+  return URL.createObjectURL(blob)
 }
 
 export async function streamChat(
@@ -1403,4 +1578,54 @@ export function reportClientError(payload: {
   } catch {
     /* ignore */
   }
+}
+
+export type PushSubscriptionRecord = {
+  id: string
+  device_id: string
+  device_name: string
+  events: string[]
+  created_at: number
+  last_success_at: number
+}
+
+export type PushStatus = {
+  available: boolean
+  public_key: string
+  subscriptions: number
+  devices: PushSubscriptionRecord[]
+}
+
+export async function fetchPushStatus(): Promise<PushStatus> {
+  return readJson<PushStatus>(await fetchWithTimeout("/api/push/status"))
+}
+
+export async function subscribePush(subscription: PushSubscriptionJSON): Promise<{ status: PushStatus }> {
+  return readJson(
+    await fetchWithTimeout("/api/push/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subscription, events: ["approval"] }),
+    }),
+  )
+}
+
+export async function unsubscribePush(endpoint: string): Promise<{ status: PushStatus }> {
+  return readJson(
+    await fetchWithTimeout("/api/push/unsubscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint }),
+    }),
+  )
+}
+
+export async function testPush(): Promise<{ selected: number }> {
+  return readJson(
+    await fetchWithTimeout("/api/push/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }),
+  )
 }

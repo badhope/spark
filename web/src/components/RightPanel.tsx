@@ -1,8 +1,18 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react"
-import { browseUrl, fetchFsRead, fetchFsTree, type FsEntry } from "../api"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
+import {
+  browseUrl,
+  browserAction,
+  browserNavigate,
+  browserShot,
+  browserState,
+  fetchFsRead,
+  fetchFsTree,
+  type BrowserLiveState,
+  type FsEntry,
+} from "../api"
 import { ChangesPanel } from "./ChangesPanel"
-import { IconCheck, IconChevronRight, IconCopy, IconDownload, IconExternal, IconFile, IconFileDiff, IconFolder, IconGlobe, IconSearch, IconSpark, IconTerminal, IconX } from "./icons"
-import { cls } from "./ui"
+import { IconCheck, IconChevronRight, IconCopy, IconDownload, IconExternal, IconFile, IconFileDiff, IconFolder, IconGlobe, IconRefresh, IconSearch, IconSpark, IconTerminal, IconX } from "./icons"
+import { cls, Spinner } from "./ui"
 import { t } from "../i18n"
 import { useSessionStore } from "../store/sessionStore"
 import { useUiStore } from "../store/uiStore"
@@ -35,6 +45,14 @@ export const RightPanel = () => {
   const [page, setPage] = useState<{ title?: string; url?: string; content?: string; error?: string } | null>(null)
   const [browseBusy, setBrowseBusy] = useState(false)
   const [copied, setCopied] = useState("")
+  const [liveMode, setLiveMode] = useState(true)
+  const [live, setLive] = useState<BrowserLiveState | null>(null)
+  const [liveShot, setLiveShot] = useState("")
+  const [liveBusy, setLiveBusy] = useState(false)
+  const [liveError, setLiveError] = useState("")
+  const shotRev = useRef(-1)
+  const homeStarted = useRef(false)
+  const shotRef = useRef("")
 
   const visibleEntries = useMemo(() => {
     const q = fileQuery.trim().toLowerCase()
@@ -70,6 +88,67 @@ export const RightPanel = () => {
   useEffect(() => {
     if (open) void loadDir("")
   }, [open, loadDir])
+
+  useEffect(() => {
+    if (!open || tab !== "web" || !liveMode) homeStarted.current = false
+  }, [open, tab, liveMode])
+
+  useEffect(() => {
+    if (!open || tab !== "web" || !liveMode) return
+    let cancelled = false
+    async function tick() {
+      try {
+        const next = await browserState()
+        if (cancelled) return
+        setLive(next)
+        setLiveError(next.error || "")
+        if (!next.active && !homeStarted.current) {
+          homeStarted.current = true
+          setLiveBusy(true)
+          try {
+            const opened = await browserNavigate("")
+            if (!cancelled) {
+              if (!opened.ok) setLiveError(opened.error || t("rightPanel.browserStartFailed", lang))
+              else if (opened.url) setBrowseUrlValue(opened.url)
+            }
+          } finally {
+            if (!cancelled) setLiveBusy(false)
+          }
+        }
+        const rev = typeof next.revision === "number" ? next.revision : 0
+        if (next.active && rev !== shotRev.current) {
+          shotRev.current = rev
+          const objectUrl = await browserShot()
+          if (cancelled) {
+            if (objectUrl) URL.revokeObjectURL(objectUrl)
+            return
+          }
+          if (objectUrl) {
+            setLiveShot((previous) => {
+              if (previous) URL.revokeObjectURL(previous)
+              shotRef.current = objectUrl
+              return objectUrl
+            })
+          }
+        }
+      } catch (e) {
+        if (!cancelled) setLiveError(e instanceof Error ? e.message : String(e))
+      }
+    }
+    void tick()
+    const timer = window.setInterval(() => void tick(), 1500)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [open, tab, liveMode])
+
+  useEffect(
+    () => () => {
+      if (shotRef.current) URL.revokeObjectURL(shotRef.current)
+    },
+    [],
+  )
 
   if (!open) {
     return (
@@ -134,6 +213,46 @@ export const RightPanel = () => {
     }
   }
 
+  async function openLive(target?: string) {
+    const url = (target ?? browseUrlValue).trim()
+    if (!url) return
+    setLiveBusy(true)
+    setLiveError("")
+    setLiveMode(true)
+    try {
+      const result = await browserNavigate(url)
+      if (!result.ok) throw new Error(result.error || t("rightPanel.browserOpenFailed", lang))
+      setBrowseUrlValue(result.url || url)
+    } catch (e) {
+      setLiveError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLiveBusy(false)
+    }
+  }
+
+  async function actLive(action: "back" | "forward" | "reload" | "click", payload: { x?: number; y?: number } = {}) {
+    if (!live?.active) return
+    setLiveBusy(true)
+    setLiveError("")
+    try {
+      const result = await browserAction(action, payload)
+      if (!result.ok) throw new Error(result.error || t("rightPanel.browserActionFailed", lang))
+    } catch (e) {
+      setLiveError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLiveBusy(false)
+    }
+  }
+
+  function clickLiveViewport(event: ReactMouseEvent<HTMLImageElement>) {
+    if (!live?.active || liveBusy) return
+    const box = event.currentTarget.getBoundingClientRect()
+    if (!box.width || !box.height) return
+    const x = Math.max(0, Math.min(1000, ((event.clientX - box.left) / box.width) * 1000))
+    const y = Math.max(0, Math.min(1000, ((event.clientY - box.top) / box.height) * 1000))
+    void actLive("click", { x, y })
+  }
+
   return (
     <>
       {/* 窄屏工作台必须以抽屉覆盖，否则 340–540px 的侧栏会把聊天区挤到不可用。 */}
@@ -147,7 +266,7 @@ export const RightPanel = () => {
         aria-label={t("rightPanel.title", lang)}
         className={cls(
           "fixed inset-y-0 right-0 z-40 flex max-w-[92vw] shrink-0 flex-col border-l border-line bg-panel shadow-2xl lg:static lg:z-auto lg:max-w-[72vw] lg:shadow-none",
-          tab === "run" || tab === "trace" ? "w-[min(92vw,540px)] lg:w-[min(72vw,540px)]" : "w-[min(92vw,380px)] lg:w-[340px]",
+          tab === "run" || tab === "trace" || tab === "web" ? "w-[min(92vw,540px)] lg:w-[min(72vw,540px)]" : "w-[min(92vw,380px)] lg:w-[340px]",
         )}
       >
       {/* 面板头：tab 切换 + 关闭 */}
@@ -346,50 +465,77 @@ export const RightPanel = () => {
         </div>
       )}
 
-      {/* 网页阅读 tab */}
+      {/* 内置浏览器 / 阅读模式 tab */}
       {tab === "web" && (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex items-center gap-1.5 border-b border-line p-2">
+          <div className="flex items-center gap-1 border-b border-line p-2">
+            <button
+              type="button"
+              title={t("browser.back", lang)}
+              onClick={() => void actLive("back")}
+              disabled={!live?.active || liveBusy}
+              className="flex h-8 w-7 shrink-0 items-center justify-center rounded-lg text-ink3 hover:bg-hover hover:text-ink disabled:opacity-30"
+            >
+              <IconChevronRight size={14} className="rotate-180" />
+            </button>
+            <button
+              type="button"
+              title={t("browser.forward", lang)}
+              onClick={() => void actLive("forward")}
+              disabled={!live?.active || liveBusy}
+              className="flex h-8 w-7 shrink-0 items-center justify-center rounded-lg text-ink3 hover:bg-hover hover:text-ink disabled:opacity-30"
+            >
+              <IconChevronRight size={14} />
+            </button>
+            <button
+              type="button"
+              title={t("browser.refresh", lang)}
+              onClick={() => void actLive("reload")}
+              disabled={!live?.active || liveBusy}
+              className="flex h-8 w-7 shrink-0 items-center justify-center rounded-lg text-ink3 hover:bg-hover hover:text-ink disabled:opacity-30"
+            >
+              <IconRefresh size={14} />
+            </button>
             <input
               value={browseUrlValue}
               onChange={(e) => setBrowseUrlValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") void doBrowse()
+                if (e.key === "Enter") void (liveMode ? openLive() : doBrowse())
               }}
               placeholder={t("rightPanel.urlPh", lang)}
               className="min-w-0 flex-1 rounded-lg border border-line bg-panel2 px-2.5 py-1.5 text-[12px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
             />
             <button
               type="button"
-              onClick={() => void doBrowse()}
-              disabled={browseBusy || !browseUrlValue.trim()}
+              onClick={() => void (liveMode ? openLive() : doBrowse())}
+              disabled={(liveMode ? liveBusy : browseBusy) || !browseUrlValue.trim()}
               className="flex h-8 shrink-0 items-center rounded-lg bg-accent px-3 text-[12px] font-medium text-white transition-colors hover:brightness-110 disabled:opacity-40"
             >
               {t("rightPanel.open", lang)}
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            {browseBusy ? (
-              <p className="text-[11px] text-ink3">{t("common.loading", lang)}</p>
-            ) : page?.error ? (
-              <p className="text-[12px] text-err">{page.error}</p>
-            ) : page ? (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-1">
-                  {page.title && <h3 className="min-w-0 flex-1 text-[13px] font-semibold text-ink">{page.title}</h3>}
-                  {page.content && (
-                    <button
-                      type="button"
-                      title={t("browser.copy", lang)}
-                      onClick={() => void copyText(page.content ?? "", "page")}
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink3 hover:bg-hover hover:text-ink"
-                    >
-                      {copied === "page" ? <IconCheck size={12} className="text-ok" /> : <IconCopy size={12} />}
-                    </button>
-                  )}
-                  {page.url && (
+          <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-[10px] text-ink3">
+            <span className={cls("inline-block h-1.5 w-1.5 rounded-full", live?.active ? "bg-ok" : "bg-ink3")} />
+            <span className="min-w-0 flex-1 truncate">
+              {liveMode ? t("browser.liveTitle", lang) : t("browser.readerTitle", lang)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setLiveMode((value) => !value)}
+              className="shrink-0 rounded-full border border-line bg-panel2 px-2 py-0.5 text-[10px] text-ink2 hover:border-accent hover:text-accent"
+            >
+              {liveMode ? t("browser.readerToggle", lang) : t("browser.liveToggle", lang)}
+            </button>
+          </div>
+
+          {liveMode ? (
+            <div className="flex min-h-0 flex-1 flex-col">
+              {(live?.url || live?.title) && (
+                <div className="flex items-center gap-1 border-b border-line px-3 py-1.5">
+                  <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink">{live?.title || live?.url}</span>
+                  {live?.url && (
                     <a
-                      href={page.url}
+                      href={live.url}
                       target="_blank"
                       rel="noopener noreferrer"
                       title={t("browser.openOriginal", lang)}
@@ -399,13 +545,87 @@ export const RightPanel = () => {
                     </a>
                   )}
                 </div>
-                {page.url && <span className="break-all font-mono text-[10px] text-ink3">{page.url}</span>}
-                <div className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-ink2">{page.content}</div>
+              )}
+              {live?.url && <span className="block truncate px-3 py-1 font-mono text-[10px] text-ink3">{live.url}</span>}
+              <div className="relative min-h-0 flex-1 overflow-auto bg-panel2 p-2">
+                {liveError || live?.error ? (
+                  <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
+                    <IconGlobe size={24} className="text-err" />
+                    <p className="text-[11px] text-err">{liveError || live?.error}</p>
+                    <p className="text-[10px] text-ink3">{t("browser.liveErrorHint", lang)}</p>
+                  </div>
+                ) : liveBusy && !live?.active ? (
+                  <div className="flex h-full items-center justify-center gap-2 text-ink3">
+                    <Spinner size={14} className="text-accent" />
+                    <span className="text-[11px]">{t("browser.liveStarting", lang)}</span>
+                  </div>
+                ) : live?.active ? (
+                  liveShot ? (
+                    <div className="flex flex-col gap-2">
+                      <img
+                        src={liveShot}
+                        alt={live?.title || live?.url || "browser"}
+                        draggable={false}
+                        onClick={clickLiveViewport}
+                        className="block w-full cursor-crosshair rounded-lg border border-line bg-white shadow-sm"
+                      />
+                      <p className="text-center text-[10px] text-ink3">{t("browser.liveClickHint", lang)}</p>
+                    </div>
+                  ) : (
+                    <div className="flex h-full items-center justify-center gap-2 text-ink3">
+                      <Spinner size={14} className="text-accent" />
+                      <span className="text-[11px]">{t("browser.liveWaiting", lang)}</span>
+                    </div>
+                  )
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-ink3">
+                    <IconGlobe size={28} />
+                    <p className="text-[11px]">{t("browser.liveHint", lang)}</p>
+                    <p className="text-[10px]">{t("browser.liveModelHint", lang)}</p>
+                  </div>
+                )}
               </div>
-            ) : (
-              <p className="text-[11px] text-ink3">{t("rightPanel.browseHint", lang)}</p>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              {browseBusy ? (
+                <p className="text-[11px] text-ink3">{t("common.loading", lang)}</p>
+              ) : page?.error ? (
+                <p className="text-[12px] text-err">{page.error}</p>
+              ) : page ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-1">
+                    {page.title && <h3 className="min-w-0 flex-1 text-[13px] font-semibold text-ink">{page.title}</h3>}
+                    {page.content && (
+                      <button
+                        type="button"
+                        title={t("browser.copy", lang)}
+                        onClick={() => void copyText(page.content ?? "", "page")}
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink3 hover:bg-hover hover:text-ink"
+                      >
+                        {copied === "page" ? <IconCheck size={12} className="text-ok" /> : <IconCopy size={12} />}
+                      </button>
+                    )}
+                    {page.url && (
+                      <a
+                        href={page.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={t("browser.openOriginal", lang)}
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink3 hover:bg-hover hover:text-ink"
+                      >
+                        <IconExternal size={12} />
+                      </a>
+                    )}
+                  </div>
+                  {page.url && <span className="break-all font-mono text-[10px] text-ink3">{page.url}</span>}
+                  <div className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-ink2">{page.content}</div>
+                </div>
+              ) : (
+                <p className="text-[11px] text-ink3">{t("rightPanel.browseHint", lang)}</p>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -399,6 +399,7 @@ export interface ApprovalInfo {
 export interface ProviderPreset {
   id: string
   label: string
+  label_en?: string
   provider: string
   base_url: string
   model: string

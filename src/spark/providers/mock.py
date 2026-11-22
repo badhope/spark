@@ -2,10 +2,29 @@ from __future__ import annotations
 
 from typing import AsyncIterator
 
+from spark.errors import ConfigError
 from spark.models import ChatDelta, ChatMessage, ToolCall
 
 
+class UnavailableProvider:
+    """显式不可用占位：配置缺失时保留服务进程，但拒绝产生任何假回复。
+
+    工厂不再把缺 Key 悄悄换成 ``MockProvider``。Web 仍能启动并在状态栏
+    展示真实错误；任何绕过预检的调用都会在 ``stream`` 处失败。
+    """
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+    async def stream(
+        self, messages: list[ChatMessage], tools: list[dict], effort: str | None = None
+    ) -> AsyncIterator[ChatDelta]:
+        raise ConfigError(self.reason)
+        yield ChatDelta(type="end")  # pragma: no cover - keep the async-generator shape
+
+
 class MockProvider:
+
     """Scripted provider for demos and tests. Performs no HTTP."""
 
     def __init__(

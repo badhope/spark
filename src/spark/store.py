@@ -10,6 +10,27 @@ from pathlib import Path
 from typing import Any
 
 from spark.models import ChatMessage, ToolCall, ToolResult
+from spark.textutil import tokenize
+
+
+def _history_snippet(content: str, tokens: set[str], *, radius: int = 180) -> str:
+    """A compact recall snippet around the first matching token."""
+    low = content.lower()
+    pos = -1
+    for token in sorted(tokens, key=len, reverse=True):
+        pos = low.find(token.lower())
+        if pos >= 0:
+            break
+    if pos < 0:
+        pos = 0
+    start = max(0, pos - radius)
+    end = min(len(content), pos + radius * 2)
+    snippet = " ".join(content[start:end].split())
+    if start > 0:
+        snippet = "…" + snippet
+    if end < len(content):
+        snippet += "…"
+    return snippet
 
 
 class SessionStore:
@@ -616,6 +637,70 @@ class SessionStore:
                 )
             )
         return messages
+
+    def search_session_history(
+        self,
+        session_id: str,
+        query: str,
+        *,
+        limit: int = 3,
+        before_id: int | None = None,
+        max_scan: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Search messages older than the compaction cursor for recall.
+
+        This is intentionally session-local and lexical: after compaction the
+        summary is the anchor, but a later question can still point at a
+        concrete old detail (file path, error string, decision). We scan a
+        bounded window of rows before ``compact_from`` and rank by token
+        overlap, so it works without a new index/table and stays cheap.
+        """
+        needle = (query or "").strip()
+        if not needle:
+            return []
+        q_tokens = {t for t in tokenize(needle) if len(t) >= 2}
+        if not q_tokens:
+            return []
+        sql = (
+            "SELECT id, role, content FROM messages "
+            "WHERE session_id = ? AND role != 'summary' "
+            "AND (? IS NULL OR id < ?) "
+            "ORDER BY id DESC LIMIT ?"
+        )
+        with self._lock:
+            rows = self._conn.execute(
+                sql,
+                (session_id, before_id, before_id, max(1, min(int(max_scan), 2000))),
+            ).fetchall()
+        scored: list[tuple[float, dict[str, Any]]] = []
+        needle_low = needle.lower()
+        for row in rows:
+            # 旧消息可能是超大工具输出；只取前 8k 字符做匹配，避免每轮压缩
+            # 回填都去 tokenize 几百条巨型文本。
+            content = str(row["content"] or "")[:8000]
+            if not content:
+                continue
+            toks = {t for t in tokenize(content) if len(t) >= 2}
+            overlap = q_tokens & toks
+            if not overlap:
+                continue
+            score = len(overlap) / max(1, min(len(q_tokens), 12))
+            if needle_low in content.lower():
+                score += 0.5
+            scored.append(
+                (
+                    score,
+                    {
+                        "id": int(row["id"]),
+                        "role": str(row["role"]),
+                        "content": content,
+                        "snippet": _history_snippet(content, overlap),
+                        "score": round(score, 4),
+                    },
+                )
+            )
+        scored.sort(key=lambda item: (-item[0], -item[1]["id"]))
+        return [item for _, item in scored[: max(1, min(int(limit), 10))]]
 
     # ---- checkpoints ----
 

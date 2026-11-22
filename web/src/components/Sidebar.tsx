@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { SessionRow } from "../types"
 import { renameSession, searchSessions, type SessionSearchHit } from "../api"
-import { IconHistory, IconMonitor, IconMoon, IconPencil, IconPlus, IconSearch, IconSettings, IconSun, IconTrash, IconX } from "./icons"
+import { IconHistory, IconMonitor, IconMoon, IconPencil, IconPlus, IconSearch, IconSettings, IconSmartphone, IconSun, IconTrash, IconX } from "./icons"
 import { cls, IconButton } from "./ui"
 import { BrandMark } from "./BrandMark"
 import { useUiStore } from "../store/uiStore"
@@ -168,6 +168,7 @@ export const Sidebar = memo(function Sidebar() {
   const sidebarOpen = useUiStore((s) => s.sidebarOpen)
   const setSidebarOpen = useUiStore((s) => s.setSidebarOpen)
   const openSettings = useUiStore((s) => s.openSettings)
+  const openSettingsAt = useUiStore((s) => s.openSettingsAt)
   const openCheckpoints = useUiStore((s) => s.openCheckpoints)
   const cycleTheme = useUiStore((s) => s.cycleTheme)
   const theme = useUiStore((s) => s.theme)
@@ -544,14 +545,22 @@ export const Sidebar = memo(function Sidebar() {
               </p>
             </div>
           </div>
-          <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+          <div className="mt-1.5 grid grid-cols-5 gap-1.5">
             <button
               type="button"
               onClick={openSettings}
-              className="ring-focus flex h-8 items-center justify-center gap-1.5 rounded-[9px] border border-line bg-panel text-[11.5px] font-medium text-ink2 transition-colors duration-150 hover:border-line2 hover:bg-hover hover:text-ink active:scale-[0.99]"
+              className="ring-focus col-span-2 flex h-8 items-center justify-center gap-1.5 rounded-[9px] border border-line bg-panel text-[11.5px] font-medium text-ink2 transition-colors duration-150 hover:border-line2 hover:bg-hover hover:text-ink active:scale-[0.99]"
             >
               <IconSettings size={13} />
               {t("settings.title", lang)}
+            </button>
+            <button
+              type="button"
+              title={t("sidebar.remote", lang)}
+              onClick={() => openSettingsAt("remote")}
+              className="ring-focus flex h-8 items-center justify-center rounded-[9px] border border-line bg-panel text-ink2 transition-colors duration-150 hover:border-line2 hover:bg-hover hover:text-ink active:scale-[0.99]"
+            >
+              <IconSmartphone size={14} />
             </button>
             <button
               type="button"

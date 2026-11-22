@@ -246,10 +246,18 @@ def test_terminal_executes_command(page) -> None:
         page.get_by_title("收起右侧面板").click()
         pytest.skip("no PTY backend here (install the `pty` extra)")
     page.get_by_test_id("workbench").locator('textarea[aria-label="Terminal input"]').focus()
-    page.keyboard.type("echo spark-ui-ok")
+    page.keyboard.type("echo spark-ui-ok", delay=60)
     page.keyboard.press("Enter")
-    page.wait_for_timeout(1500)
-    assert "spark-ui-ok" in page.get_by_test_id("workbench").inner_text()
+    # PTY output arrives asynchronously and can lag when the whole browser
+    # suite runs in parallel with other servers; poll instead of a fixed sleep.
+    deadline = time.monotonic() + 8
+    text = ""
+    while time.monotonic() < deadline:
+        text = page.get_by_test_id("workbench").inner_text()
+        if "spark-ui-ok" in text:
+            break
+        page.wait_for_timeout(250)
+    assert "spark-ui-ok" in text, text[-600:]
     page.get_by_title("收起右侧面板").click()
 
 
@@ -294,7 +302,7 @@ def test_workbench_five_tabs_render(page) -> None:
     _open_tool(page, "文件查看器")
     workbench = page.get_by_test_id("workbench")
     assert workbench.count() == 1
-    for label in ("文件", "变更", "终端", "网页", "追踪"):
+    for label in ("文件", "变更", "终端", "浏览器", "追踪"):
         button = workbench.get_by_title(label, exact=True).first
         assert button.count() >= 1, label
         button.click()

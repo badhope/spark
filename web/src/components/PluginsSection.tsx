@@ -8,9 +8,8 @@ import { t } from "../i18n"
 /**
  * 插件：工作区 `.spark/plugins/<name>/` 下的本地扩展。
  *
- * 这里刻意只做「发现 + 展示 + 跳转到钩子页」：真正的代码执行必须经过
- * `cfg.hooks`（有事件、有审批、有记录）。如果再开一条插件直接执行的通道，
- * 就等于绕过了整个审批模型。
+ * 这里负责发现、展示和启用开关。启用后 manifest 声明的 tools/commands 才会
+ * 注册到 Agent；工具执行仍走正常审批、权限门与子进程隔离，hooks 在下方单独管理。
  */
 export default function PluginsSection() {
   const lang = useUiStore((s) => s.lang)

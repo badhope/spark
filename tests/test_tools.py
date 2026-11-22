@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from spark.config import SparkConfig
 from spark.sandbox import WorkdirSandbox
 from spark.tools.fs import (
     ApplyPatchArgs,
@@ -49,6 +50,23 @@ def test_apply_patch_zero_and_many(tmp_path: Path) -> None:
     many = apply_patch(box, ApplyPatchArgs(path="c.txt", old_text="aa", new_text="bb"))
     assert many.ok is False
     assert (tmp_path / "c.txt").read_text() == "aa aa"
+
+
+def test_list_dir_hides_protected_entries(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "config").write_text("remote=secret")
+    (tmp_path / ".spark").mkdir()
+    (tmp_path / ".spark" / "settings.yaml").write_text("token=secret")
+    (tmp_path / ".env").write_text("API_KEY=secret")
+    (tmp_path / "visible.txt").write_text("ok")
+
+    cfg = SparkConfig()
+    cfg.agent.protected_paths = [".git", ".spark", ".env"]
+    box = WorkdirSandbox(tmp_path, cfg)
+    listed = list_dir(box, ListDirArgs(path="."))
+
+    assert listed.ok
+    assert [e["name"] for e in listed.payload["entries"]] == ["visible.txt"]
 
 
 def test_shell_timeout(tmp_path: Path) -> None:

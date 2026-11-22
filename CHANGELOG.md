@@ -4,6 +4,59 @@
 
 ## [Unreleased]
 
+### Added
+
+- 项目知识库混合检索：BM25 + 可选向量召回，向量存 `knowledge/<project_hash>/vectors.json` sidecar；旧索引首次检索自动回填，embedding 不可用/超时/维度不一致时静默退回 BM25。复用 `memory.embedding_*` 配置，不新建服务或数据库。
+- 长上下文压缩增强：5 段摘要缺段检测并在落盘前补 `(not provided)`（自定义提示词不强制套用该格式）；工具输出按 2k/8k 分三档留头尾；压缩后按当前问题在 `compact_from` 之前做会话内有界词法召回，注入只读片段，检索失败静默降级。
+- 小模型工具调用护栏：`tools/validation.py` 零依赖 JSON Schema 子集校验（object/properties/required/type/items/enum/minimum/maxItems/minLength/maxLength/additionalProperties，参数上限 2 MiB）；`ToolRegistry` 统一补 `additionalProperties: false` 并在审批前返回 `unknown_tool` / `tool_disabled` / `tool_not_allowed` / `invalid_tool_arguments` / `tool_arguments_too_large`；本地模型 provider 端 12 工具白名单再按读/写/执行/联网意图裁剪 schema；非法调用只给一次修正机会，同一工具第二次非法标 `retry_exhausted`，不进入审批/执行。
+- Relay 流式转发：`RelayAgent.forward_stream` 用 `httpx.stream` 读上游，按 `headers` / `chunk` / `end` 事件回传；relay 新增 `/v1/channels/{id}/stream` 内部端点和 `/call {"stream":true}` chunked 响应，SSE 逐事件透传；`spark relay call --stream` 逐块打印；`docs/RELAY.md` 补协议与限制。
+- Relay Web 入口：`spark relay serve --channel/--key` 把该频道挂到根路径，`/`、`/assets/*`、`/sw.js`、`/api/*` 原样转发到 agent 的 loopback Spark Web；`/stream` 和 `Accept: text/event-stream` 自动走 chunked；`spark web --public-url https://relay` 生成的配对链接/二维码可直接用 relay 根打开，relay key 不下发浏览器；单频道自托管，多租户托管 relay 仍留待后续。
+- i18n 构建门禁（EX-03）：新增 `web/scripts/check-i18n.mjs` 与 `npm run check:i18n`，并前置到 `npm run build`；校验 zh/en 1007 个 key 完全对齐、en 词典不含 CJK、957 个 `t()` 调用都能命中 key、JSX/字符串硬编码中文直接失败。补齐 provider 预设 `label_en`、内置 MCP `title_en`/`description_en`、5 个本地模型 `summary_en`/`strengths_en`/`note_en`/`languages_en`；Provider/成本/MCP 等设置项改用 `t()`。新增 `tests/test_ui_i18n.py`：英文主界面与模型设置页 0 个中文，轮询页面真实文本而不只查源码。
+- 本地模型目录扩展：`local_models.py` 从 2 个增至 5 个可一键下载的 GGUF——MiniCPM5-2B（1.56GB / 128K）、Qwen3.5-2B（1.28GB / 256K）、Qwen3.5-4B（2.74GB / 256K），保留 MiniCPM5-1B 与 BotPsy-0.8B；全部使用 ModelScope + hf-mirror 双直链，精确 `size_bytes` 已 HEAD 核验，沿用 GGUF magic 与 `.sha256` sidecar 校验。
+- Mock 展示模式与真实模式彻底分离：`create_provider` 缺 Key 不再回退 `MockProvider`，改为 `UnavailableProvider`，任何回合在 `provider_preflight` 处按真实配置报错（`missing_api_key` / `local_model_missing` / `provider_mismatch`），不会产生脚本假回答；`demo_mode` 仅在显式 `provider=mock` 时为真。新增 `POST /api/demo` 一键进入/退出展示模式，进入前把真实 provider 保存为 `__last_real__` 档案，退出时原样恢复；设置→模型新增切换面板与说明。
+- 手机端布局（RC-03）：新增 `MobileShell` / `useIsMobile`，<768px 使用独立手机壳；首屏固定显示待审批、当前会话与新任务，底部四栏导航处理 `100dvh` 与安全区；审批卡片“查看并审批”进入详情，拒绝/允许两步内完成；`ApprovalModal` 在手机首页不再遮挡首页卡片；`Composer` 增加浏览器 `SpeechRecognition` 语音输入，不支持/拒绝/无结果时提示并保留键盘输入；普通访问注册 PWA `sw.js`（scope `/`），manifest 可安装性检查无错误。验证：390×844 首屏无横向滚动，审批/对话/设置截图归档；`tests/test_ui_a11y.py` 8 项、`tests/test_ui_browser.py` 9 项通过。
+- 限时 device_admin（RC-05）：`DevicePairing` 增加一次性 30 分钟 `device_admin` scope，本机 `POST /api/remote/admin` 授予/收回；非 shell 设置与插件启停可用，`shell`/PTY/remote link 明确拒绝，`approval`/`sandbox`/`hooks`/`mcp` 字段级 403；到期自动降权、同一配对需重新扫码才能再申请；授权/到期/收回与每次写操作写审计。
+- 会话租约与接管（RC-04）：`SessionRuntime` 增加 `lease_owner` / `lease_until` / `lease_claim` / `lease_renew` / `lease_release`；`/api/session/lease` 支持 status/acquire/renew/release/takeover；设备写 chat/stream/browser 自动认领，审批/问答/取消只接受持有设备或本机；心跳续租，120 秒无心跳释放；其他设备写同一会话返回 `409 lease_held`，状态与心跳响应带 `lease` 快照。
+- 远程控制 2.0：配对设备 60 秒在线心跳（120 秒窗口）、最近请求路径与会话；`GET /api/pair/devices` 返回 `online` / `last_path` / `last_session_id`。
+- 远程写操作审计：`$SPARK_HOME/remote-audit.jsonl` 持久化（0600，内存保留 500 条），记录发消息、审批、会话切换、队列、浏览器、推送订阅、配对/吊销/启停；`GET /api/remote/audit` 仅本机控制面可读，不记录提示词、文件内容或令牌。
+- Web Push 审批通知：`web/web_push.py` 管理 VAPID 与订阅，`web/public/sw.js` 显示通知；HTTPS/localhost 页面可在远程面板开启，锁屏接收审批摘要，`POST /api/push/subscribe|unsubscribe` 支持设备令牌，`POST /api/push/test` 仅本机。
+- `pyproject.toml` 增加 `pywebpush>=2.5,<3.0`，`uv.lock` 锁定 `pywebpush` / `py-vapid` / `http-ece`。
+
+### Fixed
+
+- `update_plan` 的步骤 schema 不再强制 `status`：`required` 只保留 `title`，缺失时按 handler 语义默认 `pending`；修正此前 schema 与执行逻辑不一致导致的 `test_plan_tool_updates_registry` 失败。
+- 测试基础设施改用 Playwright 固定版本 Chromium 优先启动（Edge 仍优先），并统一加 `--disable-dev-shm-usage` / `--disable-gpu`；系统 `/usr/local/bin/chromium` 146 在完整设置页挂载后会 `Page crashed`，现仅作兜底。
+
+### Changed
+
+- `docs/FEATURES.md`、`docs/CONFIG.md` 同步知识库混合检索与 `embedding_enabled` 共用边界；`knowledge.py` 模块 docstring 与类注释统一为“BM25 + 可选向量，不建第二套库”。
+- `docs/FEATURES.md`、`docs/REMAINING.md` 登记长上下文压缩增强：摘要 5 段校验、工具输出分层、压缩前历史召回。
+- `docs/FEATURES.md`、`docs/REMAINING.md` 登记小模型工具调用护栏：schema 子集校验、审批前降级、一次修正与按任务裁剪。
+- `docs/REMAINING.md`、`docs/RELAY.md` 登记 relay 流式转发；`spark relay call` 增加 `--stream`。
+- `docs/REMAINING.md`、`docs/RELAY.md` 登记 relay Web 入口：根路径静态/API/`sw.js` 代理、单频道限制与配对链接用法。
+- `docs/REMOTE.md`、`docs/en/REMOTE.md`、`docs/API.md`、`docs/en/API.md` 登记会话租约、`/api/session/lease` 与心跳续租。
+- `docs/REMOTE.md`、`docs/en/REMOTE.md`、`docs/API.md`、`docs/en/API.md` 登记限时 `device_admin` 的授权/到期/字段边界。
+- `docs/REMOTE.md`、`docs/en/REMOTE.md` 增加后台审批、在线状态、审计边界与 HTTPS/iOS 限制；`docs/API.md`、`docs/en/API.md` 补齐远程 2.0 端点；README 增加在线/审计截图 `assets/screenshots/26-remote-audit.png`。
+- `docs/REMAINING.md` 修正浏览器、PR、IDE/ACP 已完成却仍标 📋 的漂移，并登记远程控制 2.0。
+- `docs/competitive-comparison.md` 完成 DOC-01 逐行核对：86 个 ✅ 行补齐代码/测试落点（36 个原为空），确认“归档”只有删除、无归档/恢复并降为 ⚠️；复测日期更新为 2026-11-22（第八轮），记录见 `docs/reviews/2026-11-22-matrix-audit.md`。
+
+### Tests
+
+- `tests/test_knowledge.py` 新增跨语言向量召回、无向量 BM25 兜底、旧索引回填、删除清理、embedding 失败降级、同名重导替换、embedder 配置解析，共 36 项通过。
+- `tests/test_compaction.py`、`tests/test_context.py` 新增摘要缺段补齐、工具输出三档裁剪、压缩前历史召回与 AgentLoop 注入断言；压缩/上下文 29 项、压缩+存储+知识库+记忆+上下文定向回归 116 项通过，全量 pytest 未跑。
+- 新增 `tests/test_tool_validation.py`：18 条非法参数、12 条合法参数、未知/禁用/白名单外工具、2 MiB 上限、不调用 handler、一次修正与第二次 `retry_exhausted`、AgentLoop invalid 路径、23 条小模型工具选择、按任务裁剪；该文件 61 项、工具链 10 文件定向回归 158 项通过，`ruff`/`mypy` 通过。
+- `tests/test_relay.py` 新增 SSE 流式与根路径 Web 代理用例（HTML/JS/`sw.js`/API/SSE + token 注入），6 项通过；`tests/test_relay_web.py` 用真实 `build_web_server` 验证 relay 根页面、配对码换取设备令牌、`/api/status` 与 `/api/chat/stream` SSE，1 项通过；`ruff`/`mypy` 通过。
+- 新增 `tests/test_device_admin.py`：一次性管理档、30 分钟 TTL、到期 listener、提前收回、重新配对限制、真实 HTTP 下的设备基线 403 / 授权后设置与插件放行 / shell/PTY/remote-link 拒绝 / 字段级 403 / 到期审计；3 项通过。
+- 新增 `tests/test_session_lease.py`：租约 TTL/续期/过期、显式接管与释放、本地控制绕过、双设备真实 HTTP 冲突（chat/stream/approval/question/cancel 全部 409）与心跳续租；3 项通过；远程相关 25 项回归、`ruff` / `mypy` 通过。
+- 新增 `tests/test_demo_mode_switch.py`：进入演示保存真实 provider/Key、退出恢复原配置、无真实档案退出 409、非布尔参数 400；3 项通过。`tests/test_local_models.py` 目录断言改为覆盖 1B/2B/4B 五档并校验 4B 体积上限；`tests/test_ui_local_models.py` 验证 5 张卡片、一键进入/退出，并断言退出后恢复真实配置且暴露 `missing_api_key`；模型/状态/UI 相关定向回归全部通过。
+- `tests/test_ui_i18n.py`：浏览器加载英文主界面与设置→模型，扫描 `body.inner_text()` 的 CJK，均为 0；同时验证本地模型卡片、provider 预设、会话默认标题不再泄漏中文。`npm run build` 现在先跑 `check:i18n`，门禁失败即中止。
+- `tests/test_ui_browser.py::test_terminal_executes_command` 去掉固定 1.5 秒等待：PTY 在整套并行浏览器用例下会延迟或打乱快速键盘输入，改为 60ms 逐键输入并轮询 8 秒；全套 17 项 UI 浏览器/无障碍测试通过。
+- 新增 `tests/test_web_push.py`（VAPID/订阅/HTTP 往返）与 `tests/test_remote_presence.py`（心跳/在线/审计/公网 Host 设备写）；远程、令牌边界、路由 sweep 共 74 项通过，前端 `npm run build` 通过。
+
+- 新增 `tests/test_ui_full_interaction.py` 8 项：桌面与 390×844 手机壳、会话切换、审批详情、设置全页签按钮遍历、确认弹层关闭、终端命令；真实模型下载按钮与“退出演示/生成扫码链接”等已激活状态按钮跳过（分别由下载与 demo/remote 专项测试覆盖），避免单次测试写入 6.4GB 并触发预期 409。修正旧文案（网页→浏览器、Mock 演示→Mock 展示）、手机端先切“对话”再断言 Composer、ConfirmDialog 按 `aria-label` 选非设置弹层。8 项通过（149.35s）。
+- 修正 4 个旧断言：`test_cancel_round.py` 注册 `fake1/fake2` schema 以匹配 AQ-03 未知工具审批前拒绝；`test_plan_tool_updates_registry` 适配 `status` 可选；`test_provider_config.py` 缺 Key 断言 `UnavailableProvider`；`test_provider_errors.py` 分段断言 `missing_api_key` 与 `provider_mismatch`。对应 15 项定向测试通过。
+- 非浏览器全量 pytest：**1859 passed, 16 skipped**；UI 浏览器/无障碍/全文互/i18n/本地模型/模型错误/provider 错误 7 个文件合计 **34 passed**（297.82s，最新 Chromium 启动策略下复跑）。
+
 ## [0.15.4] - 2026-11-21
 
 ### Fixed

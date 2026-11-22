@@ -96,11 +96,18 @@ def ddgs_search(query: str, max_results: int) -> list[dict[str, str]] | None:
 
 
 def search_web(query: str, max_results: int) -> list[dict[str, str]]:
-    """Prefer ddgs; fall back to the legacy Bing scraper."""
-    results = ddgs_search(query, max_results)
+    """Use Bing as the default engine; ddgs is an optional fallback.
+
+    Bing is the same engine as the built-in browser home/search, so
+    ``web_search`` and visual browser searches stay consistent.  If the
+    scraper is rate-limited or Bing changes markup, ddgs keeps search working
+    on installs that include it.
+    """
+    results = bing_search(query, max_results)
     if results:
         return results
-    return bing_search(query, max_results)
+    fallback = ddgs_search(query, max_results)
+    return fallback or []
 
 
 class _TextExtractor(HTMLParser):

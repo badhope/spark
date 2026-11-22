@@ -11,7 +11,8 @@
 - 控制令牌在服务启动时随机生成（`SparkWebState.control_token`），只在控制台对象上提供，不会写进日志；建议作为破窗凭证。
 - 手机/远程浏览器优先走短时配对：`POST /api/pair/code`（仅本机）生成 6 位码，`POST /api/pair/claim` 用码换 7 天设备令牌；设备令牌同样通过 `X-Spark-Token` 请求头提交。
 - 本机（127.0.0.1 / ::1 / localhost）请求免令牌；其他来源一律 `401`，除非令牌有效。
-- 设备令牌是“只读/运行”权限：可发起/停止回合、审批/回答、切会话和读取文件/diff；修改设置、插件、直接 shell、PTY、配对管理仍只允许本机控制令牌。
+- 设备令牌默认是“只读/运行”权限：可发起/停止回合、审批/回答、切会话和读取文件/diff；修改设置、插件、直接 shell、PTY、配对管理默认只允许本机控制令牌。本机可临时授予一次 30 分钟 `device_admin`，仅放宽非 shell 设置与插件启停，详见 `docs/REMOTE.md`。
+- 远程设备可自行订阅/退订审批推送并发送在线心跳；全量远程审计只允许本机控制面读取。
 - 额外防护：Host 头非本机 → `403`；带 Origin 头且非本机来源 → `403`（防 CSRF）；POST 的 Content-Type 必须是 `application/json`，否则 `415`。
 
 ## 静态资源
@@ -29,10 +30,14 @@
 | `GET` | `/api/config` | 设置视图（部分敏感值打码，并非全部配置）：provider、agent、context（含 `agents_md` / `repo_map_max_chars` / `knowledge_*`）、memory（含 `embedding_*` / `rerank_model`）、mcp_servers、hooks（含 `on_deny`）、replay、updater，以及 `permission_rules` / `approval_profiles` / `active_approval_profile_id` |
 | `GET` | `/api/models` | 模型 profile 列表（api_key 打码，含 `active` 标记） |
 | `GET` | `/api/agents_md` | 读取工作目录内 AGENTS.md 的内容与状态 |
-| `GET` | `/api/pair/devices` | 已配对设备列表（仅本机；不含令牌明文） |
+| `GET` | `/api/remote/status` | 远程入口状态：`local` / `lan` / `public`、公网 origin、临时局域网 URL、已配对设备数；仅本机控制令牌可读 |
+| `GET` | `/api/pair/devices` | 已配对设备列表（仅本机；不含令牌明文，含 `online` / `last_path` / `last_session_id` / `scope` / `admin_expires_in` / `admin_used`） |
+| `GET` | `/api/remote/audit?limit=` | 远程写操作审计（仅本机；默认 50，最多 500，不记录提示词/文件内容/令牌） |
+| `GET` | `/api/push/status` | Web Push 状态：`available` / `public_key` / `subscriptions` / `devices` |
 | `GET` | `/api/queue` | 空闲任务队列：`paused` / 各状态计数 / 最近 50 条任务 |
 | `GET` | `/api/memory` | 长期记忆：`items` 全量、`search?q=关键词` 检索（带 score）、`stats` 统计 |
 | `GET` | `/api/sessions` | 当前工作目录的会话列表（最近 50 条）+ `current` 会话 id |
+| `GET` | `/api/session/lease` | 当前会话的租约：`caller` / `lease.owner` / `expires_in`；设备可读 |
 | `GET` | `/api/checkpoints` | 当前会话的检查点列表 |
 | `GET` | `/api/history` | 当前会话消息历史（含图片的 base64 data URI） |
 
@@ -43,14 +48,23 @@
 | `POST` | `/api/chat/stream` | `{prompt, images?, session_id?}` | SSE 流式对话；带 `session_id` 时定向到该 runtime（IDE/多客户端不抢 Web 当前会话）。事件：`text_delta` / `reasoning_delta` / `tool_start` / `tool_end` / `approval_needed`（含 diff）/ `compaction` / `context` / `plan` / `turn_end` / `turn_error` / `done`；心跳 `: ping` |
 | `POST` | `/api/chat` | `{prompt}` | 非流式对话，返回完整事件数组（调试用） |
 | `POST` | `/api/cancel` | — | 取消当前回合与待审批 |
-| `POST` | `/api/approval` | `{decision}` | 审批决定：`allow` / `allow_always` / `deny` |
+| `POST` | `/api/approval` | `{decision}` | 审批决定：`allow` / `allow_always` / `deny`；仅租约持有设备或本机 |
+| `POST` | `/api/session/lease` | `{action, session_id?, takeover?}` | `status` / `acquire` / `renew` / `release` / `takeover`；非持有设备写返回 `409 lease_held` |
 | `POST` | `/api/queue` | `{action, prompt?, title?, id?}` | `list` / `create` / `pause` / `resume` / `cancel`；任务只在没有会话忙碌时执行，暂停跨重启保留 |
 | `POST` | `/api/pair/code` | `{}` | 生成 6 位短时配对码（仅本机，5 分钟有效） |
 | `POST` | `/api/pair/claim` | `{code, name}` | 远程设备用配对码换设备令牌；这是唯一免鉴权的写接口，Host/Origin 仍校验 |
 | `POST` | `/api/pair/revoke` | `{device_id}` | 吊销设备令牌（仅本机） |
+| `POST` | `/api/remote/admin` | `{action, device_id}` | 本机授予/收回一次 30 分钟 `device_admin` 管理档：`grant` / `revoke`；授予、到期、收回均写审计，一次配对只能申请一次 |
+| `POST` | `/api/remote/link` | `{mode?}` | 生成一次性远程链接与 SVG 二维码 data URL；`mode` 为 `auto` / `public` / `lan`；自动模式优先公网，否则按需开启局域网监听（仅本机） |
+| `POST` | `/api/remote/stop` | `{}` | 吊销全部设备、清空配对码并关闭临时局域网监听（仅本机） |
+| `POST` | `/api/push/subscribe` | `{subscription, events?}` | 注册浏览器 Push 订阅；`events` 默认 `["approval"]`，设备令牌可用 |
+| `POST` | `/api/push/unsubscribe` | `{endpoint}` | 删除 Push 订阅；设备令牌可用 |
+| `POST` | `/api/push/test` | `{}` | 向本机当前订阅发送测试通知（仅本机控制面） |
+| `POST` | `/api/presence/heartbeat` | `{session_id?}` | 刷新设备在线心跳并续租当前会话；需要设备令牌，返回设备公开信息与 `lease` |
 | `POST` | `/api/models/save` | `{name, base_url, model, provider, api_key, id?}` | 新建或更新模型 profile |
 | `POST` | `/api/models/delete` | `{id}` | 删除 profile；若删除的是活跃 profile 则清空 `active_profile_id` |
 | `POST` | `/api/models/activate` | `{id}` | 切换活跃 profile 并重建 AgentLoop；agent 忙时 `409` |
+| `POST` | `/api/demo` | `{demo: true/false}` | 一键进入/退出 Mock 展示模式；进入前把真实 provider 保存为 `__last_real__` 档案，退出原样恢复；无真实档案退出返回 `409`，非布尔参数 `400`；agent 忙时 `409` |
 | `POST` | `/api/agents_md` | `{content}` | 写工作目录内的 AGENTS.md（文件名受白名单校验） |
 | `POST` | `/api/memory` | `{action}` | `add`（content/type/importance）/ `delete`（id）/ `optimize` |
 | `POST` | `/api/sessions/new` | `{isolated?: true, title?}` | 新建会话；`isolated=true` 创建 runtime 但不移动 Web 当前指针，返回 `session_id` |

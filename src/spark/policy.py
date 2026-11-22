@@ -46,6 +46,9 @@ READONLY_TOOLS = {
     "git_branch",
     "worktree_list",
     "affected_tests",
+    # One-shot read-only orientation: filesystem scan + read-only git queries.
+    # No writes, no arbitrary command execution, bounded by max_files/timeout.
+    "repo_context",
     "pr_context",
     "pr_view",
     "pr_diff",
@@ -83,6 +86,31 @@ WRITE_TOOLS = {
     "task_finish",
 }
 SHELL_TOOLS = {"run_shell", "bg_start", "bg_kill"}
+# Playwright 浏览器动作走同一套审批门；full-auto 下必须放行，否则
+# approver 被刻意置空后浏览器工具会直接报 "no approver"。
+BROWSER_TOOLS = {
+    "browser_open",
+    "browser_search",
+    "browser_snapshot",
+    "browser_click",
+    "browser_type",
+    "browser_press",
+    "browser_hover",
+    "browser_select",
+    "browser_scroll",
+    "browser_history",
+    "browser_tabs",
+    "browser_wait",
+    "browser_screenshot",
+    "browser_viewport",
+    "browser_eval",
+    "browser_file_upload",
+    "browser_download",
+    "browser_pdf",
+    "browser_console",
+    "browser_network",
+    "browser_dialog",
+}
 # Shell and worktree-mutating tools can have unbounded blast radius, so they may
 # never be granted a permanent "always allow".
 NEVER_PERSIST_ALLOW = SHELL_TOOLS | {
@@ -261,6 +289,11 @@ def _extract_resource(tool: ToolCall) -> str:
         if isinstance(paths, list) and paths:
             return paths[0]
         return ""
+    if tool.name in BROWSER_TOOLS:
+        # Browser tools have no filesystem path.  Give them a stable non-empty
+        # resource so an explicit ``tool="browser_*"`` allow rule can grant
+        # browser automation without opening up every other tool.
+        return str(args.get("url") or args.get("selector") or args.get("name") or "browser")
     return ""
 
 
@@ -319,6 +352,10 @@ def decide(
         return "allow"
     if tool.name in readonly_mcp:
         return "allow"
+    if tool.name in BROWSER_TOOLS:
+        # 浏览器动作保留审批门；full-auto 明确表示用户已授权自动执行。
+        # 不能落到最后的 "prompt"，因为 full-auto 的 runtime 没有 approver。
+        return "allow" if mode == "full-auto" else "prompt"
     if tool.name in WRITE_TOOLS:
         # 写工具：suggest/manual/plan-only 提示；approve-plan 需计划已批准；
         # auto-edit/full-auto 自动。

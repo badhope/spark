@@ -5,9 +5,15 @@ import { promptsAction, type CommandItem } from "../api"
 import { useUiStore } from "../store/uiStore"
 import { t } from "../i18n"
 
-const COMMAND_TEMPLATE = `# 命令说明（会显示在 / 补全里）
+// i18n-exempt: default user-content template; EN variant below is selected by lang
+const COMMAND_TEMPLATE_ZH = `# 命令说明（会显示在 / 补全里）
 把这段替换成命令正文。用户输入 /{{name}} 时，这段文字会替换掉斜杠命令，
 作为 user 消息发给模型。
+`
+
+const COMMAND_TEMPLATE_EN = `# Command description (shown in / completion)
+Replace this with the command body. When the user types /{{name}}, this text
+replaces the slash command and is sent to the model as a user message.
 `
 
 /** 提示词：系统提示词（覆盖内置）+ 斜杠命令模板（.spark/commands）。 */
@@ -103,6 +109,11 @@ export default function PromptsSection() {
       <section className="flex flex-col gap-2 rounded-xl border border-line bg-panel p-4">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-ink">{t("prompts.systemTitle", lang)}</h3>
+          {!systemPrompt.trim() && (
+            <span className="rounded-[6px] bg-accent-soft px-1.5 py-0.5 text-[10.5px] font-medium text-accent">
+              {t("prompts.builtinExpert", lang)}
+            </span>
+          )}
           <Button size="sm" variant="soft" className="ml-auto shrink-0" onClick={() => setShowDefault((v) => !v)}>
             {showDefault ? t("prompts.hideDefault", lang) : t("prompts.showDefault", lang)}
           </Button>
@@ -144,7 +155,7 @@ export default function PromptsSection() {
             size="sm"
             variant="soft"
             className="shrink-0"
-            onClick={() => setEditing({ name: "", content: COMMAND_TEMPLATE })}
+            onClick={() => setEditing({ name: "", content: lang === "zh" ? COMMAND_TEMPLATE_ZH : COMMAND_TEMPLATE_EN })}
           >
             <IconPlus size={12} /> {t("prompts.newCommand", lang)}
           </Button>

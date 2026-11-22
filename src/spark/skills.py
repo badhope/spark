@@ -32,7 +32,14 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, str], str] | None:
     for line in front.splitlines():
         if ":" in line:
             key, _, val = line.partition(":")
-            meta[key.strip()] = val.strip()
+            val = val.strip()
+            # YAML frontmatter commonly quotes values. The rest of this module
+            # treats them as plain strings and embeds them in XML attributes, so
+            # strip a matching pair of quotes instead of leaking `"..."` into
+            # the model prompt.
+            if len(val) >= 2 and val[0] == val[-1] and val[0] in {"'", '"'}:
+                val = val[1:-1]
+            meta[key.strip()] = val
     return meta, body
 
 

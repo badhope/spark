@@ -36,6 +36,10 @@ class LocalModelSpec:
     urls: tuple[str, ...]
     recommended: bool = False
     note: str = ""
+    languages_en: str = ""
+    summary_en: str = ""
+    strengths_en: tuple[str, ...] = ()
+    note_en: str = ""
 
     def public(self) -> dict:
         return {
@@ -48,12 +52,16 @@ class LocalModelSpec:
             "context": self.context,
             "license": self.license,
             "languages": self.languages,
+            "languages_en": self.languages_en,
             "summary": self.summary,
+            "summary_en": self.summary_en,
             "strengths": list(self.strengths),
+            "strengths_en": list(self.strengths_en),
             "tool_parser": self.tool_parser,
             "chat_format": self.chat_format,
             "recommended": self.recommended,
             "note": self.note,
+            "note_en": self.note_en,
         }
 
 
@@ -79,6 +87,80 @@ CATALOG: tuple[LocalModelSpec, ...] = (
         ),
         recommended=True,
         note="中文场景首选；默认以 16K 上下文启动，可用 SPARK_LOCAL_CTX 调高。",
+        languages_en="Chinese / English",
+        summary_en="1B-class native 128K context; one weight set supports Think / No-Think, built for local assistants and tool calling.",
+        strengths_en=("128K context", "Chinese-first", "XML tool calls", "Apache-2.0"),
+        note_en="Best for Chinese tasks; starts at 16K context, raise with SPARK_LOCAL_CTX.",
+    ),
+    LocalModelSpec(
+        id="minicpm5-2b",
+        name="MiniCPM5-2B",
+        params="2B",
+        filename="MiniCPM5-2B-Q4_K_M.gguf",
+        size_bytes=1_561_318_368,
+        context=131_072,
+        license="Apache-2.0",
+        languages="中文 / English",
+        summary="MiniCPM5 同系列 2B 升级档，官方定位本地助手、Coding Agent 与工具调用；称同尺寸 SOTA，综合可对标部分 4B。",
+        strengths=("2B 级 SOTA", "128K 上下文", "Coding / Agent", "Apache-2.0"),
+        tool_parser="minicpm5",
+        chat_format="default",
+        urls=(
+            "https://modelscope.cn/models/OpenBMB/MiniCPM5-2B-GGUF/resolve/master/MiniCPM5-2B-Q4_K_M.gguf",
+            "https://hf-mirror.com/openbmb/MiniCPM5-2B-GGUF/resolve/main/MiniCPM5-2B-Q4_K_M.gguf?download=true",
+        ),
+        recommended=True,
+        note="1B 与 4B 之间的平衡档；官方建议 llama.cpp 用 Q8，本目录选 Q4_K_M 控制体积。",
+        languages_en="Chinese / English",
+        summary_en="2B upgrade in the MiniCPM5 family, positioned for local assistants, coding agents and tool use; claims SOTA at this size and competes with some 4B models.",
+        strengths_en=("2B-class SOTA", "128K context", "Coding / Agent", "Apache-2.0"),
+        note_en="Balanced tier between 1B and 4B; the vendor suggests Q8 for llama.cpp, this catalog uses Q4_K_M to limit size.",
+    ),
+    LocalModelSpec(
+        id="qwen3.5-2b",
+        name="Qwen3.5-2B",
+        params="1.89B",
+        filename="Qwen3.5-2B-Q4_K_M.gguf",
+        size_bytes=1_280_835_840,
+        context=262_144,
+        license="Apache-2.0",
+        languages="中文 / English / 多语种",
+        summary="Qwen3.5 官方 2B 档，原生 256K 上下文，支持 thinking 与 qwen3_coder 工具调用；比 0.8B 档更适合多步任务。",
+        strengths=("256K 上下文", "工具调用", "中文", "Apache-2.0"),
+        tool_parser="qwen3.5",
+        chat_format="default",
+        urls=(
+            "https://modelscope.cn/models/unsloth/Qwen3.5-2B-GGUF/resolve/master/Qwen3.5-2B-Q4_K_M.gguf",
+            "https://hf-mirror.com/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf?download=true",
+        ),
+        note="默认非 thinking；复杂 Agent 任务建议 4B 档，0.8B 档已因工具调用失败不收录。",
+        languages_en="Chinese / English / multilingual",
+        summary_en="Official Qwen3.5 2B tier with native 256K context, thinking and qwen3_coder tool calls; a better fit for multi-step work than the 0.8B tier.",
+        strengths_en=("256K context", "Tool calls", "Chinese", "Apache-2.0"),
+        note_en="Non-thinking by default; for complex agent work prefer the 4B tier. The 0.8B tier is excluded after failing tool-call tests.",
+    ),
+    LocalModelSpec(
+        id="qwen3.5-4b",
+        name="Qwen3.5-4B",
+        params="4.21B",
+        filename="Qwen3.5-4B-Q4_K_M.gguf",
+        size_bytes=2_740_937_888,
+        context=262_144,
+        license="Apache-2.0",
+        languages="中文 / English / 多语种",
+        summary="4B 级稳定档：官方 256K 上下文、原生工具调用与 thinking，适合长时间本地 Coding Agent；体积约 2.6GB。",
+        strengths=("4B 稳定档", "256K 上下文", "Coding Agent", "Apache-2.0"),
+        tool_parser="qwen3.5",
+        chat_format="default",
+        urls=(
+            "https://modelscope.cn/models/unsloth/Qwen3.5-4B-GGUF/resolve/master/Qwen3.5-4B-Q4_K_M.gguf",
+            "https://hf-mirror.com/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf?download=true",
+        ),
+        note="本地复杂多轮与工具链的稳定下限；内存建议 8GB 以上。",
+        languages_en="Chinese / English / multilingual",
+        summary_en="The 4B stability tier: native 256K context, tool calls and thinking, suited to long local coding-agent sessions; about 2.6GB on disk.",
+        strengths_en=("4B stability tier", "256K context", "Coding Agent", "Apache-2.0"),
+        note_en="Practical lower bound for complex local multi-turn and tool chains; 8GB+ RAM recommended.",
     ),
     LocalModelSpec(
         id="botpsy-0-8b",
@@ -97,6 +179,10 @@ CATALOG: tuple[LocalModelSpec, ...] = (
             "https://huggingface.co/qvac/BotPsy-0.8B-GGUFs/resolve/main/botpsy-0.8b-q4_k_m-imat.gguf?download=true",
         ),
         note="英文任务更强；中文和长上下文不如 MiniCPM5-1B，作为实验档提供。",
+        languages_en="English-first / Chinese usable",
+        summary_en="A late-2025 on-device agent model based on Qwen3.5-0.8B; the vendor claims stronger tool use than 1.2B-class rivals.",
+        strengths_en=("Tool calls", "Multi-step Agent", "0.5GB", "Apache-2.0"),
+        note_en="Stronger on English tasks; weaker Chinese and long context than MiniCPM5-1B, offered as an experimental tier.",
     ),
 )
 

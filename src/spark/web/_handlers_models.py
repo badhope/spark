@@ -144,3 +144,76 @@ def _handle_models_activate_locked(handler: HandlerBase, body: dict) -> None:
         handler._json(400, {"error": str(exc)})
         return
     handler._json(200, {"ok": True, "status": state.status()})
+
+
+DEMO_PROFILE_ID = "__last_real__"
+
+
+def _handle_demo_toggle(handler: HandlerBase, body: dict) -> None:
+    """一键进入/退出 Mock 展示模式，且不丢失进入前的真实配置。
+
+    ``mock`` 只作为显式展示态存在：进入时把当前真实 provider 存成
+    一个专用档案，退出时原样恢复。缺 Key / 模型未下载等错误由
+    ``status().model_status`` 如实返回，不在这里兜底成 Mock。
+    """
+    state = _route_state(handler)
+    with state.settings_lock:
+        if not state.turn_lock.acquire(blocking=False):
+            handler._json(409, {"error": "agent is busy"})
+            return
+        try:
+            demo = body.get("demo")
+            if not isinstance(demo, bool):
+                handler._json(400, {"error": "demo must be true or false"})
+                return
+            if demo:
+                if state.cfg.provider.name != "mock":
+                    from spark.config import ModelProfile
+
+                    saved = next(
+                        (p for p in state.cfg.model_profiles if p.id == DEMO_PROFILE_ID),
+                        None,
+                    )
+                    if saved is None:
+                        saved = ModelProfile(id=DEMO_PROFILE_ID)
+                        state.cfg.model_profiles.append(saved)
+                    saved.name = "真实模型（进入演示前）"
+                    saved.provider = state.cfg.provider.name
+                    saved.base_url = state.cfg.provider.base_url
+                    saved.model = state.cfg.provider.model
+                    saved.api_key = state.cfg.provider.api_key or ""
+                    saved.api_key_env = state.cfg.provider.api_key_env
+                    saved.api_keys = state.cfg.provider.api_keys.copy()
+                    saved.fallback_models = state.cfg.provider.fallback_models.copy()
+                    saved.small_model = state.cfg.provider.small_model
+                state.cfg.provider.name = "mock"
+                state.cfg.provider.base_url = ""
+                state.cfg.provider.model = "mock"
+                state.cfg.provider.api_key = None
+                state.cfg.provider.api_key_env = ""
+                state.cfg.active_profile_id = ""
+            else:
+                from spark.config import activate_model_profile
+
+                saved = next(
+                    (p for p in state.cfg.model_profiles if p.id == DEMO_PROFILE_ID),
+                    None,
+                )
+                if saved is None:
+                    handler._json(
+                        409,
+                        {
+                            "error": "没有可恢复的真实模型：请先在「设置 → 模型」配置真实 provider 并保存，再进入演示模式。",
+                        },
+                    )
+                    return
+                activate_model_profile(state.cfg, saved)
+            _save_config(state.cfg)
+            try:
+                state.rebuild_loop(session_id=state.session_id)
+            except SparkError as exc:
+                handler._json(400, {"error": str(exc)})
+                return
+            handler._json(200, {"ok": True, "demo_mode": state.cfg.provider.name == "mock", "status": state.status()})
+        finally:
+            state.turn_lock.release()

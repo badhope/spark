@@ -27,11 +27,16 @@ def test_catalog_contains_strong_small_long_context_defaults() -> None:
     assert any("MiniCPM5-1B-Q4_K_M.gguf" in u for u in mini.urls)
 
 
-def test_all_catalog_models_are_under_two_billion_and_have_mirrors() -> None:
+def test_catalog_covers_light_balanced_and_4b_tiers() -> None:
     for spec in CATALOG:
         assert spec.context >= 32_768
         assert spec.urls and all(u.startswith("https://") for u in spec.urls)
         assert spec.tool_parser in {"minicpm5", "qwen3.5"}
+        # 本地 GPU/CPU 可跑的档位：最大 4B 级，不超过 3.5GB。
+        assert float(spec.params.rstrip("B")) <= 4.5
+        assert spec.size_bytes <= 3_500_000_000
+    ids = {spec.id for spec in CATALOG}
+    assert {"minicpm5-1b", "minicpm5-2b", "qwen3.5-2b", "qwen3.5-4b"} <= ids
 
 
 def test_parse_minicpm_function_block() -> None:

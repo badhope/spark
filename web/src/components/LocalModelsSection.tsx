@@ -25,6 +25,7 @@ export default function LocalModelsSection({ lang, onActivated }: Props) {
   const [dir, setDir] = useState("")
   const [busy, setBusy] = useState("")
   const [error, setError] = useState("")
+  const localized = (zh: string, en?: string) => (lang === "zh" ? zh : (en || zh))
 
   const refresh = useCallback(async () => {
     try {
@@ -112,18 +113,18 @@ export default function LocalModelsSection({ lang, onActivated }: Props) {
                     {model.active && <Badge tone="ok">{zh ? "使用中" : "Active"}</Badge>}
                     {model.installed && !model.active && <Badge tone="neutral">{zh ? "已安装" : "Installed"}</Badge>}
                   </div>
-                  <p className="mt-1 text-[11px] leading-relaxed text-ink3">{model.summary}</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-ink3">{localized(model.summary, model.summary_en)}</p>
                   <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-ink3">
                     <span>{model.params}</span>
                     <span>{ctxLabel(model.context)} context</span>
                     <span>{sizeLabel(model.size_bytes)}</span>
-                    <span>{model.languages}</span>
+                    <span>{localized(model.languages, model.languages_en)}</span>
                     <span>{model.license}</span>
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-1">
-                    {model.strengths.map((s) => <Badge key={s} tone="neutral">{s}</Badge>)}
+                    {(lang === "zh" ? model.strengths : (model.strengths_en?.length ? model.strengths_en : model.strengths)).map((s) => <Badge key={s} tone="neutral">{s}</Badge>)}
                   </div>
-                  {model.note && <p className="mt-1 text-[10px] text-ink3">{model.note}</p>}
+                  {model.note && <p className="mt-1 text-[10px] text-ink3">{localized(model.note, model.note_en)}</p>}
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   {model.installed ? (

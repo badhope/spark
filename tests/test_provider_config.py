@@ -23,7 +23,7 @@ def test_mock_skips_key(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result is None or isinstance(result, str)
 
 
-def test_missing_key_falls_back_to_mock(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_key_returns_unavailable_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SPARK_API_KEY", raising=False)
     monkeypatch.delenv("USER_KEY", raising=False)
     cfg = SparkConfig()
@@ -31,9 +31,10 @@ def test_missing_key_falls_back_to_mock(monkeypatch: pytest.MonkeyPatch) -> None
     cfg.provider.api_key = None
     cfg.provider.api_key_env = "USER_KEY"
     from spark.providers.factory import create_provider
-    from spark.providers.mock import MockProvider
+    from spark.providers.mock import UnavailableProvider
 
-    assert isinstance(create_provider(cfg), MockProvider)
+    # 缺 Key 不得回退 Mock：返回 UnavailableProvider，任何回合都会如实报错。
+    assert isinstance(create_provider(cfg), UnavailableProvider)
 
 
 def test_key_present_builds_openai_provider(monkeypatch: pytest.MonkeyPatch) -> None:

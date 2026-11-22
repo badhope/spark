@@ -94,8 +94,9 @@ def _build_server_and_state(
     store: SessionStore,
     host: str = "127.0.0.1",
     port: int | None = None,
+    public_url: str = "",
 ) -> tuple[SparkHTTPServer, SparkWebState]:
-    state = SparkWebState(workdir, cfg, store)
+    state = SparkWebState(workdir, cfg, store, public_url=public_url)
     ui_dir = ui_dir_for()
     html = (
         (ui_dir / "index.html").read_text(encoding="utf-8")
@@ -117,6 +118,10 @@ def _build_server_and_state(
     server = SparkHTTPServer((host, port), HandlerClass)
     server.state = state
     server.ui_dir = ui_dir
+    state.handler_class = HandlerClass
+    state.ui_dir = ui_dir
+    state.web_host = host
+    state.web_port = int(server.server_port)
 
     local_only = host in {"127.0.0.1", "localhost", "::1"}
     logger.info("Spark web at http://%s:%d session=%s", host, port, state.session_id)
@@ -137,10 +142,16 @@ def build_web_server(
     store: SessionStore,
     host: str = "127.0.0.1",
     port: int | None = None,
+    public_url: str = "",
 ) -> tuple[SparkHTTPServer, SparkWebState]:
     """构建但不启动 Web 服务；返回 (server, state) 供 serve_web 与桌面壳复用。"""
     return _build_server_and_state(
-        workdir=workdir, cfg=cfg, store=store, host=host, port=port
+        workdir=workdir,
+        cfg=cfg,
+        store=store,
+        host=host,
+        port=port,
+        public_url=public_url,
     )
 
 
@@ -151,9 +162,15 @@ def serve_web(
     store: SessionStore,
     host: str = "127.0.0.1",
     port: int | None = None,
+    public_url: str = "",
 ) -> None:
     server, _state = build_web_server(
-        workdir=workdir, cfg=cfg, store=store, host=host, port=port
+        workdir=workdir,
+        cfg=cfg,
+        store=store,
+        host=host,
+        port=port,
+        public_url=public_url,
     )
     try:
         server.serve_forever()

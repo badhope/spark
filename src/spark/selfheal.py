@@ -162,7 +162,7 @@ def diagnose(
     # --- credentials ---
     if cfg.provider.name == "mock":
         rows.append(
-            _row("warn", "provider.mock", "当前为演示模型（mock），不会真实调用大模型", "运行 spark init 或填 API Key")
+            _row("warn", "provider.mock", "当前为 Mock 展示模式：脚本回复，不会真实调用大模型", "运行 spark init 或填 API Key，或退出演示模式")
         )
     elif cfg.provider.name == "ollama":
         rows.append(_row("ok", "provider.ollama", f"Ollama 本地模型：{cfg.provider.model}"))
@@ -172,7 +172,7 @@ def diagnose(
             _row(
                 "bad",
                 "provider.no_key",
-                f"未配置 API Key——当前会退回演示模式；需要环境变量 {key_env}",
+                f"未配置 API Key——真实对话会被阻止，不会回退 Mock；需要环境变量 {key_env}",
                 f"设置环境变量 {key_env}，或在 Web 设置中填入密钥",
             )
         )

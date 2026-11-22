@@ -128,7 +128,14 @@ def list_dir(sandbox: WorkdirSandbox, args: ListDirArgs) -> ToolResult:
             ok=False, payload={"error": f"Directory not found: {args.path}"}
         )
     entries: list[dict[str, Any]] = []
-    for child in sorted(path.iterdir(), key=lambda p: p.name)[: args.max_entries]:
+    for child in sorted(path.iterdir(), key=lambda p: p.name):
+        # Do not leak protected names (.git/.spark/credentials) through a
+        # top-level listing: read_file already blocks them, but a directory
+        # enumeration would otherwise expose their existence.
+        if not sandbox.is_path_allowed(child):
+            continue
+        if len(entries) >= args.max_entries:
+            break
         item: dict[str, Any] = {"name": child.name, "type": "dir" if child.is_dir() else "file"}
         if child.is_file():
             item["size"] = child.stat().st_size

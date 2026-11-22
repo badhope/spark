@@ -17,7 +17,7 @@ spark init    # 配置任意 OpenAI 兼容端点
 spark web     # 打开浏览器界面
 ```
 
-没有 API Key 也能启动：Spark 会进入演示模式，使用本地 mock 模型。在设置里填入密钥后，下一轮直接切到真实模型，不用重启。
+没有 API Key 也能启动，但 Spark 会如实显示配置错误并拒绝生成假回答。设置页提供显式的「Mock 展示模式」一键进入/退出；真实模式缺 Key、模型未下载、端点连不上都按真实状态报错。
 
 ![Spark 对话：推理过程、工具调用与实时上下文用量](assets/screenshots/11-chat.png)
 
@@ -34,6 +34,8 @@ spark web     # 打开浏览器界面
 ```bash
 spark                         # 终端 TUI
 spark web                     # 浏览器界面，仅回环
+spark web --host 0.0.0.0      # 局域网；设置→远程控制生成二维码链接
+spark web --public-url https://spark.example.com  # 放在自己的 HTTPS 反向代理后
 spark desktop                 # 原生窗口，仅回环
 spark exec "任务" --json       # NDJSON 事件流，适合脚本与 CI
 spark review                  # 审查未提交的 diff
@@ -60,6 +62,22 @@ spark enterprise --host 127.0.0.1 --port 18800
 | IDE / ACP | `spark acp` · `spark ide install` | Zed、JetBrains、Neovim |
 | MCP / A2A | `spark mcp-serve` · `spark a2a-serve` | 工具与 Agent 间协作 |
 
+## 远程控制
+
+打开 **设置 → 系统 → 远程控制**，生成一次性链接和二维码。手机接入的是同一个工作区；文件、命令、模型调用和审批仍在电脑上执行。同一 Wi‑Fi 用 `spark web --host 0.0.0.0` 即可；外网用 `spark web --public-url https://你的域名`，前面挂自己的 HTTPS 反向代理。
+
+手机能发消息、审批、取消、切换会话、看文件和 diff；设置、插件、直接 shell/PTY 仍留在本机。配对码 5 分钟有效，每台设备拿独立的 7 天令牌，可单独吊销。设备列表带在线状态和仅本机可见的远程写审计；HTTPS 或 localhost 页面可开启 Web Push，锁屏时也能收到审批通知。
+
+手机端使用独立首页而不是把桌面布局缩窄：390×844 首屏固定显示待审批、当前会话和新任务，底部四栏导航始终可见；审批在首页卡片点“查看并审批”后再点允许/拒绝，两步完成。支持加入主屏幕（PWA）；输入框的麦克风走浏览器 `SpeechRecognition`，浏览器不支持或权限被拒时提示并回到键盘输入。
+
+![Spark 远程控制：二维码、一次性链接与已配对设备列表](assets/screenshots/25-remote-control.png)
+
+![Spark 远程控制：在线设备、最近请求与仅本机可见的审计记录](assets/screenshots/26-remote-audit.png)
+
+![Spark 手机端首页：待审批、当前会话与新任务在同一屏](assets/screenshots/27-mobile-home.png)
+
+![Spark 手机端审批：首页卡片进入详情，拒绝或允许两步完成](assets/screenshots/28-mobile-approval.png)
+
 ## 安全模型
 
 三层权限逐级收窄：
@@ -79,6 +97,7 @@ spark enterprise --host 127.0.0.1 --port 18800
 | [HTTP API](docs/en/API.md) | [API](docs/API.md) |
 | [Architecture](docs/en/ARCHITECTURE.md) | [架构](docs/ARCHITECTURE.md) |
 | [Features](docs/FEATURES.md) | [功能总览](docs/FEATURES.md) |
+| [Remote control](docs/REMOTE.md) | [远程控制](docs/REMOTE.md) |
 | [Enterprise control plane](docs/ENTERPRISE.md) | [企业控制面](docs/ENTERPRISE.md) |
 | [A2A protocol](docs/A2A.md) | [A2A](docs/A2A.md) |
 | [ACP / IDE setup](docs/ACP.md) | [IDE 接入](docs/ACP.md) |

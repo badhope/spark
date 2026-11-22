@@ -11,7 +11,11 @@ from spark.control.settings import ControlSettings
 
 
 @pytest.fixture()
-def client(tmp_path: Path):
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # Control-plane tasks run a real AgentLoop; use the explicit Mock provider
+    # in tests so a missing API key does not turn the run into a real config error.
+    monkeypatch.setenv("SPARK_PROVIDER__NAME", "mock")
+    monkeypatch.setenv("SPARK_PROVIDER__MODEL", "mock-model")
     settings = ControlSettings(
         database_url=f"sqlite:///{(tmp_path / 'control.db').as_posix()}",
         auth_mode="dev",

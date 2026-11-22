@@ -131,7 +131,12 @@ class AgentConfig(BaseModel):
     approval: ApprovalMode = "suggest"
     workdir_only: bool = True
     sandbox_mode: SandboxMode = "workspace"
-    protected_paths: list[str] = Field(default_factory=list)
+    #: Protect repo internals and credential files by default.  These are
+    #: workdir-relative prefixes and are enforced by the workspace sandbox;
+    #: the read-only tools also filter them out of listings/glob results.
+    protected_paths: list[str] = Field(
+        default_factory=lambda: [".git", ".spark", ".env"]
+    )
     #: 额外可读写的目录（`--add-dir`，对应 codex/opencode 的同名能力）。
     #: 只放行这些目录内的文件读写；不放宽 shell 越界与保护路径。
     extra_dirs: list[str] = Field(default_factory=list)
@@ -420,6 +425,7 @@ api_key_env = "SPARK_API_KEY"
 approval = "suggest"
 workdir_only = true
 sandbox_mode = "workspace"
+protected_paths = [".git", ".spark", ".env"]
 shell_timeout_sec = 60
 max_tool_rounds = 30
 max_repeat_calls = 4
