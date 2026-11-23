@@ -153,6 +153,25 @@ def _parse_agent_numbers(agent_in: dict, state) -> dict[str, Any] | str:
         cost_in = float(
             agent_in.get("max_session_cost_usd", state.cfg.agent.max_session_cost_usd)
         )
+        goal_auto_turns = int(
+            agent_in.get("goal_auto_turns", state.cfg.agent.goal_auto_turns)
+        )
+        queue_daily_limit = int(
+            agent_in.get("queue_daily_limit", state.cfg.agent.queue_daily_limit)
+        )
+        queue_daily_cost_usd = float(
+            agent_in.get(
+                "queue_daily_cost_usd", state.cfg.agent.queue_daily_cost_usd
+            )
+        )
+        queue_workers = int(
+            agent_in.get("queue_workers", state.cfg.agent.queue_workers)
+        )
+        queue_task_timeout_sec = int(
+            agent_in.get(
+                "queue_task_timeout_sec", state.cfg.agent.queue_task_timeout_sec
+            )
+        )
     except (TypeError, ValueError):
         return "invalid agent numbers"
     return {
@@ -163,6 +182,11 @@ def _parse_agent_numbers(agent_in: dict, state) -> dict[str, Any] | str:
         "repeat_in": repeat_in,
         "token_in": token_in,
         "cost_in": cost_in,
+        "goal_auto_turns": goal_auto_turns,
+        "queue_daily_limit": queue_daily_limit,
+        "queue_daily_cost_usd": queue_daily_cost_usd,
+        "queue_workers": queue_workers,
+        "queue_task_timeout_sec": queue_task_timeout_sec,
     }
 
 
@@ -421,6 +445,9 @@ def _extract_request_fields(state, body: dict) -> dict[str, Any]:
         "effort": str(
             agent_in.get("effort") or state.cfg.agent.effort
         ).strip(),
+        "tool_preset": str(
+            agent_in.get("tool_preset") or state.cfg.agent.tool_preset
+        ).strip(),
         "provider_resilience": (
             {
                 "api_keys": provider_in.get("api_keys"),
@@ -504,6 +531,7 @@ def _apply_validated_settings(
     cfg.agent.approval = cast(ApprovalMode, fields["approval"])
     cfg.agent.sandbox_mode = cast(SandboxMode, fields["sandbox_mode"])
     cfg.agent.effort = cast(Literal["low", "medium", "high"], fields["effort"])
+    cfg.agent.tool_preset = cast(Literal["full", "coding"], fields["tool_preset"])
     cfg.agent.workdir_only = numbers["workdir_only"]
     cfg.agent.shell_timeout_sec = numbers["shell_timeout_sec"]
     cfg.agent.max_tool_rounds = numbers["max_tool_rounds"]
@@ -511,6 +539,11 @@ def _apply_validated_settings(
     cfg.agent.max_repeat_calls = numbers["repeat_in"]
     cfg.agent.max_turn_tokens = numbers["token_in"]
     cfg.agent.max_session_cost_usd = numbers["cost_in"]
+    cfg.agent.goal_auto_turns = numbers["goal_auto_turns"]
+    cfg.agent.queue_daily_limit = numbers["queue_daily_limit"]
+    cfg.agent.queue_daily_cost_usd = numbers["queue_daily_cost_usd"]
+    cfg.agent.queue_workers = numbers["queue_workers"]
+    cfg.agent.queue_task_timeout_sec = numbers["queue_task_timeout_sec"]
     cfg.agent.system_prompt = system_prompt
     for key, value in display_flags.items():
         setattr(cfg.agent, key, value)
@@ -533,6 +566,13 @@ def _apply_validated_settings(
     if parsed_mcp is not None:
         cfg.mcp_servers = parsed_mcp
     state.sandbox = WorkdirSandbox(state.workdir, state.cfg)
+    queue = getattr(state, "queue", None)
+    if queue is not None and hasattr(queue, "set_daily_limit"):
+        queue.set_daily_limit(cfg.agent.queue_daily_limit)
+    if queue is not None and hasattr(queue, "set_daily_cost_limit"):
+        queue.set_daily_cost_limit(cfg.agent.queue_daily_cost_usd)
+    if queue is not None and hasattr(queue, "set_task_timeout"):
+        queue.set_task_timeout(cfg.agent.queue_task_timeout_sec)
 
 
 def _handle_settings(handler: HandlerBase, body: dict) -> None:
@@ -584,6 +624,9 @@ def _handle_settings_locked(handler: HandlerBase, body: dict) -> None:
     )
     if agent_error:
         handler._json(400, {"error": agent_error})
+        return
+    if fields["tool_preset"] not in {"full", "coding"}:
+        handler._json(400, {"error": "tool_preset must be full or coding"})
         return
 
     display_flags = {

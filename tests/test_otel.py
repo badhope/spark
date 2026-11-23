@@ -14,7 +14,14 @@ import pytest
 from spark.config import SparkConfig
 from spark.core.loop import AgentLoop
 from spark.models import ApprovalDecision, ApprovalRequest, ChatDelta, ToolCall
-from spark.otel import in_memory_exporter, reset_for_tests, telemetry_enabled
+from spark.otel import (
+    in_memory_exporter,
+    in_memory_log_exporter,
+    in_memory_metric_reader,
+    record_event,
+    reset_for_tests,
+    telemetry_enabled,
+)
 from spark.providers.mock import MockProvider
 from spark.sandbox import WorkdirSandbox
 from spark.store import SessionStore
@@ -205,3 +212,77 @@ async def test_resumed_turn_span(tmp_path: Path) -> None:
         assert any(s.attributes.get("spark.turn.resumed") is True for s in turn_spans)
     finally:
         await cp.close()
+
+
+async def test_metrics_and_audit_logs_export_in_memory(tmp_path: Path) -> None:
+    """metric reader 与 log exporter 真实产出，不只是 span。"""
+    loop = _loop(tmp_path, _tool_provider())
+    events = [e async for e in loop.iter_turn("list files")]
+    assert events[-1].type == "turn_end"
+    record_event("spark.test.audit", {"decision": "allow"}, body="approved")
+
+    from spark.otel import flush
+
+    flush()
+    reader = in_memory_metric_reader()
+    assert reader is not None
+    data = reader.get_metrics_data()
+    names = {
+        metric.name
+        for resource in data.resource_metrics
+        for scope in resource.scope_metrics
+        for metric in scope.metrics
+    }
+    assert "spark.turn.tokens" in names
+    assert "spark.turn.latency_ms" in names
+
+    exporter = in_memory_log_exporter()
+    assert exporter is not None
+    exporter.force_flush()
+    records = list(exporter.get_finished_logs())
+    assert records
+    record = records[-1].log_record
+    assert record.body == "approved"
+    assert record.attributes["event.name"] == "spark.test.audit"
+
+
+def test_record_event_redacts_credentials() -> None:
+    """审计事件不能把凭据写进 OTLP。"""
+    from spark.otel import init_telemetry
+
+    init_telemetry()
+    record_event(
+        "spark.test.secret",
+        {"api_key": "sk-live-123", "input_tokens": 12, "nested": {"password": "p"}},
+        body="check",
+    )
+    from spark.otel import flush
+
+    flush()
+    exporter = in_memory_log_exporter()
+    assert exporter is not None
+    exporter.force_flush()
+    record = list(exporter.get_finished_logs())[-1].log_record
+    assert record.attributes["api_key"] == "[REDACTED]"
+    assert record.attributes["input_tokens"] == 12
+    assert record.attributes["nested"]["password"] == "[REDACTED]"
+
+
+def test_stdlib_logging_bridge_exports(monkeypatch) -> None:
+    """显式开启后，stdlib logging 真实进入 OTel log exporter。"""
+    import logging
+
+    monkeypatch.setenv("SPARK_OTEL_BRIDGE_LOGGING", "1")
+    from spark.otel import flush, reset_for_tests
+
+    from spark.otel import init_telemetry
+
+    reset_for_tests()
+    init_telemetry()
+    logging.getLogger("spark.test.bridge").warning("bridge hello")
+    flush()
+    exporter = in_memory_log_exporter()
+    assert exporter is not None
+    exporter.force_flush()
+    bodies = [r.log_record.body for r in exporter.get_finished_logs()]
+    assert "bridge hello" in bodies

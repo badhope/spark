@@ -15,12 +15,14 @@ const path = require("path");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
 const P = require("./src/protocol");
+const I = require("./src/inline");
 
 let output;
 let manager;
 let currentPanel;
 let diagnosticCollection;
 let statusItem;
+const inlinePreviewDocs = new Map();
 
 function log(line) {
   if (!output) output = vscode.window.createOutputChannel("Spark");
@@ -693,8 +695,144 @@ function registerProposalProvider(context) {
         if (!panel) return "";
         return panel.proposals.get(id) || "";
       },
+    }),
+    vscode.workspace.registerTextDocumentContentProvider("spark-inline-preview", {
+      provideTextDocumentContent(uri) {
+        const id = new URLSearchParams(uri.query).get("id") || "";
+        return inlinePreviewDocs.get(id) || "";
+      },
     })
   );
+}
+
+async function requestInlineEdit(body) {
+  await manager.ensure();
+  return requestJson(manager.baseUrl, "POST", "/api/inline_edit", body, manager.token, 120000);
+}
+
+function inlineMode() {
+  return String(config().get("inlineCompletions.mode", "nes") || "nes");
+}
+
+async function inlineEditSelection() {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    vscode.window.showInformationMessage("Spark: 先打开一个编辑器并选中要改的代码。");
+    return;
+  }
+  const selected = editor.document.getText(editor.selection);
+  if (!selected.trim()) {
+    vscode.window.showInformationMessage("Spark: 先选中一段代码，再执行内联编辑。");
+    return;
+  }
+  const instruction = await vscode.window.showInputBox({
+    title: "Spark inline edit",
+    prompt: "用自然语言说明要怎么改这段代码（最小改动）",
+    placeHolder: "例如：补上空输入处理；把这个循环改成早返回",
+    ignoreFocusOut: true,
+  });
+  if (!instruction || !instruction.trim()) return;
+  const body = I.buildInlineRequest({
+    mode: "edit",
+    path: relativePath(editor.document.uri.fsPath),
+    language: editor.document.languageId,
+    selected,
+    instruction,
+  });
+  let result;
+  try {
+    result = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "Spark 正在生成内联编辑…", cancellable: true },
+      () => requestInlineEdit(body)
+    );
+  } catch (err) {
+    vscode.window.showErrorMessage(`Spark inline edit: ${err.message || err}`);
+    return;
+  }
+  const text = I.normalizeSuggestedText(result.text);
+  if (!text) {
+    vscode.window.showInformationMessage("Spark: 模型没有给出可用改动。");
+    return;
+  }
+  const id = `inline-${Date.now()}`;
+  const version = editor.document.version;
+  const startOffset = editor.document.offsetAt(editor.selection.start);
+  const endOffset = editor.document.offsetAt(editor.selection.end);
+  const whole = editor.document.getText();
+  const replacement = whole.slice(0, startOffset) + text + whole.slice(endOffset);
+  inlinePreviewDocs.set(id, replacement);
+  const preview = vscode.Uri.parse(`spark-inline-preview:/${path.basename(editor.document.uri.fsPath)}?id=${encodeURIComponent(id)}`);
+  await vscode.commands.executeCommand("vscode.diff", editor.document.uri, preview, "Spark inline edit（左：当前 / 右：建议）");
+  const choice = await vscode.window.showInformationMessage(
+    `应用这段内联改动？模型：${result.model || "current provider"} · ${Math.round(result.latency_ms || 0)}ms`,
+    { modal: true },
+    "应用",
+    "取消"
+  );
+  if (choice !== "应用") {
+    inlinePreviewDocs.delete(id);
+    return;
+  }
+  // The modal can stay open for minutes. If the document changed while the
+  // preview was open, applying a captured Range would overwrite the wrong
+  // bytes; refuse and ask the user to re-run instead of guessing an offset.
+  if (editor.document.version !== version) {
+    inlinePreviewDocs.delete(id);
+    vscode.window.showWarningMessage("Spark: 文件在预览期间已被修改，已取消应用。请重新执行内联编辑。");
+    return;
+  }
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(
+    editor.document.uri,
+    new vscode.Range(editor.document.positionAt(startOffset), editor.document.positionAt(endOffset)),
+    text
+  );
+  const applied = await vscode.workspace.applyEdit(edit);
+  inlinePreviewDocs.delete(id);
+  if (applied) vscode.window.setStatusBarMessage("Spark: 内联编辑已应用", 4000);
+  else vscode.window.showErrorMessage("Spark: 内联编辑未能应用。");
+}
+
+function registerInlineCompletions(context) {
+  if (!config().get("inlineCompletions.enabled", false)) return;
+  const selector = [
+    { language: "python" }, { language: "typescript" }, { language: "javascript" },
+    { language: "typescriptreact" }, { language: "javascriptreact" },
+    { language: "go" }, { language: "rust" }, { language: "java" },
+  ];
+  const provider = {
+    async provideInlineCompletionItems(document, position, ctx, token) {
+      if (!config().get("inlineCompletions.enabled", false)) return { items: [] };
+      const debounce = Math.max(0, Number(config().get("inlineCompletions.debounceMs", 450)) || 0);
+      if (debounce) await sleep(debounce);
+      if (token.isCancellationRequested) return { items: [] };
+      const around = I.contextAround(
+        document.getText(),
+        document.offsetAt(position),
+        Number(config().get("inlineCompletions.maxContextChars", 3000)) || 3000
+      );
+      const body = I.buildInlineRequest({
+        mode: inlineMode(),
+        path: relativePath(document.uri.fsPath),
+        language: document.languageId,
+        prefix: around.prefix,
+        suffix: around.suffix,
+      });
+      try {
+        const result = await requestInlineEdit(body);
+        if (token.isCancellationRequested) return { items: [] };
+        const text = I.normalizeSuggestedText(result.text);
+        if (!text) return { items: [] };
+        return {
+          items: [new vscode.InlineCompletionItem(text, new vscode.Range(position, position))],
+        };
+      } catch (err) {
+        log(`inline completion failed: ${err.message || err}`);
+        return { items: [] };
+      }
+    },
+  };
+  context.subscriptions.push(vscode.languages.registerInlineCompletionItemProvider(selector, provider));
 }
 
 function openChat() {
@@ -773,8 +911,16 @@ function activate(context) {
     ),
     vscode.commands.registerCommand("spark.diagnostics.open", () =>
       vscode.commands.executeCommand("workbench.action.problems.focus")
-    )
+    ),
+    vscode.commands.registerCommand("spark.inline.edit", inlineEditSelection),
+    vscode.commands.registerCommand("spark.inline.toggle", async () => {
+      const cfg = config();
+      const next = !cfg.get("inlineCompletions.enabled", false);
+      await cfg.update("inlineCompletions.enabled", next, vscode.ConfigurationTarget.Workspace);
+      vscode.window.showInformationMessage(`Spark NES ${next ? "已开启" : "已关闭"}；重载窗口后生效。`);
+    })
   );
+  registerInlineCompletions(context);
 }
 
 function deactivate() {

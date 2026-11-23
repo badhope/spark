@@ -305,3 +305,17 @@ def test_get_runtime_replaces_dead_singleton() -> None:
         assert second is not first, "a dead runtime must be replaced, not reused"
     finally:
         shutdown_runtime()
+
+
+def test_iterate_total_runtime_timeout_cancels_slow_generator() -> None:
+    async def slow() -> object:
+        yield "first"
+        await asyncio.sleep(0.5)
+        yield "second"
+
+    runtime = AgentRuntime("test-total-timeout")
+    try:
+        with pytest.raises(TimeoutError, match="total runtime"):
+            list(runtime.iterate(slow(), timeout=2.0, max_seconds=0.1))
+    finally:
+        runtime.close()

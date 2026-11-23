@@ -1,9 +1,23 @@
 import { useCallback, useEffect, useState } from "react"
-import { Badge, Button, Spinner } from "./ui"
+import { Badge, Button, Spinner, Toggle } from "./ui"
 import { IconExternal } from "./icons"
-import { fetchPlugins, setPluginEnabled, type PluginItem } from "../api"
+import { fetchPlugins, setPluginEnabled, setPluginRequireSignature, type PluginItem } from "../api"
 import { useUiStore } from "../store/uiStore"
 import { t } from "../i18n"
+
+function signatureTone(status?: string): "ok" | "warn" | "neutral" {
+  if (status === "signed") return "ok"
+  if (status === "invalid" || status === "revoked" || status === "untrusted") return "warn"
+  return "neutral"
+}
+
+function signatureLabel(status: string | undefined, lang: "zh" | "en"): string {
+  if (status === "signed") return t("plugins.sigSigned", lang)
+  if (status === "untrusted") return t("plugins.sigUntrusted", lang)
+  if (status === "revoked") return t("plugins.sigRevoked", lang)
+  if (status === "invalid") return t("plugins.sigInvalid", lang)
+  return t("plugins.sigUnsigned", lang)
+}
 
 /**
  * 插件：工作区 `.spark/plugins/<name>/` 下的本地扩展。
@@ -17,6 +31,8 @@ export default function PluginsSection() {
   const [items, setItems] = useState<PluginItem[]>([])
   const [hooks, setHooks] = useState<Array<Record<string, unknown>>>([])
   const [dir, setDir] = useState(".spark/plugins")
+  const [requireSignature, setRequireSignature] = useState(false)
+  const [policyBusy, setPolicyBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState("")
   const openSettingsAt = useUiStore((s) => s.openSettingsAt)
@@ -28,6 +44,7 @@ export default function PluginsSection() {
       setItems(data.items ?? [])
       setHooks(data.hooks ?? [])
       setDir(data.plugins_dir ?? ".spark/plugins")
+      setRequireSignature(Boolean(data.require_signature))
     } catch (e) {
       pushToast("common.error", "error", e instanceof Error ? e.message : String(e))
     } finally {
@@ -84,6 +101,13 @@ export default function PluginsSection() {
                       {p.enabled ? t("plugins.disable", lang) : t("plugins.enable", lang)}
                     </Button>
                   ) : null}
+                  {p.has_manifest ? (
+                    <Badge tone={signatureTone(p.signature_status)}>
+                      <span title={p.signature_error || p.key_id || undefined}>
+                        {signatureLabel(p.signature_status, lang)}
+                      </span>
+                    </Badge>
+                  ) : null}
                   <Badge tone={p.error ? "warn" : p.enabled ? "ok" : "neutral"}>
                     <span title={p.error || undefined}>
                       {p.error
@@ -95,11 +119,12 @@ export default function PluginsSection() {
                   </Badge>
                 </div>
                 {p.description && <p className="text-[11.5px] leading-relaxed text-ink3">{p.description}</p>}
-                {(p.tools || p.commands || p.hooks) ? (
+                {(p.tools || p.commands || p.hooks || p.publisher) ? (
                   <div className="flex flex-wrap gap-x-3 text-[10.5px] text-ink3">
                     {p.tools ? <span>{t("plugins.tools", lang)}: {p.tools}</span> : null}
                     {p.commands ? <span>{t("plugins.commands", lang)}: {p.commands}</span> : null}
                     {p.hooks ? <span>{t("plugins.hooksCount", lang)}: {p.hooks}</span> : null}
+                    {p.publisher ? <span>{t("plugins.publisher", lang)}: {p.publisher}</span> : null}
                   </div>
                 ) : null}
                 <span className="font-mono text-[10.5px] text-ink3">{p.path}</span>
@@ -107,6 +132,34 @@ export default function PluginsSection() {
             ))}
           </div>
         )}
+      </section>
+
+      <section className="flex flex-col gap-2 rounded-xl border border-line bg-panel p-4">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-ink">{t("plugins.requireSignature", lang)}</h3>
+          <div className="ml-auto">
+            <Toggle
+              checked={requireSignature}
+              disabled={policyBusy}
+              label={t("plugins.requireSignature", lang)}
+              onChange={(next) => {
+                setPolicyBusy(true)
+                void setPluginRequireSignature(next)
+                  .then((data) => {
+                    if (!data.ok) throw new Error(data.error || "policy save failed")
+                    setRequireSignature(Boolean(data.require_signature))
+                    if (data.items) setItems(data.items)
+                    pushToast("plugins.policySaved", "success")
+                  })
+                  .catch((e) =>
+                    pushToast("common.error", "error", e instanceof Error ? e.message : String(e)),
+                  )
+                  .finally(() => setPolicyBusy(false))
+              }}
+            />
+          </div>
+        </div>
+        <p className="text-xs leading-relaxed text-ink3">{t("plugins.requireSignatureDesc", lang)}</p>
       </section>
 
       <section className="flex flex-col gap-2 rounded-xl border border-line bg-panel p-4">

@@ -63,7 +63,8 @@ class SessionStore:
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL,
                     title TEXT NOT NULL,
-                    last_error TEXT NOT NULL DEFAULT ''
+                    last_error TEXT NOT NULL DEFAULT '',
+                    archived_at INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -138,6 +139,31 @@ class SessionStore:
                     source TEXT NOT NULL DEFAULT 'estimated',
                     created_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS turn_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    data_json TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS deliveries (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    task_id TEXT NOT NULL DEFAULT '',
+                    title TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'review',
+                    summary TEXT NOT NULL DEFAULT '',
+                    workdir TEXT NOT NULL DEFAULT '',
+                    files_json TEXT NOT NULL DEFAULT '[]',
+                    tests_json TEXT NOT NULL DEFAULT '[]',
+                    approvals_json TEXT NOT NULL DEFAULT '[]',
+                    cost_json TEXT NOT NULL DEFAULT '{}',
+                    diff_json TEXT NOT NULL DEFAULT '{}',
+                    metrics_json TEXT NOT NULL DEFAULT '{}',
+                    privacy_json TEXT NOT NULL DEFAULT '{}',
+                    checkpoint_id INTEGER,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS automations (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -164,6 +190,7 @@ class SessionStore:
                     session_id TEXT NOT NULL DEFAULT '',
                     result TEXT NOT NULL DEFAULT '',
                     error TEXT NOT NULL DEFAULT '',
+                    cost_usd REAL NOT NULL DEFAULT 0,
                     created_at REAL NOT NULL,
                     started_at REAL,
                     finished_at REAL
@@ -213,6 +240,12 @@ class SessionStore:
                     ON tool_events(session_id, message_id);
                 CREATE INDEX IF NOT EXISTS idx_checkpoints_session_id
                     ON checkpoints(session_id, id);
+                CREATE INDEX IF NOT EXISTS idx_turn_metrics_session_id
+                    ON turn_metrics(session_id, id);
+                CREATE INDEX IF NOT EXISTS idx_deliveries_session_id
+                    ON deliveries(session_id, id);
+                CREATE INDEX IF NOT EXISTS idx_deliveries_workdir
+                    ON deliveries(workdir, updated_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at
                     ON sessions(updated_at DESC);
                 """
@@ -252,7 +285,7 @@ class SessionStore:
             self._conn.commit()
 
     #: Bump when a step in :meth:`_migrate_schema` is added.
-    SCHEMA_VERSION = 4
+    SCHEMA_VERSION = 7
 
     def _migrate_schema(self) -> None:
         """Record/upgrade the schema version on *this* database.
@@ -263,7 +296,15 @@ class SessionStore:
         current = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
         if current >= self.SCHEMA_VERSION:
             return
-        for version, step in ((1, self._migrate_v1), (2, self._migrate_v2), (3, self._migrate_v3), (4, self._migrate_v4)):
+        for version, step in (
+            (1, self._migrate_v1),
+            (2, self._migrate_v2),
+            (3, self._migrate_v3),
+            (4, self._migrate_v4),
+            (5, self._migrate_v5),
+            (6, self._migrate_v6),
+            (7, self._migrate_v7),
+        ):
             if current < version:
                 step()
                 current = version
@@ -290,6 +331,50 @@ class SessionStore:
             )
         except sqlite3.OperationalError:
             # Fresh databases already create the column in _init().
+            pass
+
+    def _migrate_v5(self) -> None:
+        """v5: delivery ledger keeps the evidence it exports.
+
+        The original table stored files/tests/approvals/cost only, while
+        ``build_delivery`` returned a richer in-memory row. The next read from
+        SQLite silently dropped diff_summary, metrics and the privacy receipt,
+        so the Markdown export claimed "remote" for a local run. Add them as
+        first-class columns instead of reconstructing them at read time.
+        """
+        for column, default in (
+            ("diff_json", "'{}'"),
+            ("metrics_json", "'{}'"),
+            ("privacy_json", "'{}'"),
+        ):
+            try:
+                self._conn.execute(
+                    f"ALTER TABLE deliveries ADD COLUMN {column} TEXT NOT NULL DEFAULT {default}"
+                )
+            except sqlite3.OperationalError:
+                pass
+
+    def _migrate_v6(self) -> None:
+        """v6: archive sessions without destroying history."""
+        try:
+            self._conn.execute(
+                "ALTER TABLE sessions ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0"
+            )
+        except sqlite3.OperationalError:
+            pass
+
+    def _migrate_v7(self) -> None:
+        """v7: queue rows carry the USD spent by the attempt(s) for a daily cap.
+
+        Without a per-row number the quota would have to re-join token_usage by
+        a possibly empty session_id, and retries would hide the cost of the
+        failed attempt. Persist it at finish/requeue time instead.
+        """
+        try:
+            self._conn.execute(
+                "ALTER TABLE agent_queue ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0"
+            )
+        except sqlite3.OperationalError:
             pass
 
     def _migrate_v2(self) -> None:
@@ -370,13 +455,31 @@ class SessionStore:
             self._conn.commit()
         return sid
 
-    def list_sessions(self) -> list[dict]:
-        """Return all sessions ordered by most-recently-updated first."""
+    def list_sessions(self, *, include_archived: bool = False) -> list[dict]:
+        """Return active sessions (or all) ordered by most-recently-updated first."""
+        sql = (
+            "SELECT id, workdir, model, created_at, updated_at, title, keywords, archived_at "
+            "FROM sessions"
+        )
+        if not include_archived:
+            sql += " WHERE archived_at = 0"
+        sql += " ORDER BY updated_at DESC"
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT id, workdir, model, created_at, updated_at, title, keywords FROM sessions ORDER BY updated_at DESC"
-            ).fetchall()
+            rows = self._conn.execute(sql).fetchall()
             return [dict(r) for r in rows]
+
+    def archive_session(self, session_id: str, archived: bool = True) -> dict | None:
+        """Archive/restore a session while keeping every message and checkpoint."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE sessions SET archived_at = ?, updated_at = ? WHERE id = ?",
+                (int(time.time()) if archived else 0, int(time.time()), session_id),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT * FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            return dict(row) if row else None
 
     def get_session(self, session_id: str) -> dict | None:
         """Fetch a single session dict, or None if the id is unknown."""
@@ -549,14 +652,26 @@ class SessionStore:
             )
             self._conn.commit()
 
+    def latest_tool_event_id(self, session_id: str) -> int:
+        """Id of the newest tool event, or 0 for a session with no tools."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT MAX(id) FROM tool_events WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        return int(row[0] or 0) if row else 0
+
     def list_tool_events(self, session_id: str, limit: int = 500) -> list[dict]:
-        """Tool invocations for a session, oldest first (export/audit use)."""
+        """Newest ``limit`` tool invocations, returned oldest first for export/audit."""
         with self._lock:
             rows = self._conn.execute(
                 """SELECT id, message_id, name, arguments_json, result_json, approval, created_at
-                   FROM tool_events WHERE session_id = ? ORDER BY id LIMIT ?""",
+                   FROM tool_events WHERE session_id = ? ORDER BY id DESC LIMIT ?""",
                 (session_id, max(1, int(limit))),
             ).fetchall()
+        # Keep the public "oldest first" contract while bounding the window to
+        # the newest rows: a 500-event window must not mean the first 500.
+        rows = list(reversed(rows))
         result: list[dict] = []
         for row in rows:
             item = dict(row)
@@ -903,6 +1018,118 @@ class SessionStore:
                 "SELECT * FROM goals WHERE id = ?", (goal_id,)
             ).fetchone()
             return self._goal_row(row) if row else None
+
+    # ---- delivery ledger（交付账本） --------------------------------------
+
+    def save_delivery(self, delivery: dict) -> dict:
+        """Create or replace one delivery ledger row."""
+        now = time.time()
+        delivery_id = str(delivery.get("id") or uuid.uuid4().hex)
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO deliveries
+                   (id, session_id, task_id, title, status, summary, workdir,
+                    files_json, tests_json, approvals_json, cost_json,
+                    diff_json, metrics_json, privacy_json,
+                    checkpoint_id, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     title=excluded.title, status=excluded.status, summary=excluded.summary,
+                     files_json=excluded.files_json, tests_json=excluded.tests_json,
+                     approvals_json=excluded.approvals_json, cost_json=excluded.cost_json,
+                     diff_json=excluded.diff_json, metrics_json=excluded.metrics_json,
+                     privacy_json=excluded.privacy_json,
+                     checkpoint_id=excluded.checkpoint_id, updated_at=excluded.updated_at""",
+                (
+                    delivery_id,
+                    str(delivery.get("session_id") or ""),
+                    str(delivery.get("task_id") or ""),
+                    str(delivery.get("title") or "")[:200],
+                    str(delivery.get("status") or "review"),
+                    str(delivery.get("summary") or "")[:4000],
+                    str(delivery.get("workdir") or ""),
+                    json.dumps(delivery.get("files") or [], ensure_ascii=False),
+                    json.dumps(delivery.get("tests") or [], ensure_ascii=False),
+                    json.dumps(delivery.get("approvals") or [], ensure_ascii=False),
+                    json.dumps(delivery.get("cost") or {}, ensure_ascii=False),
+                    json.dumps(delivery.get("diff_summary") or {}, ensure_ascii=False),
+                    json.dumps(delivery.get("metrics") or {}, ensure_ascii=False),
+                    json.dumps(delivery.get("privacy") or {}, ensure_ascii=False),
+                    delivery.get("checkpoint_id"),
+                    float(delivery.get("created_at") or now),
+                    now,
+                ),
+            )
+            self._conn.commit()
+            row = self._conn.execute("SELECT * FROM deliveries WHERE id = ?", (delivery_id,)).fetchone()
+        return self._delivery_row(row) if row else {"id": delivery_id}
+
+    @staticmethod
+    def _delivery_row(row) -> dict:
+        item = dict(row)
+        field_map = {
+            "files_json": "files",
+            "tests_json": "tests",
+            "approvals_json": "approvals",
+            "cost_json": "cost",
+            "diff_json": "diff_summary",
+            "metrics_json": "metrics",
+            "privacy_json": "privacy",
+        }
+        for key, field in field_map.items():
+            default: object = {} if key in {"cost_json", "diff_json", "metrics_json", "privacy_json"} else []
+            try:
+                item[field] = json.loads(item.pop(key) or "null")
+            except (TypeError, ValueError):
+                item[field] = default
+        return item
+
+    def list_deliveries(self, workdir: str = "", limit: int = 50) -> list[dict]:
+        with self._lock:
+            if workdir:
+                rows = self._conn.execute(
+                    "SELECT * FROM deliveries WHERE workdir = ? ORDER BY updated_at DESC LIMIT ?",
+                    (workdir, max(1, int(limit))),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM deliveries ORDER BY updated_at DESC LIMIT ?",
+                    (max(1, int(limit)),),
+                ).fetchall()
+        return [self._delivery_row(row) for row in rows]
+
+    def get_delivery(self, delivery_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM deliveries WHERE id = ?", (delivery_id,)).fetchone()
+        return self._delivery_row(row) if row else None
+
+    # ---- turn metrics（本地延迟标尺） -------------------------------------
+
+    def append_turn_metric(self, session_id: str, data: dict) -> None:
+        """Persist one turn's local latency snapshot; never upload it."""
+        payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO turn_metrics (session_id, data_json, created_at) VALUES (?, ?, ?)",
+                (session_id, payload, int(time.time())),
+            )
+            self._conn.commit()
+
+    def list_turn_metrics(self, session_id: str, limit: int = 50) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT id, data_json, created_at FROM turn_metrics
+                   WHERE session_id = ? ORDER BY id DESC LIMIT ?""",
+                (session_id, max(1, int(limit))),
+            ).fetchall()
+        out = []
+        for row in rows:
+            try:
+                data = json.loads(row["data_json"])
+            except (TypeError, ValueError):
+                data = {}
+            out.append({"id": row["id"], "created_at": row["created_at"], "metrics": data})
+        return out
 
     # ---- token usage audit ----
 
@@ -1466,23 +1693,35 @@ class SessionStore:
         result: str = "",
         error: str = "",
         session_id: str = "",
+        cost_usd: float = 0.0,
     ) -> None:
         with self._lock:
             self._conn.execute(
                 """UPDATE agent_queue
                    SET status = ?, result = ?, error = ?, session_id = ?,
-                       finished_at = ? WHERE id = ?""",
-                (status, str(result or "")[:2000], str(error or "")[:500], session_id, time.time(), task_id),
+                       finished_at = ?, cost_usd = cost_usd + ? WHERE id = ?""",
+                (
+                    status,
+                    str(result or "")[:2000],
+                    str(error or "")[:500],
+                    session_id,
+                    time.time(),
+                    round(float(cost_usd or 0.0), 6),
+                    task_id,
+                ),
             )
             self._conn.commit()
 
-    def requeue_agent_task(self, task_id: str, error: str = "") -> None:
+    def requeue_agent_task(
+        self, task_id: str, error: str = "", *, cost_usd: float = 0.0
+    ) -> None:
         with self._lock:
             self._conn.execute(
                 """UPDATE agent_queue
-                   SET status = 'queued', error = ?, started_at = NULL, finished_at = NULL
+                   SET status = 'queued', error = ?, started_at = NULL,
+                       finished_at = NULL, cost_usd = cost_usd + ?
                    WHERE id = ?""",
-                (str(error or "")[:500], task_id),
+                (str(error or "")[:500], round(float(cost_usd or 0.0), 6), task_id),
             )
             self._conn.commit()
 
@@ -1527,6 +1766,28 @@ class SessionStore:
                 "SELECT status, COUNT(*) AS n FROM agent_queue GROUP BY status"
             ).fetchall()
         return {str(row["status"]): int(row["n"]) for row in rows}
+
+    def queue_completed_since(self, since: float) -> int:
+        """Count tasks that reached a terminal state after ``since``."""
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT COUNT(*) AS n FROM agent_queue
+                   WHERE status IN ('ok', 'failed', 'cancelled')
+                     AND finished_at IS NOT NULL AND finished_at >= ?""",
+                (float(since),),
+            ).fetchone()
+        return int(row["n"] or 0) if row else 0
+
+    def queue_cost_since(self, since: float) -> float:
+        """USD spent by tasks that reached a terminal state after ``since``."""
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT COALESCE(SUM(cost_usd), 0.0) AS cost FROM agent_queue
+                   WHERE status IN ('ok', 'failed', 'cancelled')
+                     AND finished_at IS NOT NULL AND finished_at >= ?""",
+                (float(since),),
+            ).fetchone()
+        return round(float(row["cost"] or 0.0), 6) if row else 0.0
 
     # ---- automations（定时任务） -------------------------------------------
 

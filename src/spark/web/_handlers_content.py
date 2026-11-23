@@ -112,6 +112,10 @@ def _plugin_entries(workdir: Path) -> list[dict[str, Any]]:
                 "tools": len(manifest.tools) if manifest else 0,
                 "commands": len(manifest.commands) if manifest else 0,
                 "hooks": len(manifest.hooks) if manifest else 0,
+                "signature_status": record.signature_status,
+                "signature_error": record.signature_error,
+                "publisher": manifest.publisher if manifest else "",
+                "key_id": manifest.key_id if manifest else "",
             }
         )
     return out
@@ -334,6 +338,34 @@ def _handle_plugins(handler: HandlerBase, body: dict) -> None:
         if record.manifest is None or record.error:
             handler._json(400, {"error": f"plugin manifest is invalid: {name}"})
             return
+        if action == "enable":
+            # 执行层 _signature_gate 对 invalid/revoked/untrusted 永远拒绝；
+            # Web 开关不能先把它们点亮、等下一轮再报错，否则用户看到的
+            # “已启用”和实际“不会执行”互相矛盾。
+            blocked = {"invalid", "revoked", "untrusted"}
+            status = record.signature_status or "unknown"
+            if status in blocked:
+                handler._json(
+                    400,
+                    {
+                        "error": (
+                            f"插件签名状态为 {status}，执行层会拒绝；请先修复签名或重新信任："
+                            f"{record.signature_error}"
+                        )
+                    },
+                )
+                return
+            if bool(getattr(state.cfg.plugins, "require_signature", False)) and status != "signed":
+                handler._json(
+                    400,
+                    {
+                        "error": (
+                            "当前配置要求插件签名；该插件状态为 "
+                            f"{status}：{record.signature_error}"
+                        )
+                    },
+                )
+                return
         try:
             set_plugin_enabled(name, action == "enable")
         except ConfigError as exc:
@@ -374,6 +406,50 @@ def _handle_plugins(handler: HandlerBase, body: dict) -> None:
             },
         )
         return
+    if action == "policy":
+        if not getattr(handler, "_is_loopback", lambda: False)() and not is_device_admin(handler):
+            handler._json(
+                403,
+                {
+                    "error": "plugin signature policy requires local control or a device_admin scope",
+                },
+            )
+            return
+        required = body.get("require_signature")
+        if not isinstance(required, bool):
+            handler._json(400, {"error": "require_signature must be a boolean"})
+            return
+        from spark.config import ConfigError
+        from spark.plugins import set_plugin_require_signature
+
+        try:
+            set_plugin_require_signature(required)
+        except ConfigError as exc:
+            handler._json(400, {"error": str(exc)})
+            return
+        state.cfg.plugins.require_signature = required
+        try:
+            state.rebuild_loop(session_id=state.session_id or None)
+        except Exception as exc:  # noqa: BLE001 - config saved; report reload issue
+            handler._json(
+                200,
+                {
+                    "ok": False,
+                    "require_signature": required,
+                    "error": f"policy saved but loop reload failed: {exc}",
+                    "items": _plugin_entries(state.workdir),
+                },
+            )
+            return
+        handler._json(
+            200,
+            {
+                "ok": True,
+                "require_signature": required,
+                "items": _plugin_entries(state.workdir),
+            },
+        )
+        return
     if action != "list":
         handler._json(400, {"error": "unknown plugin action"})
         return
@@ -383,6 +459,7 @@ def _handle_plugins(handler: HandlerBase, body: dict) -> None:
             "items": _plugin_entries(state.workdir),
             "hooks": [h.model_dump() if hasattr(h, "model_dump") else h for h in state.cfg.hooks],
             "plugins_dir": str(PLUGINS_DIR),
+            "require_signature": bool(getattr(state.cfg.plugins, "require_signature", False)),
         },
     )
 

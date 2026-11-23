@@ -65,6 +65,7 @@ from spark.web._handlers_models import (  # noqa: F401
 from spark.web._handlers_queue import _handle_queue  # noqa: F401
 from spark.web._handlers_sessions import (  # noqa: F401
     _handle_approval,
+    _handle_sessions_archive,
     _handle_cancel,
     _handle_checkpoints_rollback,
     _handle_message_feedback,

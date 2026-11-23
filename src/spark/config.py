@@ -152,10 +152,30 @@ class AgentConfig(BaseModel):
     network_access: bool = True
     shell_timeout_sec: int = Field(default=60, ge=1, le=3600)
     max_tool_rounds: int = Field(default=30, ge=1, le=1000)
+    #: 活跃 Goal 下，一次用户消息后自动续跑的额外回合数（0 = 关闭）。
+    #: 只对普通聊天回合生效；/goal 设立目标的那一轮不会递归。
+    #: 遇 turn_error 立即熔断，不做“失败了还继续烧 token”的无意义续跑。
+    goal_auto_turns: int = Field(default=2, ge=0, le=20)
+    #: 工具面。``full`` 暴露全部 75 个内置工具；``coding`` 只暴露读写、检索、
+    #: shell、测试、git 与计划相关工具，砍掉浏览器/LSP/PR/工作流等大块
+    #: schema。编程任务默认应使用 ``coding``，每轮可省约 3/4 的工具描述 token。
+    tool_preset: Literal["full", "coding"] = "full"
     max_repeat_calls: int = Field(default=4, ge=0, le=10000)
     max_turn_tokens: int = Field(default=0, ge=0, le=100_000_000)
     #: 会话成本上限（USD，0 = 不限）。达到后下一轮直接拒绝，避免失控账单。
     max_session_cost_usd: float = Field(default=0.0, ge=0.0, le=1_000_000.0)
+    #: 空闲队列每日完成上限（0 = 不限）。只统计当天已经结束（ok/failed/
+    #: cancelled）的任务，防止无人值守队列无限消耗额度；不是计费，是节流。
+    queue_daily_limit: int = Field(default=0, ge=0, le=100_000)
+    #: 空闲队列每日成本上限（USD，0 = 不限）。与任务数配额叠加生效；
+    #: 只统计当天已结束/已重试任务累计的真实或估算成本。
+    queue_daily_cost_usd: float = Field(default=0.0, ge=0.0, le=1_000_000.0)
+    #: 单个排队任务的墙钟上限（秒，0 = 不限）。超时由 AgentRuntime 的
+    #: 总时长守卫触发，任务回到 queued 而不是假装完成。
+    queue_task_timeout_sec: int = Field(default=0, ge=0, le=86_400)
+    #: 空闲队列 worker 数（1-4，重启生效）。多 worker 只并行无人值守任务；
+    #: 用户正在跑的回合仍优先，队列不会抢占可见会话。
+    queue_workers: int = Field(default=1, ge=1, le=4)
     max_output_chars: int = Field(default=8000, ge=200, le=1_000_000)
     effort: Literal["low", "medium", "high"] = "medium"
     show_thinking: bool = True
@@ -164,6 +184,10 @@ class AgentConfig(BaseModel):
     show_context: bool = True
     show_keywords: bool = True
     show_notices: bool = True
+    #: Emit a local ``metrics`` TurnEvent at the end of each turn. Off by
+    #: default so existing surfaces/tests keep their exact event sequence;
+    #: eval runners and the workbench turn it on explicitly.
+    show_metrics: bool = False
     # 自定义系统提示词：留空 = 使用内置 prompts/system.md；填写后覆盖默认
     system_prompt: str = ""
     #: TUI 状态栏有序项：空 = 默认顺序（模型/接口/密钥/审批/访问/目录/会话）。
@@ -186,6 +210,11 @@ class ContextConfig(BaseModel):
     knowledge_enabled: bool = True
     knowledge_top_k: int = Field(default=6, ge=1, le=50)
     knowledge_max_chars: int = Field(default=6000, ge=500, le=60_000)
+    #: Phase 2 local code index. Context injection only uses a pre-built
+    #: index; the ``semantic_search`` tool can build one on demand.
+    semantic_index_enabled: bool = True
+    semantic_top_k: int = Field(default=6, ge=1, le=20)
+    semantic_max_chars: int = Field(default=4200, ge=500, le=30_000)
 
 
 class McpTransportConfig(BaseModel):
@@ -249,6 +278,8 @@ class PluginsConfig(BaseModel):
     """Explicit plugin opt-in. Installation alone never executes code."""
 
     enabled: list[str] = Field(default_factory=list)
+    #: Phase 4: when true, only manifests with a trusted Ed25519 signature execute.
+    require_signature: bool = False
 
 
 class HookConfig(BaseModel):
@@ -438,6 +469,10 @@ history_budget_chars = 96000
 max_context_tokens = 32768
 compact_threshold = 0.85
 keep_recent_messages = 8
+knowledge_enabled = true
+semantic_index_enabled = true
+semantic_top_k = 6
+semantic_max_chars = 4200
 
 [memory]
 enabled = true
@@ -905,6 +940,9 @@ def _agent_table(cfg: SparkConfig) -> tomlkit.items.Table:
         agent.add("network_access", cfg.agent.network_access)
     agent.add("shell_timeout_sec", cfg.agent.shell_timeout_sec)
     agent.add("max_tool_rounds", cfg.agent.max_tool_rounds)
+    agent.add("queue_daily_cost_usd", cfg.agent.queue_daily_cost_usd)
+    agent.add("queue_workers", cfg.agent.queue_workers)
+    agent.add("tool_preset", cfg.agent.tool_preset)
     agent.add("max_repeat_calls", cfg.agent.max_repeat_calls)
     agent.add("max_turn_tokens", cfg.agent.max_turn_tokens)
     # Always written: saving 0 must overwrite a previously configured cap,
@@ -937,8 +975,11 @@ def _context_table(cfg: SparkConfig) -> tomlkit.items.Table:
     context.add("repo_map_max_chars", cfg.context.repo_map_max_chars)
     # 项目知识库检索参数：Web「知识库」页可改，漏写则保存后重启回到默认值。
     context.add("knowledge_enabled", cfg.context.knowledge_enabled)
+    context.add("semantic_index_enabled", cfg.context.semantic_index_enabled)
     context.add("knowledge_top_k", cfg.context.knowledge_top_k)
     context.add("knowledge_max_chars", cfg.context.knowledge_max_chars)
+    context.add("semantic_top_k", cfg.context.semantic_top_k)
+    context.add("semantic_max_chars", cfg.context.semantic_max_chars)
     return context
 
 
@@ -1019,6 +1060,7 @@ def _model_profiles_aot(cfg: SparkConfig) -> tomlkit.items.AoT | None:
 def _plugins_table(cfg: SparkConfig) -> tomlkit.items.Table:
     table = tomlkit.table()
     table.add("enabled", list(cfg.plugins.enabled))
+    table.add("require_signature", cfg.plugins.require_signature)
     return table
 
 

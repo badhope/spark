@@ -616,6 +616,12 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
           protected_paths: protectedText.split("\n").map((s) => s.trim()).filter(Boolean),
           shell_timeout_sec: cfg.agent.shell_timeout_sec,
           max_tool_rounds: cfg.agent.max_tool_rounds,
+          goal_auto_turns: cfg.agent.goal_auto_turns ?? 2,
+          queue_daily_limit: cfg.agent.queue_daily_limit ?? 0,
+          queue_daily_cost_usd: cfg.agent.queue_daily_cost_usd ?? 0,
+          queue_task_timeout_sec: cfg.agent.queue_task_timeout_sec ?? 0,
+          queue_workers: cfg.agent.queue_workers ?? 1,
+          tool_preset: cfg.agent.tool_preset ?? "full",
           max_repeat_calls: cfg.agent.max_repeat_calls,
           max_turn_tokens: cfg.agent.max_turn_tokens,
           max_session_cost_usd: cfg.agent.max_session_cost_usd ?? 0,
@@ -1421,6 +1427,56 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                 <h3 className="text-sm font-semibold text-ink">{t("agent.execParams", lang)}</h3>
                 <Field label={t("agent.maxToolRounds", lang)}>
                   <TextInput type="number" value={cfg.agent.max_tool_rounds} onChange={(e) => patchAgent({ max_tool_rounds: Number(e.target.value) || 0 })} />
+                </Field>
+                <Field label={t("agent.goalAutoTurns", lang)} hint={t("agent.goalAutoTurnsHint", lang)}>
+                  <TextInput
+                    type="number"
+                    min={0}
+                    max={20}
+                    value={cfg.agent.goal_auto_turns ?? 2}
+                    onChange={(e) => patchAgent({ goal_auto_turns: Math.max(0, Math.min(20, Number(e.target.value) || 0)) })}
+                  />
+                </Field>
+                <Field label={t("agent.queueDailyLimit", lang)} hint={t("agent.queueDailyLimitHint", lang)}>
+                  <TextInput
+                    type="number"
+                    min={0}
+                    value={cfg.agent.queue_daily_limit ?? 0}
+                    onChange={(e) => patchAgent({ queue_daily_limit: Math.max(0, Number(e.target.value) || 0) })}
+                  />
+                </Field>
+                <Field label={t("agent.queueDailyCost", lang)} hint={t("agent.queueDailyCostHint", lang)}>
+                  <TextInput
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={cfg.agent.queue_daily_cost_usd ?? 0}
+                    onChange={(e) => patchAgent({ queue_daily_cost_usd: Math.max(0, Number(e.target.value) || 0) })}
+                  />
+                </Field>
+                <Field label={t("agent.queueTaskTimeout", lang)} hint={t("agent.queueTaskTimeoutHint", lang)}>
+                  <TextInput
+                    type="number"
+                    min={0}
+                    max={86400}
+                    value={cfg.agent.queue_task_timeout_sec ?? 0}
+                    onChange={(e) => patchAgent({ queue_task_timeout_sec: Math.max(0, Math.min(86400, Number(e.target.value) || 0)) })}
+                  />
+                </Field>
+                <Field label={t("agent.queueWorkers", lang)} hint={t("agent.queueWorkersHint", lang)}>
+                  <TextInput
+                    type="number"
+                    min={1}
+                    max={4}
+                    value={cfg.agent.queue_workers ?? 1}
+                    onChange={(e) => patchAgent({ queue_workers: Math.max(1, Math.min(4, Number(e.target.value) || 1)) })}
+                  />
+                </Field>
+                <Field label={t("agent.toolPreset", lang)}>
+                  <Select value={cfg.agent.tool_preset ?? "full"} onChange={(e) => patchAgent({ tool_preset: e.target.value as "full" | "coding" })}>
+                    <option value="full">{t("agent.toolPresetFull", lang)}</option>
+                    <option value="coding">{t("agent.toolPresetCoding", lang)}</option>
+                  </Select>
                 </Field>
                 <Field label={t("agent.shellTimeout", lang)}>
                   <TextInput type="number" value={cfg.agent.shell_timeout_sec} onChange={(e) => patchAgent({ shell_timeout_sec: Number(e.target.value) || 0 })} />

@@ -80,6 +80,26 @@ export const Composer = memo(function Composer() {
   const [fileError, setFileError] = useState("")
   const [fileDismissed, setFileDismissed] = useState(false)
   const [caret, setCaret] = useState(0)
+  // Composer Vim 键位是可选模式：默认关闭，开启后 Esc 回 Normal，i/a 回 Insert。
+  // 只实现日常编辑所需的动作，不做完整 Vim 状态机（宏、寄存器、可视模式）。
+  const [vimEnabled, setVimEnabled] = useState(() => {
+    try {
+      return localStorage.getItem("spark.composer.vim") === "1"
+    } catch {
+      return false
+    }
+  })
+  const [vimMode, setVimMode] = useState<"normal" | "insert">("insert")
+  const lastVimKey = useRef<{ key: string; at: number }>({ key: "", at: 0 })
+  const vimNormal = vimEnabled && vimMode === "normal"
+
+  // React 重渲染受控 textarea 时会把光标推到末尾；Normal 模式必须在值变化后
+  // 把光标放回 Vim 算出的位置，否则 x/dd 后按 i 会插到末尾。
+  useEffect(() => {
+    const el = taRef.current
+    if (!vimNormal || !el || document.activeElement !== el) return
+    el.setSelectionRange(caret, caret)
+  }, [caret, input, vimNormal])
 
   const model = status?.model
   // provider=mock 时 status.model 仍是配置文件里保存的真实模型名（如
@@ -290,6 +310,12 @@ export const Composer = memo(function Composer() {
       setInput("")
       return
     }
+    if (vimEnabled && e.key === "Escape") {
+      e.preventDefault()
+      setVimMode("normal")
+      return
+    }
+    if (vimNormal && handleVimNormal(e)) return
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       submit()
@@ -384,6 +410,160 @@ export const Composer = memo(function Composer() {
     e.preventDefault()
     setDragging(false)
     void readFiles(e.dataTransfer.files)
+  }
+
+  function setCaretAt(pos: number, end = pos) {
+    const el = taRef.current
+    const safe = Math.max(0, Math.min(pos, input.length))
+    if (el) {
+      el.focus()
+      el.setSelectionRange(safe, Math.max(safe, Math.min(end, input.length)))
+    }
+    setCaret(safe)
+  }
+
+  function lineStart(pos: number) {
+    return input.slice(0, pos).lastIndexOf("\n") + 1
+  }
+
+  function lineEnd(pos: number) {
+    const idx = input.indexOf("\n", pos)
+    return idx < 0 ? input.length : idx
+  }
+
+  function moveLine(pos: number, dir: 1 | -1) {
+    const start = lineStart(pos)
+    const column = pos - start
+    if (dir === 1) {
+      const end = lineEnd(pos)
+      if (end >= input.length) return pos
+      const nextStart = end + 1
+      return Math.min(nextStart + column, lineEnd(nextStart))
+    }
+    if (start === 0) return pos
+    const prevEnd = start - 1
+    return Math.min(lineStart(prevEnd) + column, prevEnd)
+  }
+
+  function nextWord(pos: number, dir: 1 | -1) {
+    if (dir === 1) {
+      const m = /\w+/.exec(input.slice(pos + 1))
+      return m ? pos + 1 + m.index : input.length
+    }
+    const before = input.slice(0, pos)
+    const m = /\w+$/.exec(before)
+    return m ? m.index : 0
+  }
+
+  function deleteLine(pos: number) {
+    const start = lineStart(pos)
+    const end = lineEnd(pos)
+    const next = input.slice(0, start) + input.slice(end < input.length ? end + 1 : end)
+    setInput(next)
+    setCaretAt(Math.min(start, next.length))
+  }
+
+  function handleVimNormal(e: KeyboardEvent<HTMLTextAreaElement>): boolean {
+    if (e.nativeEvent.isComposing || e.ctrlKey || e.metaKey || e.altKey) return false
+    const now = Date.now()
+    const last = lastVimKey.current
+    const repeated = now - last.at < 450 && last.key === e.key
+    lastVimKey.current = { key: e.key, at: now }
+    switch (e.key) {
+      case "Escape":
+        e.preventDefault()
+        setVimMode("normal")
+        return true
+      case "i":
+        e.preventDefault()
+        setVimMode("insert")
+        return true
+      case "a":
+        e.preventDefault()
+        setCaretAt(Math.min(caret + 1, input.length))
+        setVimMode("insert")
+        return true
+      case "I":
+        e.preventDefault()
+        setCaretAt(lineStart(caret))
+        setVimMode("insert")
+        return true
+      case "A":
+        e.preventDefault()
+        setCaretAt(lineEnd(caret))
+        setVimMode("insert")
+        return true
+      case "h":
+        e.preventDefault()
+        setCaretAt(Math.max(0, caret - 1))
+        return true
+      case "l":
+        e.preventDefault()
+        setCaretAt(Math.min(input.length, caret + 1))
+        return true
+      case "j":
+        e.preventDefault()
+        setCaretAt(moveLine(caret, 1))
+        return true
+      case "k":
+        e.preventDefault()
+        setCaretAt(moveLine(caret, -1))
+        return true
+      case "w":
+        e.preventDefault()
+        setCaretAt(nextWord(caret, 1))
+        return true
+      case "b":
+        e.preventDefault()
+        setCaretAt(nextWord(caret, -1))
+        return true
+      case "0":
+        e.preventDefault()
+        setCaretAt(lineStart(caret))
+        return true
+      case "$":
+        e.preventDefault()
+        setCaretAt(lineEnd(caret))
+        return true
+      case "G":
+        e.preventDefault()
+        setCaretAt(input.length)
+        return true
+      case "g":
+        if (repeated) {
+          e.preventDefault()
+          setCaretAt(0)
+          return true
+        }
+        return true
+      case "x":
+        e.preventDefault()
+        if (caret < input.length && input[caret] !== "\n") {
+          const next = input.slice(0, caret) + input.slice(caret + 1)
+          setInput(next)
+          setCaretAt(Math.min(caret, next.length))
+        }
+        return true
+      case "d":
+        if (repeated) {
+          e.preventDefault()
+          deleteLine(caret)
+          return true
+        }
+        return true
+      case "o":
+        e.preventDefault()
+        {
+          const at = lineEnd(caret)
+          const next = `${input.slice(0, at)}\n${input.slice(at)}`
+          setInput(next)
+          setCaretAt(at + 1)
+          setVimMode("insert")
+        }
+        return true
+      default:
+        return false
+    }
   }
 
   const canSend = !streaming && (input.trim().length > 0 || images.length > 0 || files.length > 0)
@@ -590,6 +770,29 @@ export const Composer = memo(function Composer() {
               >
                 <IconGlobe size={14} />
                 <span className="hidden sm:inline">{t("composer.webSearch", lang)}</span>
+              </button>
+              <button
+                type="button"
+                title={vimEnabled ? t("composer.vimOn", lang) : t("composer.vimOff", lang)}
+                aria-label={vimEnabled ? t("composer.vimOn", lang) : t("composer.vimOff", lang)}
+                aria-pressed={vimEnabled}
+                onClick={() => {
+                  const next = !vimEnabled
+                  setVimEnabled(next)
+                  setVimMode("insert")
+                  try {
+                    localStorage.setItem("spark.composer.vim", next ? "1" : "0")
+                  } catch {
+                    // localStorage 不可用时只在本次会话生效
+                  }
+                }}
+                className={cls(
+                  "flex h-9 items-center gap-1 rounded-lg px-2 text-[11px] font-semibold transition-colors sm:h-8",
+                  vimEnabled ? "bg-accent-soft text-accent" : "text-ink3 hover:bg-hover hover:text-ink",
+                )}
+              >
+                <span className="font-mono">VIM</span>
+                {vimEnabled && <span className="rounded bg-panel px-1 font-mono text-[9px]">{vimMode === "normal" ? "N" : "I"}</span>}
               </button>
               {model && (
                 <button

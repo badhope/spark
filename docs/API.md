@@ -69,10 +69,14 @@
 | `POST` | `/api/memory` | `{action}` | `add`（content/type/importance）/ `delete`（id）/ `optimize` |
 | `POST` | `/api/sessions/new` | `{isolated?: true, title?}` | 新建会话；`isolated=true` 创建 runtime 但不移动 Web 当前指针，返回 `session_id` |
 | `POST` | `/api/sessions/delete` | `{session_id}` | 删除会话；删当前会话时自动切换 |
-| `POST` | `/api/sessions/switch` | `{session_id}` | 切换会话并返回消息历史 |
+| `POST` | `/api/sessions/archive` | `{session_id, archived}` | 归档/恢复会话；归档保留消息与检查点、默认列表隐藏；归档当前会话时自动切换到下一个活跃会话，切到归档会话隐式恢复；仅本机或 `device_admin` |
+| `POST` | `/api/sessions/switch` | `{session_id}` | 切换会话并返回消息历史；目标是归档会话时自动恢复 |
 | `POST` | `/api/checkpoints/rollback` | `{checkpoint_id}` | 回滚到检查点（恢复工作区文件 + 对话历史） |
 | `POST` | `/api/messages/truncate` | `{message_id, restore_files?}` | 消息级 undo：删除该消息及其后全部消息。`restore_files: true` 时一并把工作区恢复到该消息之前最近的检查点；没有可用快照时返回 `files_restored: false` + `restore_reason`，不假装还原过 |
 | `POST` | `/api/settings` | provider/agent/context/memory/hooks/mcp_servers/replay/updater 各节 | 保存设置并重建 AgentLoop；部分字段校验失败返回 `400` 且不落盘，agent 忙 `409`；缺省字段通常保持现状（切换目标时凭据池例外） |
+| `POST` | `/api/inline_edit` | `{path, selected, instruction, mode?, start_line?, end_line?}` | 单次内联编辑/下一编辑建议（`mode=edit` 需 `selected`，`nes` 只需光标上下文）；返回 `{ok,text,changed,latency_ms,base_sha256}`，不写盘；仅本机或 `device_admin` |
+| `POST` | `/api/inline_edit/apply` | `{path, selected, replacement, base_sha256}` | 显式应用内联预览：`base_sha256` 必须匹配当前文件，`selected` 必须在文件里唯一出现，否则 `409`；成功写回并返回 unified diff |
+| `POST` | `/api/plugins` | `{action, name?, require_signature?}` | `enable` / `disable` / `policy`；`policy` 写 `[plugins].require_signature`，仅本机或 `device_admin`，开启后未签名插件 enable 返回 `400` |
 | `POST` | `/api/test` | `{base_url, model, api_key?}` | 探活模型接口（拒绝向与已配置不同的地址发送存储的密钥） |
 
 未知路径一律 `404`；请求体超过 32 MiB 返回 `413`；JSON 解析失败 `400`。
@@ -86,7 +90,7 @@
 | 节 | 可写字段 |
 | --- | --- |
 | `provider` | `name`、`base_url`、`model`、`api_key`（空 = 保留）、`api_key_env`（合法环境变量名）、`api_keys`、`fallback_models`、`small_model` |
-| `agent` | `approval`、`sandbox_mode`、`effort`、`workdir_only`、`protected_paths`、`system_prompt`、`show_*`、`shell_timeout_sec`、`max_tool_rounds`、`max_repeat_calls`、`max_turn_tokens`、`max_output_chars` |
+| `agent` | `approval`、`sandbox_mode`、`effort`、`workdir_only`、`protected_paths`、`system_prompt`、`show_*`、`shell_timeout_sec`、`max_tool_rounds`、`tool_preset`、`max_repeat_calls`、`max_turn_tokens`、`max_output_chars` |
 | `context` | `agents_md`（仅裸文件名）、`max_fragment_chars`、`history_budget_chars`、`max_context_tokens`、`compact_threshold`、`keep_recent_messages`、`repo_map_enabled`、`repo_map_max_chars`、`knowledge_enabled`、`knowledge_top_k`、`knowledge_max_chars` |
 | `memory` | `enabled`、`top_k`、`capacity`、`embedding_model`、`auto_extract`、`embedding_enabled`、`embedding_base_url`、`embedding_api_key`（空 = 保留）、`rerank_model` |
 | `replay` | `enabled` |
@@ -134,6 +138,7 @@
 {"type": "approval_needed", "approval": {"summary": "…", "diff": "…"}}  // 等待审批
 {"type": "compaction", "text": "…"}                    // 上下文压缩
 {"type": "context", "data": {"usage": {"used": 1, "limit": 2}}}  // 上下文用量
+{"type": "metrics", "data": {"ttft_ms": 1234, "total_ms": 5678}}  // 本轮延迟账本
 {"type": "plan", "plan": [ … ]}                        // 计划更新
 {"type": "turn_end", "text": "…"}                      // 回合结束
 {"type": "turn_error", "text": "…"}                    // 回合出错

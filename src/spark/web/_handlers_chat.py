@@ -60,6 +60,54 @@ def _clear_session_error(state, session_id: str) -> None:
         logger.debug("clear session error failed", exc_info=True)
 
 
+# Keep this aligned with the tools that actually exist in ToolRegistry:
+# write_file / apply_patch / apply_edit / notebook_edit / git_commit. The old
+# set named multi_edit and replace_in_file, which were never registered, while
+# omitting apply_patch and notebook_edit — so real file edits could skip the
+# ledger entirely.
+_AUTO_LEDGER_TOOLS = {
+    "write_file",
+    "apply_patch",
+    "apply_edit",
+    "notebook_edit",
+    "git_commit",
+}
+
+
+def _maybe_auto_ledger(
+    state,
+    session_id: str,
+    prompt: str,
+    summary: str,
+    mutated: bool,
+    failed: bool = False,
+    since_id: int = 0,
+) -> None:
+    """A chat turn that changed the workspace earns a ledger entry automatically.
+
+    Read-only conversations should not spam the ledger; the "build this ledger"
+    button remains for those. A mutating turn is different: the user should not
+    have to remember an extra click to get a reviewable delivery.
+    """
+    if not mutated:
+        return
+    try:
+        from spark.workbench import build_delivery
+
+        build_delivery(
+            state.store,
+            session_id,
+            state.cfg,
+            title=(prompt.strip().splitlines()[0] if prompt.strip() else "Chat delivery")[:120],
+            status="rejected" if failed else "review",
+            summary=(summary or "")[:500],
+            workdir=str(state.workdir),
+            since_id=since_id,
+        )
+    except Exception:  # noqa: BLE001 - ledger must never break the reply
+        logger.debug("chat auto delivery ledger write failed", exc_info=True)
+
+
 def _handle_chat(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)
     prompt = str(body.get("prompt") or "").strip()
@@ -105,6 +153,7 @@ def _handle_chat(handler: HandlerBase, body: dict) -> None:
             state.store.set_session_error(runtime.session_id, issue.to_dict())
             handler._json(503, {"error": issue.text, "diagnostic": issue.to_dict()})
             return
+    ledger_since = state.store.latest_tool_event_id(runtime.session_id)
     try:
         with runtime.turn_lock:
             # Drive the turn on the captured runtime loop: switching sessions
@@ -116,9 +165,23 @@ def _handle_chat(handler: HandlerBase, body: dict) -> None:
         state.store.set_session_error(runtime.session_id, info.to_dict())
         handler._json(500, {"error": info.text, "diagnostic": info.to_dict()})
         return
+    mutated = False
+    failed = False
+    turn_text = ""
     for event in events:
-        if getattr(event, "type", "") == "turn_error":
+        kind = getattr(event, "type", "")
+        if kind == "turn_error":
+            failed = True
             _remember_turn_error(state, runtime.session_id, event)
+        elif kind == "turn_end":
+            turn_text = getattr(event, "text", "") or turn_text
+        elif kind == "tool_end":
+            tool = getattr(getattr(event, "tool_call", None), "name", "")
+            if tool in _AUTO_LEDGER_TOOLS:
+                mutated = True
+    _maybe_auto_ledger(
+        state, runtime.session_id, prompt, turn_text, mutated, failed, since_id=ledger_since
+    )
     handler._json(200, {"events": [_event_payload(e) for e in events]})
 
 
@@ -410,8 +473,13 @@ def _dispatch_turn(
     slash_result,
     collect_event,
     web_enabled: bool,
+    reset_seq: bool = True,
 ) -> None:
-    """串行执行本轮对话；断连在取锁前后各查一次，退出时复位 busy 与工具门。"""
+    """串行执行本轮对话；断连在取锁前后各查一次，退出时复位 busy 与工具门。
+
+    ``reset_seq=False`` 用于同一 SSE 流里的 Goal 自动续跑：序号必须连续，
+    不能把第二个回合重置回 0，否则前端 replay/重连会错位。
+    """
     if stream.disconnected:
         return
     with runtime.turn_lock:
@@ -426,7 +494,8 @@ def _dispatch_turn(
         _clear_session_error(state, runtime.session_id)
         # Allocate the sequence base under the lock: a second queued request
         # must not share the first turn's numbers in the replay ring.
-        stream.set_start_seq(runtime.next_seq_start())
+        if reset_seq:
+            stream.set_start_seq(runtime.next_seq_start())
         # Always apply the per-turn gate. It used to be skipped whenever a
         # tool_allowlist was active, so the switch silently did nothing for
         # users running an approval profile with a tool whitelist.
@@ -614,7 +683,7 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
     )
     stream.start()
 
-    memory_collector: dict = {"text": "", "tools": []}
+    memory_collector: dict = {"text": "", "tools": [], "mutated": False, "failed": False}
 
     def collect_event(event) -> None:
         if event.type == "text_delta" and event.text:
@@ -624,6 +693,7 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
                 memory_collector["text"] = event.text
             _clear_session_error(state, turn_session_id)
         elif event.type == "turn_error":
+            memory_collector["failed"] = True
             _remember_turn_error(state, turn_session_id, event)
         elif event.type == "approval_needed" and event.approval is not None:
             # The phone is usually locked when an approval arrives; the SSE
@@ -642,6 +712,8 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
                 except Exception:  # noqa: BLE001 - notification must not break the turn
                     logger.debug("approval push skipped", exc_info=True)
         elif event.type == "tool_end" and event.tool_call:
+            if event.tool_call.name in _AUTO_LEDGER_TOOLS:
+                memory_collector["mutated"] = True
             memory_collector["tools"].append(
                 f"{event.tool_call.name}: {_json.dumps(event.result.payload if event.result else {}, ensure_ascii=False)[:200]}"
             )
@@ -675,12 +747,49 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
             return
 
     turn_prompt = inject_attachments(_expand_turn_prompt(state, prompt), attachments)
+    ledger_since = state.store.latest_tool_event_id(turn_session_id)
 
     try:
         _dispatch_turn(
             state, runtime, stream, turn_loop, turn_prompt, image_refs, slash_result,
             collect_event, bool(body.get("web_search", True)),
         )
+        # Goal 自动续跑：同一 SSE 流里继续下一回合，直到目标完成、预算用完
+        # 或任一回合失败。只对普通聊天回合生效；/goal 设立命令在更早分支
+        # 已经 return，不会在这里递归。
+        auto_turns = (
+            max(0, min(int(getattr(state.cfg.agent, "goal_auto_turns", 0) or 0), 20))
+            if slash_result is None
+            else 0
+        )
+        auto_turn = 0
+        while (
+            auto_turn < auto_turns
+            and not stream.disconnected
+            and not memory_collector["failed"]
+        ):
+            goal = state.store.get_active_goal(turn_session_id)
+            if not goal:
+                break
+            auto_turn += 1
+            if not stream.submit_payload(
+                {
+                    "type": "goal_auto_continue",
+                    "data": {
+                        "turn": auto_turn,
+                        "max": auto_turns,
+                        "goal": {
+                            "id": goal.get("id"),
+                            "objective": goal.get("objective"),
+                        },
+                    },
+                }
+            ):
+                break
+            _dispatch_turn(
+                state, runtime, stream, turn_loop, _GOAL_AUTO_PROMPT, None, None,
+                collect_event, bool(body.get("web_search", True)), reset_seq=False,
+            )
         if stream.disconnected:
             return
         if not stream.finish():
@@ -696,6 +805,15 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
             turn_text,
             " | ".join(memory_collector["tools"]),
             session_id=turn_session_id,
+        )
+        _maybe_auto_ledger(
+            state,
+            turn_session_id,
+            prompt,
+            turn_text,
+            bool(memory_collector["mutated"]),
+            bool(memory_collector["failed"]),
+            since_id=ledger_since,
         )
     except SSE_DISCONNECT_ERRORS as exc:
         _stream_failure_exit(
@@ -721,6 +839,12 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
         if stream.disconnected:
             stream.abort()
 
+
+_GOAL_AUTO_PROMPT = (
+    "继续推进当前目标：先读取最新 checklist，只做尚未完成的步骤；"
+    "已完成的步骤不要重复，完成后用 goal_update 附可核查证据；"
+    "遇到阻塞就写明原因并停下，不要为了续跑而假装完成。"
+)
 
 _MAX_INLINE_SHELL_COMMAND = 4000
 

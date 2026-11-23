@@ -62,6 +62,8 @@ export const ChatView = memo(function ChatView() {
   const startEditMessage = useChatStore((s) => s.startEditMessage)
   const lang = useUiStore((s) => s.lang)
   const status = useSessionStore((s) => s.status)
+  const activeGoal = useSessionStore((s) => s.activeGoal)
+  const send = useChatStore((s) => s.send)
 
   const actions = useMemo<MessageActions>(
     () => ({
@@ -93,9 +95,30 @@ export const ChatView = memo(function ChatView() {
     [deleteMessage, regenerate, startEditMessage, feedbackMessage, lang],
   )
 
+  const goalBanner = activeGoal ? (
+    <div className="mx-auto mt-2 flex w-full max-w-[780px] items-center gap-2 rounded-xl border border-accent/25 bg-accent-soft px-3 py-2 text-[12px] text-ink2">
+      <span className="shrink-0 text-accent">🎯</span>
+      <span className="min-w-0 flex-1 truncate" title={activeGoal.objective}>
+        {t("goal.resumeBanner", lang, { objective: activeGoal.objective })}
+      </span>
+      <button
+        type="button"
+        disabled={streaming}
+        onClick={() => {
+          setInput(t("goal.resumePrompt", lang, { objective: activeGoal.objective }))
+          void send()
+        }}
+        className="shrink-0 rounded-md bg-accent px-2 py-1 text-[11px] font-medium text-on-accent disabled:opacity-45"
+      >
+        {t("goal.resumeAction", lang)}
+      </button>
+    </div>
+  ) : null
+
   if (loading || !status) {
     return (
       <div className="flex-1 overflow-y-auto">
+        {goalBanner}
         <SkeletonList />
       </div>
     )
@@ -104,26 +127,30 @@ export const ChatView = memo(function ChatView() {
   if (items.length === 0) {
     return (
       <div className="flex-1 overflow-y-auto">
+        {goalBanner}
         <EmptyState onPick={(p: string) => setInput(p)} />
       </div>
     )
   }
 
   return (
-    <VirtualMessageList
-      items={items}
-      resetKey={status.session_id}
-      estimateHeight={estimateHeight}
-      renderItem={(m) => (
-        <div className="mx-auto max-w-[780px] px-3 sm:px-4" lang={lang}>
-          <MessageItem key={m.id} msg={m} actions={actions} />
-        </div>
-      )}
-      footer={
-        streaming ? (
-          <div className="pb-2 pt-1 text-center text-[11px] text-ink3">{t("chat.generating", lang)}</div>
-        ) : undefined
-      }
-    />
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {goalBanner}
+      <VirtualMessageList
+        items={items}
+        resetKey={status.session_id}
+        estimateHeight={estimateHeight}
+        renderItem={(m) => (
+          <div className="mx-auto max-w-[780px] px-3 sm:px-4" lang={lang}>
+            <MessageItem key={m.id} msg={m} actions={actions} />
+          </div>
+        )}
+        footer={
+          streaming ? (
+            <div className="pb-2 pt-1 text-center text-[11px] text-ink3">{t("chat.generating", lang)}</div>
+          ) : undefined
+        }
+      />
+    </div>
   )
 })

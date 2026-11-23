@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { SessionRow } from "../types"
 import { renameSession, searchSessions, type SessionSearchHit } from "../api"
-import { IconHistory, IconMonitor, IconMoon, IconPencil, IconPlus, IconSearch, IconSettings, IconSmartphone, IconSun, IconTrash, IconX } from "./icons"
+import { IconFolder, IconHistory, IconMonitor, IconMoon, IconPencil, IconPlus, IconSearch, IconSettings, IconSmartphone, IconSun, IconTrash, IconX } from "./icons"
 import { cls, IconButton } from "./ui"
 import { BrandMark } from "./BrandMark"
 import { useUiStore } from "../store/uiStore"
@@ -163,6 +163,7 @@ export const Sidebar = memo(function Sidebar() {
   const handleNewSession = useSessionStore((s) => s.handleNewSession)
   const handleSwitch = useSessionStore((s) => s.handleSwitch)
   const handleDelete = useSessionStore((s) => s.handleDelete)
+  const handleArchive = useSessionStore((s) => s.handleArchive)
   const refreshSessions = useSessionStore((s) => s.refreshSessions)
   const pushToast = useUiStore((s) => s.pushToast)
   const sidebarOpen = useUiStore((s) => s.sidebarOpen)
@@ -209,12 +210,16 @@ export const Sidebar = memo(function Sidebar() {
       .map((h) => sessions.find((s) => s.id === h.id))
       .filter((s): s is SessionRow => Boolean(s))
     const filtered = q ? [...local, ...fromContent].sort((a, b) => b.updated_at - a.updated_at) : local
+    const active = filtered.filter((s) => !s.archived_at)
+    const archived = filtered.filter((s) => Boolean(s.archived_at))
     const map = new Map<string, SessionRow[]>()
-    for (const s of filtered) {
+    for (const s of active) {
       const k = groupKey(s.updated_at)
       map.set(k, [...(map.get(k) ?? []), s])
     }
-    return GROUP_ORDER.filter((k) => map.has(k)).map((k) => ({ key: k, items: map.get(k)! }))
+    const grouped = GROUP_ORDER.filter((k) => map.has(k)).map((k) => ({ key: k, items: map.get(k)! }))
+    if (archived.length) grouped.push({ key: "sidebar.archived", items: archived })
+    return grouped
   }, [sessions, query, contentHits])
 
   // 防抖查全文索引；只在 2 字符以上才查（更短的前缀几乎必然全量命中）。
@@ -352,6 +357,7 @@ export const Sidebar = memo(function Sidebar() {
               <ul className="flex flex-col gap-0.5">
                 {g.items.map((s) => {
                   const active = s.id === currentId
+                  const isArchived = Boolean(s.archived_at)
                   const phase = runtimes[s.id]?.phase ?? "idle"
                   const runtimeKey: TranslationKey | null =
                     phase === "streaming"
@@ -459,6 +465,21 @@ export const Sidebar = memo(function Sidebar() {
                       </button>
                       )}
                       <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          title={t(isArchived ? "sidebar.restore" : "sidebar.archive", lang)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleArchive(s.id, !isArchived)
+                          }}
+                          className={cls(
+                            "flex h-7 w-7 items-center justify-center rounded-md text-ink3 opacity-0 transition-all hover:bg-hover hover:text-ink focus-visible:opacity-100",
+                            active && "opacity-100",
+                            "group-hover:opacity-100",
+                          )}
+                        >
+                          {isArchived ? <IconHistory size={14} /> : <IconFolder size={14} />}
+                        </button>
                         <button
                           type="button"
                           title={t("sidebar.rename", lang)}

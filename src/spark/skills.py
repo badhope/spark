@@ -43,18 +43,29 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, str], str] | None:
     return meta, body
 
 
-def discover_skills(workdir: Path) -> list[SkillInfo]:
-    """Scan ``.spark/skills/**/*.md`` and parse each file into ``SkillInfo``.
+SKILL_ROOTS = (
+    Path(".spark") / "skills",
+    Path(".claude") / "skills",
+)
 
-    Missing directory or unreadable files result in an empty list so callers
-    can always iterate safely.
+
+def discover_skills(workdir: Path) -> list[SkillInfo]:
+    """Scan project skill directories, including Claude Code compatibility.
+
+    Spark's native location wins on a name collision; ``.claude/skills`` and
+    ``~/.claude/skills`` are read-only compatibility roots so existing
+    Claude Code projects do not need to duplicate their skills.
     """
-    skills_dir = workdir / ".spark" / "skills"
-    if not skills_dir.is_dir():
-        return []
+    roots = [workdir / rel for rel in SKILL_ROOTS]
+    roots.append(Path.home() / ".claude" / "skills")
 
     skills: list[SkillInfo] = []
-    for md in sorted(skills_dir.rglob("*.md")):
+    seen: set[str] = set()
+    files: list[Path] = []
+    for root in roots:
+        if root.is_dir():
+            files.extend(sorted(root.rglob("*.md")))
+    for md in files:
         if md.name.startswith("."):
             continue
         try:
@@ -66,6 +77,9 @@ def discover_skills(workdir: Path) -> list[SkillInfo]:
             continue
         meta, body = parsed
         name = meta.get("name") or md.stem
+        if name in seen:
+            continue
+        seen.add(name)
         skills.append(
             SkillInfo(
                 name=name,

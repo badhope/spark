@@ -459,6 +459,11 @@ async def run_workflow(
     import inspect
 
     workers = max(1, min(int(max_parallel), 8))
+    from spark.otel import end_step_span, end_workflow_span, start_step_span, start_workflow_span
+
+    wf_span = start_workflow_span(
+        name=spec.name, version=spec.version, steps=len(spec.steps), max_parallel=workers
+    )
     initial = dict(initial_statuses or {})
     run = WorkflowRun(
         spec=spec,
@@ -495,6 +500,7 @@ async def run_workflow(
         async with semaphore:
             run.statuses[step.id] = "running"
             emit("step_started", step)
+            step_span = start_step_span(wf_span, workflow=spec.name, step=step.id)
             attempt = 0
             while attempt < step.max_attempts:
                 attempt += 1
@@ -511,12 +517,14 @@ async def run_workflow(
                     run.outputs[step.id] = str(result or "")
                     run.statuses[step.id] = "completed"
                     emit("step_completed", step, attempt=attempt)
+                    end_step_span(step_span, status="completed", cost_usd=run.costs.get(step.id, 0.0))
                     pending.discard(step.id)
                     return
                 except Exception as exc:  # noqa: BLE001 - reported as step failure
                     run.errors[step.id] = str(exc)
                     emit("step_failed", step, attempt=attempt, error=str(exc))
             run.statuses[step.id] = "failed"
+            end_step_span(step_span, status="failed", cost_usd=run.costs.get(step.id, 0.0))
             pending.discard(step.id)
 
     while pending:
@@ -565,6 +573,7 @@ async def run_workflow(
                 run.statuses[name] = "paused"
             emit("run_paused", hit[0], pending=len(pending))
             break
+    end_workflow_span(wf_span, statuses=run.statuses, cost_usd=run.cost_usd)
     return run
 
 

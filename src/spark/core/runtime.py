@@ -33,6 +33,7 @@ import concurrent.futures
 import logging
 import queue
 import threading
+import time
 from collections.abc import AsyncIterator, Coroutine, Iterator
 from typing import Any, TypeVar
 
@@ -189,7 +190,10 @@ class AgentRuntime:
                     logger.debug("agent generator close failed", exc_info=True)
 
     def iterate(
-        self, agen: AsyncIterator[T], timeout: float = _DEFAULT_TIMEOUT
+        self,
+        agen: AsyncIterator[T],
+        timeout: float = _DEFAULT_TIMEOUT,
+        max_seconds: float | None = None,
     ) -> Iterator[T]:
         """Consume *agen* synchronously, from a non-async thread (HTTP handlers).
 
@@ -222,11 +226,23 @@ class AgentRuntime:
                     return
 
         loop.call_soon_threadsafe(lambda: loop.create_task(reader()))
+        deadline = (
+            time.monotonic() + float(max_seconds)
+            if max_seconds is not None and float(max_seconds) > 0
+            else None
+        )
         try:
             while True:
+                wait = timeout
+                if deadline is not None:
+                    wait = max(0.05, min(timeout, deadline - time.monotonic()))
                 try:
-                    kind, payload = out.get(timeout=timeout)
+                    kind, payload = out.get(timeout=wait)
                 except queue.Empty:
+                    if deadline is not None and time.monotonic() >= deadline:
+                        raise TimeoutError(
+                            f"turn exceeded total runtime of {max_seconds}s"
+                        ) from None
                     raise TimeoutError(f"turn produced no output for {timeout}s") from None
                 if kind == "item":
                     yield payload

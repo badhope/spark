@@ -1146,6 +1146,90 @@ def mcp_serve_cmd(
         raise typer.Exit(exc.exit_code) from exc
 
 
+@app.command("inline", help="编辑器的内联编辑桥：选中代码 + 指令，返回替换文本，可选 -apply 写回")
+def inline_cmd(
+    path: Path = typer.Argument(..., help="目标文件（相对 workdir 或绝对路径）"),
+    instruction: str = typer.Option(..., "--instruction", "-i", help="自然语言修改指令"),
+    selection: str = typer.Option("", "--selection", help="选中文本；与 --start-line/--end-line 二选一"),
+    start_line: int = typer.Option(0, "--start-line", help="1-based 起始行（含）"),
+    end_line: int = typer.Option(0, "--end-line", help="1-based 结束行（含）"),
+    mode: str = typer.Option("edit", "--mode", help="edit | nes"),
+    apply_edit: bool = typer.Option(False, "--apply", help="确认后写回文件；默认只打印"),
+    json_output: bool = typer.Option(False, "--json", help="输出 JSON，供编辑器解析"),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    config: Path | None = typer.Option(None, "--config"),
+    model: str | None = typer.Option(None, "--model"),
+    provider: str | None = typer.Option(None, "--provider"),
+) -> None:
+    """Non-native editors (JetBrains External Tools / Neovim :!) use this bridge."""
+    import hashlib
+    import json as _json
+    import os
+
+    try:
+        wd = workdir.resolve()
+        target = Path(path)
+        if not target.is_absolute():
+            target = wd / target
+        target = target.resolve()
+        try:
+            target.relative_to(wd)
+        except ValueError as exc:
+            raise ConfigError(f"inline target escapes workdir: {target}") from exc
+        text = target.read_text(encoding="utf-8")
+        if selection:
+            selected = selection
+        elif start_line and end_line:
+            lines = text.splitlines(keepends=True)
+            if start_line < 1 or end_line < start_line or end_line > len(lines):
+                raise ConfigError("invalid line range")
+            selected = "".join(lines[start_line - 1 : end_line])
+        else:
+            raise ConfigError("provide --selection or --start-line/--end-line")
+        cfg = _common_cfg(wd, config, None, model, provider)
+        from spark.asyncutil import run_coroutine_sync
+        from spark.inline_edit import generate_inline_edit
+        from spark.providers.factory import create_provider
+
+        result = run_coroutine_sync(
+            generate_inline_edit(
+                create_provider(cfg),
+                {
+                    "mode": "nes" if mode == "nes" else "edit",
+                    "path": str(target.relative_to(wd)),
+                    "language": target.suffix.lstrip("."),
+                    "selected": selected,
+                    "instruction": instruction,
+                },
+            ),
+            timeout=120,
+        )
+        replacement = str(result.get("text") or "")
+        changed = False
+        if apply_edit:
+            count = text.count(selected)
+            if count != 1:
+                raise ConfigError(f"selection matched {count} times; refusing to guess")
+            target.write_text(text.replace(selected, replacement, 1), encoding="utf-8")
+            changed = True
+        payload = {
+            "ok": bool(result.get("ok")),
+            "text": replacement,
+            "changed": changed,
+            "base_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "latency_ms": result.get("latency_ms"),
+        }
+        if json_output:
+            typer.echo(_json.dumps(payload, ensure_ascii=False))
+        else:
+            typer.echo(replacement, nl=False)
+    except SparkError as exc:
+        raise typer.Exit(exc.exit_code) from exc
+    except OSError as exc:
+        typer.echo(f"inline failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+
 @app.command("acp", help="以 ACP（Agent Client Protocol）agent 身份在 stdio 上运行，供 Zed 等 IDE 拉起")
 def acp_cmd(
     workdir: Path = typer.Option(Path("."), "--workdir"),
@@ -2692,7 +2776,8 @@ def plugins_list_cmd(
         version = record.manifest.version if record.manifest else "-"
         status = record.error or "ok"
         active = "enabled" if record.name in enabled else "-"
-        typer.echo(f"{record.name}\t{version}\t{status}\t{active}\t{record.path}")
+        sig = record.signature_status or "-"
+        typer.echo(f"{record.name}\t{version}\t{status}\t{active}\t{sig}\t{record.path}")
 
 
 @plugins_app.command("validate", help="校验一个插件目录或 manifest")
@@ -2896,6 +2981,143 @@ def plugins_remove_cmd(
         typer.echo(str(exc), err=True)
         raise typer.Exit(2) from exc
     typer.echo(f"✓ {name} -> {target}")
+
+
+@plugins_app.command("verify", help="校验插件清单签名状态（本地信任库/撤销列表）")
+def plugins_verify_cmd(
+    source: Path = typer.Argument(..., help="插件目录或 spark-plugin.json"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    from spark.plugin_trust import verify_manifest
+    from spark.plugins import validate_plugin
+
+    try:
+        manifest = validate_plugin(source, require_entry=False)
+        root = source if source.is_dir() else source.parent
+        status, error = verify_manifest(manifest, root=root)
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    if json_output:
+        import json
+
+        typer.echo(json.dumps({"name": manifest.name, "status": status, "error": error, "key_id": manifest.key_id}, ensure_ascii=False))
+        return
+    mark = "✓" if status == "signed" else "!"
+    typer.echo(f"{mark} {manifest.name} {manifest.version}: {status}")
+    if error:
+        typer.echo(f"  {error}", err=status in {"invalid", "revoked", "untrusted"})
+
+
+@plugins_app.command("trust", help="信任一个插件签名公钥（Ed25519 raw 32 bytes, base64）")
+def plugins_trust_cmd(
+    key_id: str = typer.Argument(..., help="本地信任 id，例如 publisher-name-2026"),
+    public_key: str = typer.Argument(..., help="base64 公钥；也可用 @file 读取"),
+) -> None:
+    from spark.plugin_trust import trust_key
+
+    if public_key.startswith("@"):
+        public_key = Path(public_key[1:]).read_text(encoding="utf-8").strip()
+    try:
+        trust_key(key_id, public_key)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"✓ trusted key {key_id}")
+
+
+@plugins_app.command("revoke", help="撤销插件名或签名 key（本地撤销列表）")
+def plugins_revoke_cmd(
+    plugin: str = typer.Option("", "--plugin", help="插件 name"),
+    key_id: str = typer.Option("", "--key-id", help="签名 key id"),
+) -> None:
+    from spark.plugin_trust import revoke
+
+    try:
+        revoke(plugin=plugin, key_id=key_id)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    typer.echo("✓ revoked " + ", ".join(x for x in (plugin, key_id) if x))
+
+
+@plugins_app.command("keygen", help="生成插件签名用 Ed25519 私钥，并打印可 trust 的公钥")
+def plugins_keygen_cmd(
+    out: Path = typer.Option(Path("plugin-signing-key.pem"), "--out"),
+) -> None:
+    import base64
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    if out.exists():
+        typer.echo(f"拒绝覆盖已有私钥: {out}", err=True)
+        raise typer.Exit(2)
+    key = Ed25519PrivateKey.generate()
+    out.write_bytes(
+        key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
+    try:
+        out.chmod(0o600)
+    except OSError:
+        pass
+    public = base64.b64encode(
+        key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    ).decode()
+    typer.echo(f"private key: {out} (keep it offline; never commit it)")
+    typer.echo(f"public key:  {public}")
+    typer.echo("trust it with: spark plugins trust <key-id> " + public)
+
+
+@plugins_app.command("sign", help="用 Ed25519 私钥给插件清单签名（原地写入 signature/key_id）")
+def plugins_sign_cmd(
+    source: Path = typer.Argument(..., help="插件目录或 spark-plugin.json"),
+    key: Path = typer.Option(..., "--key", help="PKCS8 PEM 私钥"),
+    key_id: str = typer.Option(..., "--key-id", help="与 trust 时一致的 key id"),
+    publisher: str = typer.Option("", "--publisher"),
+) -> None:
+    import base64
+    import json
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from spark.plugin_trust import canonical_payload, package_digest
+
+    manifest_path = source / "spark-plugin.json" if source.is_dir() else source
+    if not manifest_path.is_file():
+        typer.echo(f"清单不存在: {manifest_path}", err=True)
+        raise typer.Exit(2)
+    raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        typer.echo("清单必须是 JSON object", err=True)
+        raise typer.Exit(2)
+    private = serialization.load_pem_private_key(key.read_bytes(), password=None)
+    if not isinstance(private, Ed25519PrivateKey):
+        typer.echo("私钥必须是 Ed25519", err=True)
+        raise typer.Exit(2)
+    from spark.plugins import PluginManifest
+
+    raw["key_id"] = key_id
+    if publisher:
+        raw["publisher"] = publisher
+    raw.pop("signature", None)
+    # A manifest-only signature is not a code signature. Bind every shipped
+    # file except the manifest so replacing entry.py invalidates the package.
+    raw["artifact_sha256"] = package_digest(manifest_path.parent)
+    # Sign the *normalised* manifest, because verification parses it back into
+    # PluginManifest (which fills defaults). Signing raw JSON would fail as soon
+    # as a default field was absent from the file.
+    manifest = PluginManifest.model_validate(raw)
+    normalized = manifest.model_dump(mode="json")
+    signature = private.sign(canonical_payload(normalized))
+    normalized["signature"] = base64.b64encode(signature).decode()
+    manifest_path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    typer.echo(f"✓ signed {normalized.get('name')} with {key_id}")
 
 
 def _enabled_plugin_names(config: Path | None = None) -> set[str]:

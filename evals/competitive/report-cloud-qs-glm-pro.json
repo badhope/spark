@@ -1,0 +1,913 @@
+{
+  "generated_at": "2026-11-23T12:10:48+0800",
+  "profiles": [
+    "cloud-qs-glm-pro"
+  ],
+  "rounds": 1,
+  "task_count": 10,
+  "summary": {
+    "cloud-qs-glm-pro": {
+      "total": 10,
+      "passed": 10,
+      "pass@1": 1.0,
+      "errors": 0,
+      "error_rate": 0.0,
+      "ttft_p50_ms": 12321.0,
+      "ttft_p95_ms": 21999.9,
+      "turn_p50_ms": 69667.5,
+      "turn_p95_ms": 131501.3,
+      "cost_usd": null,
+      "priced_turns": 0,
+      "unpriced_turns": 10
+    }
+  },
+  "skipped": [],
+  "results": [
+    {
+      "task_id": "bugfix-calc-add",
+      "category": "bugfix",
+      "profile": "cloud-qs-glm-pro",
+      "passed": true,
+      "elapsed_ms": 68736.9,
+      "metrics": {
+        "version": 1,
+        "queue_ms": null,
+        "context_ms": 356.7,
+        "llm_ms": 63651.9,
+        "ttft_ms": 21999.9,
+        "first_text_ms": 68085.3,
+        "first_tool_ms": 22005.2,
+        "total_ms": 68676.0,
+        "rounds": 5,
+        "tool_calls": 5,
+        "provider_runs": [
+          {
+            "start_ms": 2447.9,
+            "end_ms": 22000.0,
+            "duration_ms": 19552.1,
+            "first_delta_ms": 19552.1,
+            "error": null
+          },
+          {
+            "start_ms": 22013.5,
+            "end_ms": 37935.0,
+            "duration_ms": 15921.6,
+            "first_delta_ms": 15921.5,
+            "error": null
+          },
+          {
+            "start_ms": 37963.4,
+            "end_ms": 47414.7,
+            "duration_ms": 9451.3,
+            "first_delta_ms": 9451.3,
+            "error": null
+          },
+          {
+            "start_ms": 47449.8,
+            "end_ms": 55736.1,
+            "duration_ms": 8286.4,
+            "first_delta_ms": 8286.3,
+            "error": null
+          },
+          {
+            "start_ms": 58220.5,
+            "end_ms": 68661.0,
+            "duration_ms": 10440.5,
+            "first_delta_ms": 9864.8,
+            "error": null
+          }
+        ],
+        "render_ms": null,
+        "usage": {
+          "input_tokens": 20591,
+          "output_tokens": 155,
+          "reasoning_tokens": 1,
+          "cache_read_tokens": 6656,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0,
+          "source": "reported"
+        }
+      },
+      "tool_calls": [
+        "read_file",
+        "read_file",
+        "apply_patchapply_patch",
+        "apply_edit",
+        "run_tests"
+      ],
+      "final_text": "已修复：`add()` 现在返回 `a + b`（删除了错误的减法实现）。测试运行结果：2 passed ✅",
+      "error": "",
+      "check_output": "Running 2 items in this shard\n..                                                                       [100%]\n2 passed in 0.03s\n",
+      "usage": {
+        "input_tokens": 20591,
+        "output_tokens": 155,
+        "reasoning_tokens": 1,
+        "cache_read_tokens": 6656,
+        "cache_write_tokens": 0,
+        "total_tokens": 20747,
+        "cost_usd": null,
+        "calls": 5,
+        "cache_hit_rate": 0.3232,
+        "cache_savings_tokens": 6656
+      },
+      "round": 1
+    },
+    {
+      "task_id": "bugfix-mean-empty",
+      "category": "bugfix",
+      "profile": "cloud-qs-glm-pro",
+      "passed": true,
+      "elapsed_ms": 73661.8,
+      "metrics": {
+        "version": 1,
+        "queue_ms": null,
+        "context_ms": 38.1,
+        "llm_ms": 71087.5,
+        "ttft_ms": 10116.6,
+        "first_text_ms": 69981.4,
+        "first_tool_ms": 10118.2,
+        "total_ms": 73657.4,
+        "rounds": 6,
+        "tool_calls": 5,
+        "provider_runs": [
+          {
+            "start_ms": 41.9,
+            "end_ms": 10116.6,
+            "duration_ms": 10074.6,
+            "first_delta_ms": 10074.6,
+            "error": null
+          },
+          {
+            "start_ms": 10124.0,
+            "end_ms": 24531.1,
+            "duration_ms": 14407.1,
+            "first_delta_ms": 14407.1,
+            "error": null
+          },
+          {
+            "start_ms": 24539.3,
+            "end_ms": 34932.4,
+            "duration_ms": 10393.1,
+            "first_delta_ms": 10393.1,
+            "error": null
+          },
+          {
+            "start_ms": 34971.9,
+            "end_ms": 47950.1,
+            "duration_ms": 12978.2,
+            "first_delta_ms": 11048.5,
+            "error": null
+          },
+          {
+            "start_ms": 47988.0,
+            "end_ms": 58051.3,
+            "duration_ms": 10063.4,
+            "first_delta_ms": 10063.3,
+            "error": null
+          },
+          {
+            "start_ms": 60481.2,
+            "end_ms": 73652.3,
+            "duration_ms": 13171.1,
+            "first_delta_ms": 8739.4,
+            "error": null
+          }
+        ],
+        "render_ms": null,
+        "usage": {
+          "input_tokens": 26047,
+          "output_tokens": 215,
+          "reasoning_tokens": 28,
+          "cache_read_tokens": 8000,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0,
+          "source": "reported"
+        }
+      },
+      "tool_calls": [
+        "read_file",
+        "read_file",
+        "apply_edit",
+        "apply_edit",
+        "run_tests"
+      ],
+      "final_text": "已修复 `stats.py`：原逻辑 `len(values) > 1` 导致单元素列表（如 `[5]`）错误返回 0。改为空列表返回 0、其余情况 `sum/len`。\n\n验证：`python -m pytest -q` — **3 passed**（含 `test_mean_single`、`test_mean_empty` 边界用例）。",
+      "error": "",
+      "check_output": "Running 3 items in this shard\n...                                                                      [100%]\n3 passed in 0.03s\n",
+      "usage": {
+        "input_tokens": 26047,
+        "output_tokens": 215,
+        "reasoning_tokens": 28,
+        "cache_read_tokens": 8000,
+        "cache_write_tokens": 0,
+        "total_tokens": 26290,
+        "cost_usd": null,
+        "calls": 6,
+        "cache_hit_rate": 0.3071,
+        "cache_savings_tokens": 8000
+      },
+      "round": 1
+    },
+    {
+      "task_id": "bugfix-slugify",
+      "category": "bugfix",
+      "profile": "cloud-qs-glm-pro",
+      "passed": true,
+      "elapsed_ms": 58334.7,
+      "metrics": {
+        "version": 1,
+        "queue_ms": null,
+        "context_ms": 31.1,
+        "llm_ms": 53035.4,
+        "ttft_ms": 13331.8,
+        "first_text_ms": 54511.5,
+        "first_tool_ms": 13333.4,
+        "total_ms": 58330.1,
+        "rounds": 4,
+        "tool_calls": 4,
+        "provider_runs": [
+          {
+            "start_ms": 34.7,
+            "end_ms": 13331.8,
+            "duration_ms": 13297.1,
+            "first_delta_ms": 13297.1,
+            "error": null
+          },
+          {
+            "start_ms": 13341.0,
+            "end_ms": 27885.6,
+            "duration_ms": 14544.6,
+            "first_delta_ms": 14544.6,
+            "error": null
+          },
+          {
+            "start_ms": 27916.4,
+            "end_ms": 37164.6,
+            "duration_ms": 9248.2,
+            "first_delta_ms": 9248.1,
+            "error": null
+          },
+          {
+            "start_ms": 41701.5,
+            "end_ms": 57646.9,
+            "duration_ms": 15945.5,
+            "first_delta_ms": 12810.0,
+            "error": null
+          }
+        ],
+        "render_ms": null,
+        "usage": {
+          "input_tokens": 18882,
+          "output_tokens": 143,
+          "reasoning_tokens": 82,
+          "cache_read_tokens": 7744,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0,
+          "source": "reported"
+        }
+      },
+      "tool_calls": [
+        "read_file",
+        "read_file",
+        "write_file",
+        "run_tests"
+      ],
+      "final_text": "修复完成：`slugify` 现在先 strip 首尾空格、替换空格为连字符、合并重复连字符、再转小写。运行 `python -m pytest -q`：3 个测试全部通过（3 passed）。",
+      "error": "",
+      "check_output": "Running 3 items in this shard\n...                                                                      [100%]\n3 passed in 0.03s\n",
+      "usage": {
+        "input_tokens": 18882,
+        "output_tokens": 143,
+        "reasoning_tokens": 82,
+        "cache_read_tokens": 7744,
+        "cache_write_tokens": 0,
+        "total_tokens": 19107,
+        "cost_usd": null,
+        "calls": 4,
+        "cache_hit_rate": 0.4101,
+        "cache_savings_tokens": 7744
+      },
+      "round": 1
+    },
+    {
+      "task_id": "bugfix-parse-bool",
+      "category": "bugfix",
+      "profile": "cloud-qs-glm-pro",
+      "passed": true,
+      "elapsed_ms": 69121.8,
+      "metrics": {
+        "version": 1,
+        "queue_ms": null,
+        "context_ms": 36.7,
+        "llm_ms": 65100.9,
+        "ttft_ms": 12125.1,
+        "first_text_ms": 67802.0,
+        "first_tool_ms": 12127.3,
+        "total_ms": 69117.5,
+        "rounds": 5,
+        "tool_calls": 4,
+        "provider_runs": [
+          {
+            "start_ms": 40.4,
+            "end_ms": 12125.1,
+            "duration_ms": 12084.8,
+            "first_delta_ms": 12084.7,
+            "error": null
+          },
+          {
+            "start_ms": 12151.1,
+            "end_ms": 29818.3,
+            "duration_ms": 17667.2,
+            "first_delta_ms": 17667.2,
+            "error": null
+          },
+          {
+            "start_ms": 29826.0,
+            "end_ms": 39722.6,
+            "duration_ms": 9896.5,
+            "first_delta_ms": 9896.5,
+            "error": null
+          },
+          {
+            "start_ms": 39755.9,
+            "end_ms": 51165.3,
+            "duration_ms": 11409.4,
+            "first_delta_ms": 11409.4,
+            "error": null
+          },
+          {
+            "start_ms": 54469.7,
+            "end_ms": 68512.7,
+            "duration_ms": 14043.0,
+            "first_delta_ms": 13332.3,
+            "error": null
+          }
+        ],
+        "render_ms": null,
+        "usage": {
+          "input_tokens": 29072,
+          "output_tokens": 185,
+          "reasoning_tokens": 76,
+          "cache_read_tokens": 7808,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0,
+          "source": "reported"
+        }
+      },
+      "tool_calls": [
+        "grep",
+        "read_file",
+        "apply_patch",
+        "run_shell"
+      ],
+      "final_text": "已更新 `flags.py`：`parse_bool()` 现在对输入做 `strip().lower()`，`true/yes/1`（任意大小写）返回 `True`，其余（false/no/0 等）返回 `False`。测试全部通过（2 passed）。",
+      "error": "",
+      "check_output": "Running 2 items in this shard\n..                                                                       [100%]\n2 passed in 0.02s\n",
+      "usage": {
+        "input_tokens": 29072,
+        "output_tokens": 185,
+        "reasoning_tokens": 76,
+        "cache_read_tokens": 7808,
+        "cache_write_tokens": 0,
+        "total_tokens": 29333,
+        "cost_usd": null,
+        "calls": 5,
+        "cache_hit_rate": 0.2686,
+        "cache_savings_tokens": 7808
+      },
+      "round": 1
+    },
+    {
+      "task_id": "bugfix-chunk-tail",
+      "category": "bugfix",
+      "profile": "cloud-qs-glm-pro",
+      "passed": true,
+      "elapsed_ms": 81703.6,
+      "metrics": {
+        "version": 1,
+        "queue_ms": null,
+        "context_ms": 39.7,
+        "llm_ms": 78331.7,
+        "ttft_ms": 10647.0,
+        "first_text_ms": 78647.4,
+        "first_tool_ms": 11275.2,
+        "total_ms": 81699.1,
+        "rounds": 5,
+        "tool_calls": 4,
+        "provider_runs": [
+          {
+            "start_ms": 43.5,
+            "end_ms": 11273.0,
+            "duration_ms": 11229.5,
+            "first_delta_ms": 10603.5,
+            "error": null
+          },
+          {
+            "start_ms": 11290.8,
+            "end_ms": 18978.3,
+            "duration_ms": 7687.6,
+            "first_delta_ms": 7687.5,
+            "error": null
+          },
+          {
+            "start_ms": 18985.9,
+            "end_ms": 40682.4,
+            "duration_ms": 21696.5,
+            "first_delta_ms": 21132.9,
+            "error": null
+          },
+          {
+            "start_ms": 40715.1,
+            "end_ms": 53540.4,
+            "duration_ms": 12825.3,
+            "first_delta_ms": 12825.3,
+            "error": null
+          },
+          {
+            "start_ms": 56190.8,
+            "end_ms": 81083.6,
+            "duration_ms": 24892.8,
+            "first_delta_ms": 22456.6,
+            "error": null
+          }
+        ],
+        "render_ms": null,
+        "usage": {
+          "input_tokens": 24781,
+          "output_tokens": 164,
+          "reasoning_tokens": 16,
+          "cache_read_tokens": 22592,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0,
+          "source": "reported"
+        }
+      },
+      "tool_calls": [
+        "grep",
+        "read_file",
+        "apply_patch",
+        "run_shell"
+      ],
+      "final_text": "已修复：`chunks.py` 中范围上界从 `len(items - size + ` 改(items)`，不再丢掉不足 `size` 的尾块。 `test.py` 2 项全部通过。",
+      "error": "",
+      "check_output": "Running 2 items in this shard\n..                                                                       [100%]\n2 passed in 0.03s\n",
+      "usage": {
+        "input_tokens": 24781,
+        "output_tokens": 164,
+        "reasoning_tokens": 16,
+        "cache_read_tokens": 22592,
+        "cache_write_tokens": 0,
+        "total_tokens": 24961,
+        "cost_usd": null,
+        "calls": 5,
+        "cache_hit_rate": 0.9117,
+        "cache_savings_tokens": 22592
+      },
+      "round": 1
+    },
+    {
+      "task_id": "bugfix-retry-attempts",
+      "category": "bugfix",
+      "profile": "cloud-qs-glm-pro",
+      "passed": true,
+      "elapsed_ms": 79624.0,
+      "metrics": {
+        "version": 1,
+        "queue_ms": null,
+        "context_ms": 34.6,
+        "llm_ms": 76960.0,
+        "ttft_ms": 14707.2,
+        "first_text_ms": 77102.1,
+        "first_tool_ms": 14709.4,
+        "total_ms": 79618.7,
+        "rounds": 5,
+        "tool_calls": 5,
+        "provider_runs": [
+          {
+            "start_ms": 39.5,
+            "end_ms": 14707.2,
+            "duration_ms": 14667.7,
+            "first_delta_ms": 14667.7,
+            "error": null
+          },
+          {
+            "start_ms": 14722.1,
+            "end_ms": 47468.1,
+            "duration_ms": 32746.0,
+            "first_delta_ms": 32746.0,
+            "error": null
+          },
+          {
+            "start_ms": 47492.3,
+            "end_ms": 56384.1,
+            "duration_ms": 8891.8,
+            "first_delta_ms": 8891.8,
+            "error": null
+          },
+          {
+            "start_ms": 56424.6,
+            "end_ms": 66034.4,
+            "duration_ms": 9609.8,
+            "first_delta_ms": 9609.7,
+            "error": null
+          },
+          {
+            "start_ms": 68569.1,
+            "end_ms": 79613.8,
+            "duration_ms": 11044.7,
+            "first_delta_ms": 8533.0,
+            "error": null
+          }
+        ],
+        "render_ms": null,
+        "usage": {
+          "input_tokens": 23564,
+          "output_tokens": 203,
+          "reasoning_tokens": 119,
+          "cache_read_tokens": 10240,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0,
+          "source": "reported"
+        }
+      },
+      "tool_calls": [
+        "grep",
+        "read_file",
+        "read_file",
+        "apply_edit",
+        "run_tests"
+      ],
+      "final_text": "Bug 原因：`retry.py` 中循环写成 `range(attempts - 1)`，导致 `attempts=3` 时只执行 2 次。\n\n修复：改为 `range(attempts)`，成功时仍通过 `return fn()` 立即返回；全部失败时抛出最后一次异常（`raise last` 逻辑不变）。\n\n验证：`python -m pytest -q` 通过（1 passed），测试 `test_third_time_succeeds` 确认第 3 次成功可返回 `'ok'`。",
+      "error": "",
+      "check_output": "Running 1 items in this shard\n.                                                                        [100%]\n1 passed in 0.04s\n",
+      "usage": {
+        "input_tokens": 23564,
+        "output_tokens": 203,
+        "reasoning_tokens": 119,
+        "cache_read_tokens": 10240,
+        "cache_write_tokens": 0,
+        "total_tokens": 23886,
+        "cost_usd": null,
+        "calls": 5,
+        "cache_hit_rate": 0.4346,
+        "cache_savings_tokens": 10240
+      },
+      "round": 1
+    },
+    {
+      "task_id": "bugfix-csv-header",
+      "category": "bugfix",
+      "profile": "cloud-qs-glm-pro",
+      "passed": true,
+      "elapsed_ms": 88620.4,
+      "metrics": {
+        "version": 1,
+        "queue_ms": null,
+        "context_ms": 36.8,
+        "llm_ms": 84492.2,
+        "ttft_ms": 17415.0,
+        "first_text_ms": 75267.7,
+        "first_tool_ms": 17417.0,
+        "total_ms": 88615.9,
+        "rounds": 5,
+        "tool_calls": 5,
+        "provider_runs": [
+          {
+            "start_ms": 40.6,
+            "end_ms": 17415.0,
+            "duration_ms": 17374.4,
+            "first_delta_ms": 17374.4,
+            "error": null
+          },
+          {
+            "start_ms": 17424.7,
+            "end_ms": 36629.4,
+            "duration_ms": 19204.6,
+            "first_delta_ms": 19204.6,
+            "error": null
+          },
+          {
+            "start_ms": 36655.5,
+            "end_ms": 64244.4,
+            "duration_ms": 27588.9,
+            "first_delta_ms": 15139.5,
+            "error": null
+          },
+          {
+            "start_ms": 64255.6,
+            "end_ms": 75307.7,
+            "duration_ms": 11052.1,
+            "first_delta_ms": 10387.7,
+            "error": null
+          },
+          {
+            "start_ms": 78710.5,
+            "end_ms": 87982.7,
+            "duration_ms": 9272.2,
+            "first_delta_ms": 8564.3,
+            "error": null
+          }
+        ],
+        "render_ms": null,
+        "usage": {
+          "input_tokens": 25020,
+          "output_tokens": 320,
+          "reasoning_tokens": 16,
+          "cache_read_tokens": 17856,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0,
+          "source": "reported"
+        }
+      },
+      "tool_calls": [
+        "read_file",
+        "read_file",
+        "apply_patch",
+        "apply_edit",
+        "run_shell"
+      ],
+      "final_text": "修复完成：`to_csv()` 现在先输出表头 `name,age`，再输出各行。测试 `test_header_and_rows` 通过（`csv.DictReader` 可正常读取）。",
+      "error": "",
+      "check_output": "Running 1 items in this shard\n.                                                                        [100%]\n1 passed in 0.03s\n",
+      "usage": {
+        "input_tokens": 25020,
+        "output_tokens": 320,
+        "reasoning_tokens": 16,
+        "cache_read_tokens": 17856,
+        "cache_write_tokens": 0,
+        "total_tokens": 25356,
+        "cost_usd": null,
+        "calls": 5,
+        "cache_hit_rate": 0.7137,
+        "cache_savings_tokens": 17856
+      },
+      "round": 1
+    },
+    {
+      "task_id": "bugfix-date-order",
+      "category": "bugfix",
+      "profile": "cloud-qs-glm-pro",
+      "passed": true,
+      "elapsed_ms": 69672.0,
+      "metrics": {
+        "version": 1,
+        "queue_ms": null,
+        "context_ms": 35.8,
+        "llm_ms": 66475.0,
+        "ttft_ms": 16684.9,
+        "first_text_ms": 66040.4,
+        "first_tool_ms": 18284.3,
+        "total_ms": 69667.5,
+        "rounds": 4,
+        "tool_calls": 4,
+        "provider_runs": [
+          {
+            "start_ms": 39.6,
+            "end_ms": 18282.0,
+            "duration_ms": 18242.4,
+            "first_delta_ms": 16645.3,
+            "error": null
+          },
+          {
+            "start_ms": 18294.7,
+            "end_ms": 37243.4,
+            "duration_ms": 18948.7,
+            "first_delta_ms": 10557.8,
+            "error": null
+          },
+          {
+            "start_ms": 37273.7,
+            "end_ms": 46933.5,
+            "duration_ms": 9659.8,
+            "first_delta_ms": 9659.7,
+            "error": null
+          },
+          {
+            "start_ms": 49414.7,
+            "end_ms": 69038.8,
+            "duration_ms": 19624.1,
+            "first_delta_ms": 14739.7,
+            "error": null
+          }
+        ],
+        "render_ms": null,
+        "usage": {
+          "input_tokens": 18786,
+          "output_tokens": 314,
+          "reasoning_tokens": 153,
+          "cache_read_tokens": 17856,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0,
+          "source": "reported"
+        }
+      },
+      "tool_calls": [
+        "read_file",
+        "read_file",
+        "apply_patch",
+        "run_tests"
+      ],
+      "final_text": "修复完成：ISO 格式是 `YYYY-MM-DD`，`dates.py` 里原来的解包顺序写反了，改为：\n\n```python\nyear, month, day = text.split('-')\n```\n\n验证：`python -m pytest -q` → 1 passed（`parse_date('2026-11-23') == (2026, 11, 23)`）。",
+      "error": "",
+      "check_output": "Running 1 items in this shard\n.                                                                        [100%]\n1 passed in 0.03s\n",
+      "usage": {
+        "input_tokens": 18786,
+        "output_tokens": 314,
+        "reasoning_tokens": 153,
+        "cache_read_tokens": 17856,
+        "cache_write_tokens": 0,
+        "total_tokens": 19253,
+        "cost_usd": null,
+        "calls": 4,
+        "cache_hit_rate": 0.9505,
+        "cache_savings_tokens": 17856
+      },
+      "round": 1
+    },
+    {
+      "task_id": "bugfix-cache-key",
+      "category": "bugfix",
+      "profile": "cloud-qs-glm-pro",
+      "passed": true,
+      "elapsed_ms": 55337.1,
+      "metrics": {
+        "version": 1,
+        "queue_ms": null,
+        "context_ms": 34.7,
+        "llm_ms": 52087.9,
+        "ttft_ms": 12321.0,
+        "first_text_ms": 54334.6,
+        "first_tool_ms": 12322.7,
+        "total_ms": 55333.8,
+        "rounds": 4,
+        "tool_calls": 4,
+        "provider_runs": [
+          {
+            "start_ms": 38.3,
+            "end_ms": 12321.1,
+            "duration_ms": 12282.7,
+            "first_delta_ms": 12282.7,
+            "error": null
+          },
+          {
+            "start_ms": 12330.0,
+            "end_ms": 27732.4,
+            "duration_ms": 15402.4,
+            "first_delta_ms": 15402.4,
+            "error": null
+          },
+          {
+            "start_ms": 27767.5,
+            "end_ms": 42402.1,
+            "duration_ms": 14634.6,
+            "first_delta_ms": 14634.6,
+            "error": null
+          },
+          {
+            "start_ms": 44949.7,
+            "end_ms": 54717.9,
+            "duration_ms": 9768.2,
+            "first_delta_ms": 9384.9,
+            "error": null
+          }
+        ],
+        "render_ms": null,
+        "usage": {
+          "input_tokens": 19425,
+          "output_tokens": 151,
+          "reasoning_tokens": 0,
+          "cache_read_tokens": 13056,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0,
+          "source": "reported"
+        }
+      },
+      "tool_calls": [
+        "read_file",
+        "read_file",
+        "apply_edit",
+        "run_shell"
+      ],
+      "final_text": "已修复：缓存键从固定的 `'value'` 改为参数元组 `args`，不同参数分别缓存。测试通过（1 passed）。",
+      "error": "",
+      "check_output": "Running 1 items in this shard\n.                                                                        [100%]\n1 passed in 0.03s\n",
+      "usage": {
+        "input_tokens": 19425,
+        "output_tokens": 151,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 13056,
+        "cache_write_tokens": 0,
+        "total_tokens": 19576,
+        "cost_usd": null,
+        "calls": 4,
+        "cache_hit_rate": 0.6721,
+        "cache_savings_tokens": 13056
+      },
+      "round": 1
+    },
+    {
+      "task_id": "bugfix-path-escape",
+      "category": "bugfix",
+      "profile": "cloud-qs-glm-pro",
+      "passed": true,
+      "elapsed_ms": 131505.6,
+      "metrics": {
+        "version": 1,
+        "queue_ms": null,
+        "context_ms": 32.9,
+        "llm_ms": 128124.3,
+        "ttft_ms": 8537.5,
+        "first_text_ms": 129580.8,
+        "first_tool_ms": 9210.3,
+        "total_ms": 131501.3,
+        "rounds": 7,
+        "tool_calls": 6,
+        "provider_runs": [
+          {
+            "start_ms": 36.7,
+            "end_ms": 9208.5,
+            "duration_ms": 9171.8,
+            "first_delta_ms": 8500.7,
+            "error": null
+          },
+          {
+            "start_ms": 9223.0,
+            "end_ms": 49556.8,
+            "duration_ms": 40333.8,
+            "first_delta_ms": 40333.8,
+            "error": null
+          },
+          {
+            "start_ms": 49577.9,
+            "end_ms": 60975.7,
+            "duration_ms": 11397.8,
+            "first_delta_ms": 11397.8,
+            "error": null
+          },
+          {
+            "start_ms": 60987.0,
+            "end_ms": 81496.8,
+            "duration_ms": 20509.8,
+            "first_delta_ms": 19160.3,
+            "error": null
+          },
+          {
+            "start_ms": 81526.9,
+            "end_ms": 103349.4,
+            "duration_ms": 21822.5,
+            "first_delta_ms": 10752.6,
+            "error": null
+          },
+          {
+            "start_ms": 103398.3,
+            "end_ms": 115975.3,
+            "duration_ms": 12577.0,
+            "first_delta_ms": 10995.3,
+            "error": null
+          },
+          {
+            "start_ms": 118577.3,
+            "end_ms": 130889.0,
+            "duration_ms": 12311.6,
+            "first_delta_ms": 11003.5,
+            "error": null
+          }
+        ],
+        "render_ms": null,
+        "usage": {
+          "input_tokens": 42018,
+          "output_tokens": 548,
+          "reasoning_tokens": 104,
+          "cache_read_tokens": 28544,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0,
+          "source": "reported"
+        }
+      },
+      "tool_calls": [
+        "grep",
+        "read_file",
+        "read_file",
+        "write_filewrite_file",
+        "write_file",
+        "run_shell"
+      ],
+      "final_text": "已修复 `safe_join()`：\n\n- 绝对路径（如 `/etc/passwd`）直接抛 `ValueError`\n- 拼接后用 `os.path.abspath` 规范化，并校验结果仍在 `base` 目录内，拒绝 `../x` 这类 `..` 逃逸（也能挡住 `a/../../` 等混淆写法）\n- 正常相对路径返回规范化后的绝对路径\n\n测试全部通过：3 passed。",
+      "error": "",
+      "check_output": "Running 3 items in this shard\n...                                                                      [100%]\n3 passed in 0.03s\n",
+      "usage": {
+        "input_tokens": 42018,
+        "output_tokens": 548,
+        "reasoning_tokens": 104,
+        "cache_read_tokens": 28544,
+        "cache_write_tokens": 0,
+        "total_tokens": 42670,
+        "cost_usd": null,
+        "calls": 7,
+        "cache_hit_rate": 0.6793,
+        "cache_savings_tokens": 28544
+      },
+      "round": 1
+    }
+  ]
+}

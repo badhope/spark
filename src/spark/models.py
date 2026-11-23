@@ -29,6 +29,7 @@ TurnEventType = Literal[
     # can show "this action was reviewed / flagged" instead of it happening
     # invisibly — a silent reviewer is indistinguishable from no reviewer.
     "review",
+    "metrics",
     "turn_end",
     "turn_error",
 ]

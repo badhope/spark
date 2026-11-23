@@ -295,6 +295,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ loading: true })
     try {
       const h = await fetchHistory()
+      useSessionStore.getState().setActiveGoal(h.goal?.status === "active" ? h.goal : null)
       const items = await attachReplayDurations(historyToItems(h.messages), h.session_id)
       const persistedError = useSessionStore.getState().status?.last_error
       if (persistedError && !items.some((m) => m.role === "error")) {
@@ -868,6 +869,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           // /goal：设立/查询/收口长程目标；goal 为 null = 无活跃目标
           flush()
           const goal = ev.data?.goal
+          useSessionStore.getState().setActiveGoal(goal?.status === "active" ? goal : null)
           if (!goal) {
             set((s) => ({
               items: [...s.items, { id: uid(), role: "notice" as const, text: t("goal.none", useUiStore.getState().lang), segments: [] }],
@@ -882,6 +884,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 role: "assistant" as const,
                 text: `🎯 ${goal.objective}`,
                 segments: [{ kind: "goal" as const, goal, label: ev.data?.label }],
+              },
+            ],
+          }))
+          break
+        }
+        case "goal_auto_continue": {
+          // Goal 自动续跑：同一条 SSE 流里继续下一回合，给用户一个明确标记
+          flush()
+          const turn = ev.data?.turn ?? 1
+          const max = ev.data?.max ?? 1
+          set((s) => ({
+            items: [
+              ...s.items,
+              {
+                id: uid(),
+                role: "notice" as const,
+                text: t("goal.autoContinue", useUiStore.getState().lang, { turn, max }),
+                segments: [],
               },
             ],
           }))

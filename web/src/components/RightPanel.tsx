@@ -11,7 +11,8 @@ import {
   type FsEntry,
 } from "../api"
 import { ChangesPanel } from "./ChangesPanel"
-import { IconCheck, IconChevronRight, IconCopy, IconDownload, IconExternal, IconFile, IconFileDiff, IconFolder, IconGlobe, IconRefresh, IconSearch, IconSpark, IconTerminal, IconX } from "./icons"
+import { WorkbenchPanel } from "./WorkbenchPanel"
+import { IconCheck, IconChevronRight, IconCopy, IconDownload, IconExternal, IconFile, IconFileDiff, IconFolder, IconGlobe, IconLayers, IconRefresh, IconSearch, IconSpark, IconTerminal, IconX } from "./icons"
 import { cls, Spinner } from "./ui"
 import { t } from "../i18n"
 import { useSessionStore } from "../store/sessionStore"
@@ -279,6 +280,7 @@ export const RightPanel = () => {
               ["run", "workbench.run", <IconTerminal key="r" size={12} />],
               ["web", "workbench.web", <IconGlobe key="w" size={12} />],
               ["trace", "workbench.trace", <IconSpark key="t" size={12} />],
+              ["tasks", "workbench2.title", <IconLayers key="k" size={12} />],
             ] as const
           ).map(([key, label, icon]) => (
             <button
@@ -642,6 +644,8 @@ export const RightPanel = () => {
           <ExecutionGraph embedded />
         </Suspense>
       )}
+
+      {tab === "tasks" && <WorkbenchPanel />}
       </aside>
     </>
   )

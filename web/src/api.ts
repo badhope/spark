@@ -13,6 +13,7 @@ import type {
   CostReport,
   WorkflowGraphState,
   ChatAttachment,
+  GoalState,
 } from "./types"
 import { useUiStore } from "./store/uiStore"
 
@@ -249,6 +250,137 @@ export async function queueAction(body: Record<string, unknown>): Promise<Record
   )
 }
 
+export type DeliveryRecord = {
+  id: string
+  session_id: string
+  task_id: string
+  title: string
+  status: "review" | "accepted" | "rejected" | "rolled_back" | string
+  summary: string
+  workdir: string
+  files: { code: string; path: string; old_path?: string }[]
+  diff_summary?: { repo?: boolean; branch?: string; status_count?: number; truncated?: boolean }
+  tests: { name?: string; command?: string; ok?: boolean; returncode?: number; output?: string; created_at?: number }[]
+  approvals: { tool?: string; action?: string; created_at?: number }[]
+  cost?: Record<string, number | string | null>
+  checkpoint_id?: number | null
+  metrics?: Record<string, unknown>
+  privacy?: Record<string, unknown>
+  created_at?: number
+  updated_at?: number
+}
+
+export type WorkbenchSnapshot = {
+  session_id: string
+  workdir: string
+  session: Record<string, unknown> | null
+  queue: { paused: boolean; counts: Record<string, number> }
+  tasks: Array<QueueTask & { delivery_id?: string | null; delivery_status?: string | null }>
+  deliveries: DeliveryRecord[]
+  review: DeliveryRecord[]
+  changes: { repo?: boolean; branch?: string; status_count?: number; entries: { code: string; path: string; old_path?: string }[]; truncated?: boolean }
+  checkpoints: Array<{ id: number; label: string; message_id: number; created_at: number }>
+  metrics: Array<{ id: number; created_at: number; metrics: Record<string, unknown> }>
+  privacy: Record<string, unknown>
+  cost: Record<string, number | string | null>
+}
+
+export async function fetchWorkbench(): Promise<WorkbenchSnapshot> {
+  return readJson(await fetchWithTimeout("/api/workbench"))
+}
+
+export async function createDelivery(body: Record<string, unknown> = {}): Promise<{ ok: boolean; delivery: DeliveryRecord }> {
+  return readJson(
+    await fetchWithTimeout("/api/deliveries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  )
+}
+
+export async function updateDelivery(id: string, status: DeliveryRecord["status"]): Promise<{ ok: boolean; delivery: DeliveryRecord }> {
+  return readJson(
+    await fetchWithTimeout("/api/deliveries/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status }),
+    }),
+  )
+}
+
+export async function exportDelivery(id?: string): Promise<{ delivery: DeliveryRecord; markdown: string }> {
+  return readJson(await fetchWithTimeout(`/api/deliveries/export${id ? `?id=${encodeURIComponent(id)}` : ""}`))
+}
+
+export interface CodeIndexStatus {
+  built: boolean
+  files: number
+  chunks: number
+  vectors: number
+  built_at: number
+  query?: string
+  hits?: Array<{ path: string; start_line: number; end_line: number; symbol?: string; score: number; text: string }>
+}
+
+export async function fetchCodeIndex(q = ""): Promise<CodeIndexStatus> {
+  return readJson(await fetchWithTimeout(`/api/code_index${q ? `?q=${encodeURIComponent(q)}` : ""}`))
+}
+
+export async function buildCodeIndex(): Promise<CodeIndexStatus & { ok: boolean }> {
+  return readJson(
+    await fetchWithTimeout("/api/code_index", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force: true }),
+    }),
+  )
+}
+
+
+export interface InlineEditResult {
+  ok: boolean
+  mode?: string
+  text?: string
+  latency_ms?: number
+  usage?: Record<string, unknown>
+  model?: string
+  base_sha256?: string | null
+  error?: string
+}
+
+export async function generateInlineEdit(body: {
+  path: string
+  selected?: string
+  prefix?: string
+  suffix?: string
+  instruction?: string
+  mode?: "edit" | "nes"
+  language?: string
+}): Promise<InlineEditResult> {
+  return readJson(
+    await fetchWithTimeout("/api/inline_edit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  )
+}
+
+export async function applyInlineEdit(body: {
+  path: string
+  selected: string
+  replacement: string
+  base_sha256?: string | null
+}): Promise<{ ok: boolean; changed?: boolean; diff?: string; error?: string }> {
+  return readJson(
+    await fetchWithTimeout("/api/inline_edit/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  )
+}
 
 export interface LocalModelInfo {
   id: string
@@ -470,8 +602,17 @@ export async function saveSettings(
   )
 }
 
-export async function listSessions(): Promise<{ sessions: SessionRow[]; current: string }> {
-  return readJson(await fetchWithTimeout("/api/sessions"))
+export async function listSessions(includeArchived = false): Promise<{ sessions: SessionRow[]; current: string }> {
+  const qs = includeArchived ? "?include_archived=1" : ""
+  return readJson(await fetchWithTimeout(`/api/sessions${qs}`))
+}
+
+export async function archiveSession(sessionId: string, archived = true): Promise<void> {
+  await fetchWithTimeout("/api/sessions/archive", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, archived }),
+  })
 }
 
 export interface SessionSearchHit {
@@ -488,7 +629,7 @@ export async function searchSessions(q: string, limit = 20): Promise<{ hits: Ses
   return readJson(await fetchWithTimeout(`/api/sessions/search?q=${query}&limit=${limit}`))
 }
 
-export async function fetchHistory(): Promise<{ session_id: string; messages: HistoryMessage[] }> {
+export async function fetchHistory(): Promise<{ session_id: string; messages: HistoryMessage[]; goal?: GoalState | null }> {
   return readJson(await fetchWithTimeout("/api/history"))
 }
 
@@ -518,7 +659,7 @@ export async function newSession(): Promise<Status> {
 
 export async function switchSession(
   sessionId: string,
-): Promise<{ status: Status; messages: HistoryMessage[] }> {
+): Promise<{ status: Status; messages: HistoryMessage[]; goal?: GoalState | null }> {
   return readJson(
     await fetchWithTimeout("/api/sessions/switch", {
       method: "POST",
@@ -611,7 +752,7 @@ export async function renameSession(sessionId: string, title: string): Promise<{
 
 export async function forkSession(
   sessionId?: string,
-): Promise<{ ok: boolean; status: Status; messages: HistoryMessage[] }> {
+): Promise<{ ok: boolean; status: Status; messages: HistoryMessage[]; goal?: GoalState | null }> {
   return readJson(
     await fetchWithTimeout("/api/sessions/fork", {
       method: "POST",
@@ -1343,12 +1484,17 @@ export interface PluginItem {
   hooks?: number
   error?: string
   legacy?: boolean
+  signature_status?: string
+  signature_error?: string
+  publisher?: string
+  key_id?: string
 }
 
 export async function fetchPlugins(): Promise<{
   items: PluginItem[]
   hooks: Array<Record<string, unknown>>
   plugins_dir: string
+  require_signature?: boolean
 }> {
   return readJson(
     await fetchWithTimeout("/api/plugins", {
@@ -1365,6 +1511,21 @@ export async function setPluginEnabled(name: string, enabled: boolean): Promise<
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: enabled ? "enable" : "disable", name }),
+    }),
+  )
+}
+
+export async function setPluginRequireSignature(required: boolean): Promise<{
+  ok: boolean
+  require_signature?: boolean
+  items?: PluginItem[]
+  error?: string
+}> {
+  return readJson(
+    await fetchWithTimeout("/api/plugins", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "policy", require_signature: required }),
     }),
   )
 }

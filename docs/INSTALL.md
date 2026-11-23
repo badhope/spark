@@ -194,6 +194,20 @@ spark ide install neovim --workdir /path/to/project      # CodeCompanion
 
 已有配置会先备份；未知键保留；坏 JSON / 非 Spark 生成的文件默认拒绝覆盖（`--force` 才会备份后覆盖）。
 
+### 内联编辑桥（JetBrains / 其他编辑器）
+
+VS Code 用原生 inline provider；Web 工作台有“内联编辑”卡片，预览后点应用；
+Neovim 生成的 `spark_acp.lua` 带 `<leader>si` 可视区映射。JetBrains 或任何
+没有原生内联 UI 的编辑器，用 `spark inline`：
+
+```bash
+spark inline src/app.py   --workdir /path/to/project   --instruction "把异常改成返回 None"   --start-line 42 --end-line 45   --json          # 输出 {text, base_sha256, changed}
+```
+
+默认只打印替换文本；加 `--apply` 才写回文件，且要求选中文本在文件中只出现
+一次。JetBrains 可把它配成 External Tool（`$FilePath$` + `$SelectionStartLine$`
++ `$SelectionEndLine$` + `$ProjectFileDir$`）。
+
 ### 截图自动化（维护者）
 
 `python scripts/screenshots.py` 用本机 Edge/Chrome headless 重拍

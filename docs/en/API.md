@@ -99,7 +99,7 @@ credentials and are exempt.
 | Section | Writable fields |
 | --- | --- |
 | `provider` | `name`, `base_url`, `model`, `api_key` (blank = keep), `api_key_env` (valid env name), `api_keys`, `fallback_models`, `small_model` |
-| `agent` | `approval`, `sandbox_mode`, `effort`, `workdir_only`, `protected_paths`, `system_prompt`, `show_*`, `shell_timeout_sec`, `max_tool_rounds`, `max_repeat_calls`, `max_turn_tokens`, `max_output_chars` |
+| `agent` | `approval`, `sandbox_mode`, `effort`, `workdir_only`, `protected_paths`, `system_prompt`, `show_*`, `shell_timeout_sec`, `max_tool_rounds`, `tool_preset`, `max_repeat_calls`, `max_turn_tokens`, `max_output_chars` |
 | `context` | `agents_md` (bare filename only), `max_fragment_chars`, `history_budget_chars`, `max_context_tokens`, `compact_threshold`, `keep_recent_messages`, `repo_map_enabled`, `repo_map_max_chars`, `knowledge_enabled`, `knowledge_top_k`, `knowledge_max_chars` |
 | `memory` | `enabled`, `top_k`, `capacity`, `embedding_model`, `auto_extract`, `embedding_enabled`, `embedding_base_url`, `embedding_api_key` (blank = keep), `rerank_model` |
 | `replay` | `enabled` |

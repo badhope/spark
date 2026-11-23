@@ -191,6 +191,9 @@ class SessionRuntime:
     lease_owner: str = ""
     lease_until: float = 0.0
     lease_ttl: float = 120.0
+    #: "queue" marks an unattended queue session: sibling queue workers must
+    #: not treat it as a user turn and block each other.
+    origin: str = ""
     _lease_lock: Any = field(
         default_factory=threading.RLock, repr=False, compare=False
     )
@@ -475,6 +478,10 @@ class SparkWebState:
             runner=self._run_queued_task,
             is_busy=self._queue_is_busy,
             poll_sec=10.0,
+            daily_limit=(getattr(self.cfg.agent, "queue_daily_limit", 0) or 0),
+            daily_cost_usd=(getattr(self.cfg.agent, "queue_daily_cost_usd", 0.0) or 0.0),
+            task_timeout_sec=(getattr(self.cfg.agent, "queue_task_timeout_sec", 0) or 0),
+            workers=(getattr(self.cfg.agent, "queue_workers", 1) or 1),
         )
         self.boot_mcp()
         self.rebuild_loop(reuse_latest=True)
@@ -866,7 +873,25 @@ class SparkWebState:
         """A queued prompt must not compete with any live turn."""
         if self._current_runtime is not None and self._current_runtime.busy:
             return True
-        return any(runtime.busy for runtime in self._runtimes.values())
+        return any(
+            runtime.busy
+            for runtime in self._runtimes.values()
+            if runtime.origin != "queue"
+        )
+
+    def _queued_session_cost(self, session_id: str) -> float:
+        """Estimated USD for a queue session; unpriced providers report 0.
+
+        The cap is a throttle, not a bill: token_usage stores the public-price
+        estimate (or 0 when no price table entry exists), and the UI labels it
+        accordingly. Never pretend an unpriced local model cost money.
+        """
+        try:
+            usage = self.store.session_token_usage(session_id)
+            return round(float(usage.get("cost_usd") or 0.0), 6)
+        except Exception:
+            logger.debug("queue cost lookup failed", exc_info=True)
+            return 0.0
 
     def _run_queued_task(self, task: dict) -> QueueOutcome:
         """Execute one queue row in its own session, never the user's current one."""
@@ -887,6 +912,7 @@ class SparkWebState:
         runtime = self.get_runtime(session_id)
         if runtime is None:
             return QueueOutcome(status="failed", error="runtime unavailable")
+        runtime.origin = "queue"
         runtime.loop = self._build_loop(runtime)
         if self._effective_approval(runtime.loop) == "full-auto":
             runtime.approver = None
@@ -894,8 +920,21 @@ class SparkWebState:
             runtime.approver = WebApprover()
         if not runtime.turn_lock.acquire(blocking=False):
             return QueueOutcome(status="requeue", error="agent busy", session_id=session_id)
+        timeout_sec = int(task.get("_timeout_sec") or 0)
         try:
-            events = list(runtime.loop.iter_turn_sync(prompt))
+            events = list(
+                runtime.loop.iter_turn_sync(
+                    prompt,
+                    timeout_sec=timeout_sec if timeout_sec > 0 else None,
+                )
+            )
+        except TimeoutError as exc:
+            return QueueOutcome(
+                status="requeue",
+                error=str(exc) or f"queue task exceeded {timeout_sec}s",
+                session_id=session_id,
+                cost_usd=self._queued_session_cost(session_id),
+            )
         finally:
             runtime.turn_lock.release()
         text = ""
@@ -907,9 +946,29 @@ class SparkWebState:
             elif kind == "turn_error":
                 failed = True
                 text = (getattr(event, "text", "") or "turn failed")[:500]
+        try:
+            from spark.workbench import build_delivery
+
+            build_delivery(
+                self.store,
+                session_id,
+                self.cfg,
+                task_id=str(task.get("id") or ""),
+                title=str(task.get("title") or task.get("prompt") or "Queued task")[:120],
+                status="rejected" if failed else "review",
+                summary=text,
+                workdir=str(workdir),
+            )
+        except Exception:
+            logger.debug("queue delivery ledger write failed", exc_info=True)
+        cost_usd = self._queued_session_cost(session_id)
         if failed:
-            return QueueOutcome(status="failed", error=text, session_id=session_id)
-        return QueueOutcome(status="ok", summary=text, session_id=session_id)
+            return QueueOutcome(
+                status="failed", error=text, session_id=session_id, cost_usd=cost_usd
+            )
+        return QueueOutcome(
+            status="ok", summary=text, session_id=session_id, cost_usd=cost_usd
+        )
 
     def run_due_automations(self) -> list[dict]:
         """执行到期的定时任务；返回本轮结果摘要。
@@ -1133,9 +1192,15 @@ class SparkWebState:
                 "protected_paths": list(self.cfg.agent.protected_paths),
                 "shell_timeout_sec": self.cfg.agent.shell_timeout_sec,
                 "max_tool_rounds": self.cfg.agent.max_tool_rounds,
+                "tool_preset": self.cfg.agent.tool_preset,
                 "max_repeat_calls": self.cfg.agent.max_repeat_calls,
                 "max_turn_tokens": self.cfg.agent.max_turn_tokens,
                 "max_session_cost_usd": self.cfg.agent.max_session_cost_usd,
+                "goal_auto_turns": self.cfg.agent.goal_auto_turns,
+                "queue_daily_limit": self.cfg.agent.queue_daily_limit,
+                "queue_daily_cost_usd": self.cfg.agent.queue_daily_cost_usd,
+                "queue_workers": self.cfg.agent.queue_workers,
+                "queue_task_timeout_sec": self.cfg.agent.queue_task_timeout_sec,
                 "max_output_chars": self.cfg.agent.max_output_chars,
                 "effort": self.cfg.agent.effort,
                 "system_prompt": self.cfg.agent.system_prompt,

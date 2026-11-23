@@ -137,6 +137,12 @@ export interface FullConfig {
     protected_paths: string[]
     shell_timeout_sec: number
     max_tool_rounds: number
+    goal_auto_turns?: number
+    queue_daily_limit?: number
+    queue_daily_cost_usd?: number
+    queue_task_timeout_sec?: number
+    queue_workers?: number
+    tool_preset?: "full" | "coding"
     max_repeat_calls: number
     max_turn_tokens: number
     max_session_cost_usd: number
@@ -235,6 +241,12 @@ export interface SettingsPayload {
     protected_paths: string[]
     shell_timeout_sec: number
     max_tool_rounds: number
+    goal_auto_turns?: number
+    queue_daily_limit?: number
+    queue_daily_cost_usd?: number
+    queue_task_timeout_sec?: number
+    queue_workers?: number
+    tool_preset?: "full" | "coding"
     max_repeat_calls?: number
     max_turn_tokens?: number
     max_session_cost_usd?: number
@@ -313,8 +325,10 @@ export type ChatEvent = ChatEnvelope &
   | { type: "approval_changed"; data: { approval: string; base: string; mode: "plan" | "build"; label?: string } }
   | { type: "side_answer"; data: { question: string; answer: string; model: string; ok: boolean } }
   | { type: "goal_status"; data: { goal?: GoalState | null; label?: string } }
+  | { type: "goal_auto_continue"; data: { turn: number; max: number; goal?: { id?: string; objective?: string } } }
   | { type: "compaction"; data: { before_tokens?: number; after_tokens?: number; limit?: number; summarized_messages?: number; usage?: ContextUsage } }
   | { type: "context"; data: { usage: ContextUsage } }
+  | { type: "metrics"; data: Record<string, unknown> }
   | { type: "plan"; data: { steps: PlanStep[] } }
   | { type: "turn_end"; text?: string }
   | { type: "turn_error"; text?: string; data?: { error?: ModelErrorInfo } }
@@ -356,6 +370,8 @@ export interface SessionRow {
   model: string
   created_at: number
   updated_at: number
+  /** 0/undefined = active; epoch seconds = archived. */
+  archived_at?: number
 }
 
 export interface ChatAttachment {

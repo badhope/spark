@@ -12,6 +12,8 @@ EXAMPLES = [
 ]
 
 SHORTCUTS = [
+    ("/editor", "挂起 TUI，用 $EDITOR 打开文件/目录；退出后回到 Spark"),
+    ("/vim", "用 Vim 打开当前文件/目录"),
     ("Enter", "发送任务"),
     ("Ctrl+T", "测试模型连通性"),
     ("Ctrl+C", "中止当前任务"),

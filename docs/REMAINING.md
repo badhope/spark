@@ -6,12 +6,27 @@
 
 状态：✅ 已交付 ｜ 🟡 部分交付 ｜ 🚧 进行中 ｜ 📋 已排期 ｜ ⏸ 需产品决策 ｜ ❌ 明确不做
 
+> **2026-11-23 路线切换**：本文是旧能力对账视图，保留作历史清单；产品定位已改为
+> **本地优先、可审计、模型自由的 AI 编程工作台**，并进入 18 周四次过门路线
+> （`docs/reviews/2026-11-23-competitive-strategy.md`）。下文“明确不做”的
+> API-first / 本地不是卖点 / NES 结论已被新路线取代：Phase 3 已落地内联编辑与
+> NES 入口，完整 Tab 补全仍按门禁后置；不再以“没有编辑器本体”为由否定编辑器桥接。
+
 ## 已关闭（本轮及之前）
 
 | 能力 | 状态 | 落点 |
 | --- | --- | --- |
+| 会话归档/恢复 | ✅ | `store.archive_session()` + `sessions.archived_at`（v6）；`/api/sessions/archive` 仅本机/`device_admin`；Web 侧栏“已归档”分组、归档/恢复、归档当前会话自动切换；`tests/test_session_archive.py` 2 项 |
+| 插件代码包签名 | ✅ | `package_digest()` 对 manifest 外所有文件做路径+SHA256 总摘要；`PluginManifest.artifact_sha256`；`verify_manifest(root=...)` 缺摘要/包变更均 invalid；`install_local()` 在 staging 校验并拒绝篡改/撤销包；`tests/test_plugin_trust.py` 7 项 |
+| Claude skills/commands 兼容 | ✅ | `skills.discover_skills()` 扫 `.claude/skills`、`~/.claude/skills`；`slash.discover_commands()` 扫 `.claude/commands`、`~/.claude/commands`；同名 `.spark` 原生优先，只读不写；`tests/test_skills.py` / `test_profiles_and_commands.py` |
+| TUI `/editor` / `/vim` | ✅ | `slash.KNOWN_COMMANDS` 注册 `editor`/`vim`；TUI `_run_editor_slash` 经 sandbox 解析路径后挂起 `self.suspend()`，调 `$VISUAL`/`$EDITOR`（`/vim` 强制 vim），退出恢复；`tests/test_tui_app.py` / `test_tui_pilot.py` / `test_tui_welcome.py` 回归通过。**边界**：这是外部编辑器，不是 composer 内 Vim 键位模式 |
+| OTel 全链路（trace/metric/log） | ✅ | `otel.py` 有 `spark.approval`、`spark.workflow`/`.step`，metric（token/延迟）与显式审计 log（审批决定/工具失败/工作流结束）走 OTLP gRPC；`tests/test_otel.py` 6 项通过。**边界**：不是 Python logging 全量桥接，HTTP OTLP 未接 |
+| 交付账本真实性 | ✅ | `deliveries` 增 `diff_json/metrics_json/privacy_json`（v5 迁移）；`list_tool_events()` 取最新 500 条再反转；自动入账按 `since_id`、写工具路径与真实测试命令归属；导出补 Diff/成本；`tests/test_workbench.py` |
 | 定时任务 | ✅ | `automations.py` + 设置→定时任务 |
 | 写后格式化 | ✅ | `tools/formatting.py`，`agent.format_on_write` |
+| 交付账本自动入账 | ✅ | `web/_handlers_chat.py` 在写文件/提交后自动 `build_delivery()`；失败回合写 `rejected`，只读回合保留手动入口 |
+| 语义索引后台构建 | ✅ | `core/loop.py` `_start_semantic_build`；首轮不阻塞，次轮起可用；手动重建仍保留 |
+| 插件签名策略 | ✅ | `[plugins].require_signature` + 设置页开关 + `/api/plugins action=policy`；仅本机/`device_admin` |
 | 额外目录 `--add-dir` | ✅ | `sandbox.py:extra_roots`，`agent.extra_dirs` |
 | 断网执行 | ✅ | `agent.network_access` + bwrap 空网络命名空间 |
 | 自动审查 | ✅ | `core/review.py`，`agent.auto_review` |
@@ -29,7 +44,7 @@
 | A2A Server（Agent2Agent 协议） | ✅ | `spark a2a-serve`：Agent Card + message/send + tasks/get（`a2a_server.py`，9 测试）；流式列为 ⏸ |
 | A2A 流式（message/stream SSE） | ✅ | capabilities.streaming=true；SSE 逐帧下发 TaskStatusUpdateEvent + TaskArtifactUpdateEvent（终帧全量替换），非流式 message/send 复用同一执行路径 |
 | 侧聊 / 旁支（`/side`） | ✅ | `/side <问题>`：辅助模型（small_model 优先）一次性作答，带主对话最近请求作背景；不污染主对话历史，UI 旁支卡片 |
-| Goal 长程模式（`/goal`） | ✅ | `/goal <目标>`：goals 表持久化 + 目标契约注入系统提示词 + `goal_update` 工具（**证据门槛**：complete 需至少一条 done 且带可核查 evidence，否则拒绝） |
+| Goal 长程模式（`/goal`） | ✅ | `/goal <目标>`：goals 表持久化 + 目标契约注入系统提示词 + `goal_update` 工具（**证据门槛**：complete 需至少一条 done 且带可核查 evidence，否则拒绝）；`agent.goal_auto_turns`（默认 2）在同一 SSE 流内自动续跑，任一回合失败立即熔断；`/api/history`、切换/分叉回显活跃 Goal，刷新/重启后聊天页显示“继续推进”横幅。**边界**：跨重启是可见 + 一键续跑，不是无确认的后台自动开跑 |
 | 主 agent 切换（build/plan） | ✅ | `/plan`（切 plan-only 只读档）/`/build`（恢复并重套审批档案）；复用审批档案 override 机制，零配置突变 |
 | 插件市场 v1（策划式） | ✅ | `spark mcp search/add/list/remove` CLI 与 Web 注册表同源（live + 离线策划索引 + 中国可用性标注）；签名分发仍列在高成本项 |
 | 手机端首页与底部导航（RC-03） | ✅ | `web/src/components/MobileShell.tsx` + `useIsMobile.ts`：<768px 独立手机壳，首屏待审批/当前会话/新任务，底部固定导航与安全区；审批卡片“查看并审批”两步完成；`Composer` 浏览器 SpeechRecognition 语音输入，失败回落文本；普通访问注册 PWA `sw.js`；`tests/test_ui_a11y.py` 390×844/1440×900 无横向溢出 8 项、`tests/test_ui_browser.py` 9 项通过 |
@@ -43,7 +58,7 @@
 | 项目知识库混合检索 | ✅ | `knowledge.py`：BM25 始终兜底，开启 `memory.embedding_enabled` 后叠加向量召回；`vectors.json` sidecar、旧索引首次检索回填、embedding 失败/维度不一致降级；`tests/test_knowledge.py` 36 项通过 |
 | 内置可驱动浏览器 | ✅ | `tools/browser.py` 21 个 `browser_*` 工具，Playwright 后台线程、ref 快照、点击/输入/上传/截图/PDF/控制台/网络；右侧“网页”工作台复用同一浏览器 |
 | Git PR 工作流 | ✅ | `pr.py` + `tools/pr_tools.py`：`pr_context` / `pr_view` / `pr_diff` / `pr_checks` / `pr_review`，`spark pr publish --confirm` 才写评论；GitHub / GitCode / Gitee |
-| IDE/ACP 深度集成 | ✅ | `vscode-spark/` VSIX（聊天面板、选区上下文、内联 diff、诊断）、`spark ide install` 覆盖 Zed / JetBrains 2025.3+ / Neovim；JetBrains/Neovim 真实客户端冒烟仍标注为环境限制 |
+| IDE/ACP 深度集成 | ✅ | `vscode-spark/` VSIX（聊天面板、选区上下文、内联 diff、诊断）、`spark ide install` 覆盖 Zed / JetBrains 2025.3+ / Neovim；Neovim 额外带 `<leader>si` 选中区内联桥，JetBrains 用 `spark inline` External Tool 桥；真实客户端冒烟仍标注为环境限制 |
 
 ## 收口计划（2026-11-22，接在现有轨道上）
 
@@ -79,17 +94,19 @@
 | DS-01 | P1 | Windows 产物未签名，SmartScreen 拦截；更新只校验 SHA256 | `.github/workflows/release.yml` Windows job、`install.ps1`、更新器 | Authenticode 签 exe/zip 内二进制并加时间戳；`signtool verify /pa` 通过；更新器拒绝坏签名；发布说明写清证书指纹 | S 代码；需代码签名证书 |
 | DS-02 | P1 | macOS 只有 `arm64 tar.gz`，无 `.app/.dmg`、无 codesign/公证 | `release.yml` macOS job、`spark.spec` | 产出 `.app` + `.dmg`；codesign + notarytool + staple；`spctl --assess` 通过；Gatekeeper 无警告；SHA256 与签名都校验 | M；需 Apple Developer 账号 |
 | DS-03 | P2 | Windows 只有 Job Object 进程树 + 内存上限，无文件系统/网络隔离 | `sandbox.py` Windows 后端 | AppContainer 或受限令牌 + 文件 ACL 边界；断网时真断网；越界写/读测试被拒；做不到就在 payload 明确标注隔离等级，不冒充 | L–XL |
-| DS-04 | P2 | `otel.py` 只有 provider span，没有 turn/tool/approval/workflow 全链路与日志/指标导出 | `otel.py`、审计模块、`config.py` | 一条 turn 的 trace 覆盖模型/工具/审批/工作流；可选 OTLP log/metrics；默认脱敏；可配置导出端点；不引入第二套遥测后端 | M |
+| DS-04 | P2 | **✅ 2026-11-23 交付**（可选依赖边界）。turn/工具/审批/工作流 trace + metric + 显式审计 log；`SPARK_OTEL_BRIDGE_LOGGING=1` 桥接 stdlib logging；`SPARK_OTEL_SAMPLE_RATIO` 采样；审计 attributes 对 api_key/password/secret/authorization/cookie 统一脱敏；安装 `opentelemetry-exporter-otlp-proto-http` 时 `http(s)://host:4318` 自动走 HTTP `/v1/traces|metrics|logs`，否则回退 gRPC。**边界**：HTTP 是可选依赖，不强行打进默认安装；采样是 trace 级，不是按属性动态采样 | `otel.py`、审计模块 | 观测闭环；剩余是 collector 侧策略，不是客户端能力 | M |
 
 ### D. 生态与交互（EX）
 
 | ID | 优先级 | 差距 / 现状 | 接回哪里 | 完成标准 | 成本 / 条件 |
 | --- | --- | --- | --- | --- | --- |
-| EX-01 | P2 | 有 MCP 注册表和本地/git 插件，没有公共/个人市场与签名分发 | 现有 `mcp` 注册表、插件安装器、设置→插件 | manifest 签名、索引列出/安装/更新/撤销；篡改包拒绝安装；复用现有注册表 UI，不新起市场服务 | L；需治理规则 |
-| EX-02 | P2 | TUI slash 只有 `/test`；无 `/editor`、无 Vim 模式 | `tui/` 命令解析、`cli.py` | 复用现有命令注册表补常用 slash；`/editor` 调 `$EDITOR` 并回填输入框；`/vim` 切换编辑模式并持久化；有 TUI 回归 | S–M |
+| EX-01 | P2 | **🟡 2026-11-23 部分交付**。原差距：没有公共/个人市场与签名分发。现已支持 manifest + 代码包摘要签名、篡改包拒绝安装、trust/revoke、`require_signature`；公共市场索引、上架审核、撤销列表治理仍未做 | 现有 `mcp` 注册表、插件安装器、设置→插件 | 已满足：签名/篡改拒装/本地信任；未满足：索引列出/上架审核/撤销治理/公共市场 | L；需治理规则 |
+| EX-02 | P2 | **🟡 2026-11-23 部分交付**。`/editor [path]` / `/vim [path]` 挂起 TUI 调外部编辑器；Web composer 已加可选 Vim 键位（Esc→Normal，i/a/I/A→Insert，h/j/k/l、w/b、0/$、x、dd、o，`VIM · N/I` 状态，localStorage 记忆）。未做宏、寄存器、可视模式与外部编辑器结果回填 composer | `tui/`、`web/src/components/Composer.tsx` | 已满足：外部编辑器可达、基础 Vim 键位；未满足：完整 Vim 状态机、回填输入框 | S–M |
+
 | EX-03 | P2 | **✅ 2026-11-22 已完成**。原差距：词典和组件接入已铺开，但缺漏词门禁；矩阵里“仅少量组件接入”已过时 | `web/src/i18n.ts`、`web/scripts/check-i18n.mjs`、组件、构建脚本 | zh/en key 对齐、en 词典无中文、`t()` key 必存在、JSX/字符串硬编码中文失败，全部进 `npm run build`；补齐 provider/MCP/本地模型英文展示；`tests/test_ui_i18n.py` 断言英文主界面与模型设置无中文 | S |
-| EX-04 | P2 | Claude Code 兼容只到声明式 agents，未导入 `.claude/skills` / commands | `skills` 加载器、`agents` 声明式加载 | 只读兼容层导入 `.claude/skills` 与 commands；冲突命名空间隔离；不改变现有 `.spark/skills` 优先级 | S–M |
-| EX-05 | P2 | 空闲队列有执行/暂停/重试，但没有“免费额度 + 超时回队列续跑”语义 | `task_queue.py`、路由/成本台账 | 配额耗尽停止；超时自动回队列；同一任务不双跑；成本可见 | M；需定价/产品决策 |
+| EX-04 | P2 | **✅ 2026-11-23 已完成**。原差距：Claude Code 兼容只到声明式 agents | `skills` 加载器、`slash` 命令发现 | 只读导入 `.claude/skills` / `.claude/commands` / `~/.claude/{skills,commands}`；同名 `.spark` 原生优先；`tests/test_skills.py` / `test_profiles_and_commands.py` 通过 | S–M |
+
+| EX-05 | P2 | **✅ 2026-11-23 交付**（边界明确）。空闲队列现有：本地日任务配额 `queue_daily_limit`、本地日估算成本配额 `queue_daily_cost_usd`（`agent_queue.cost_usd` 含失败重试成本）、单任务墙钟超时回 `queued`、1–4 个 worker 并行（`queue_workers`，重启生效）；队列会话标 `origin=queue`，不把彼此当用户回合阻塞。**边界**：成本按公开价目估算，不是账单；多 worker 仅限进程内，不是分布式队列；worker 数修改需重启 | `task_queue.py`、`store.py`、设置/成本台账 | 本地节流闭环；剩余是分布式/多机调度，不在本地优先定位内 | M |
 
 ### E. 文档真实性与门禁（DOC）
 
@@ -113,7 +130,7 @@
 - 不另起编排引擎；专家团队复用 `workflow` + `task` + 声明式 agents。
 - 不另起遥测后端；全链路观测扩展 `otel.py`。
 - 不为每个平台写独立 UI；设置页、审批卡、审计列表共用现有组件。
-- 不把“明确不做”的云端沙箱/账号体系/移动 App、Tab 补全/NES、LSP 绕过写路径重新塞进计划。
+- 不把“明确不做”的云端沙箱/账号体系/移动 App、LSP 绕过写路径重新塞进计划；编辑器桥接按 Phase 3 门禁推进，不再以“没有编辑器本体”为由排除。
 
 ## 待做（按"能不能直接动手"排序）
 
@@ -130,7 +147,7 @@
 | RC-02 官方托管 relay / 账号入口 | ⏸ | 需要公网域名、TLS、托管成本与隐私边界；自托管 Web 代理可先做 |
 | AQ-04 专家团队编排 | ⏸ | 会改变交互形态与成本模型，需决定是否产品化 |
 | EX-01 插件/技能市场签名与上架 | ⏸ | 涉及签名信任链、审核与撤销治理 |
-| EX-05 免费额度 + 超时回队列 | ⏸ | 涉及定价与资源占用策略 |
+| EX-05 免费额度 + 超时回队列 | ✅ | 已用本地日任务数/估算成本配额 + 墙钟超时 + 1–4 worker 落地；无需定价，按公开价目估算并明确不是账单 |
 
 ### 成本明显更高
 
@@ -162,8 +179,8 @@
 
 | 能力 | 理由 |
 | --- | --- |
-| 云端沙箱 / 账号体系 / 移动 App | 与 API-first 的产品定位不符；本地/自托管只是部署选项，不是卖点 |
-| Tab 补全 / NES | 那是编辑器形态的能力，Spark 没有编辑器本体 |
+| 云端沙箱 / 账号体系 / 移动 App | 与本地优先、可审计的工作台定位不符；远程控制是 Web 内能力，不新起第二套移动端 |
+| 完整 Tab 补全 | Phase 3 先做 NES 与内联编辑；完整 Tab 补全要过“真实模型接受率 ≥25%、p95 ≤1.5s”门禁后再决定，不先斩后奏 |
 | 允许 LSP 绕过 Spark 写路径 | 语言服务器只能返回 WorkspaceEdit；实际写入必须走 sandbox/policy/approval |
 
 ## 维护约定

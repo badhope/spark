@@ -31,6 +31,12 @@ fields and limitations. The code is authoritative for defaults.
 | `protected_paths` | `[]` | Extra paths that are never written (Spark's own code and config are always protected) |
 | `shell_timeout_sec` | `60` | Per-command timeout (1–3600) |
 | `max_tool_rounds` | `30` | Max tool rounds per turn (1–1000) |
+| `goal_auto_turns` | `2` | Extra auto-continued turns after each user message while a goal is active (0–20); stops on any failed turn |
+| `queue_daily_limit` | `0` | Max idle-queue tasks to finish per local day (ok/failed/cancelled); 0 = unlimited |
+| `queue_task_timeout_sec` | `0` | Wall-clock cap for one queued task (seconds); on timeout it returns to queued for retry; 0 = unlimited |
+| `queue_daily_cost_usd` | `0` | Daily estimated queue spend cap in USD (0 = unlimited; public-price estimate, not a bill) |
+| `queue_workers` | `1` | Parallel idle-queue workers (1–4, restart required); visible user turns still win |
+| `tool_preset` | `full` | Tool surface: `full` exposes every built-in tool; `coding` keeps 21 read/write/search/shell/test/git/plan tools and cuts tool-schema tokens by ~3/4 per round |
 | `max_repeat_calls` | `4` | Circuit-breaker threshold for a repeated (tool, arguments) signature (0 = off) |
 | `max_turn_tokens` | `0` | Per-turn token budget (0 = off) |
 | `max_output_chars` | `8000` | Tool output truncation (200–1,000,000) |

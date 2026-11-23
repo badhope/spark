@@ -63,6 +63,27 @@ def _types(events: list[dict]) -> list[str]:
     return [e.get("type") for e in events]
 
 
+def _stream_events(port: int, prompt: str) -> list[dict]:
+    """Collect SSE events from the streaming endpoint."""
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/chat/stream",
+        data=json.dumps({"prompt": prompt}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        raw = resp.read().decode("utf-8", "replace")
+    events: list[dict] = []
+    for frame in raw.split("\n\n"):
+        for line in frame.splitlines():
+            if line.startswith("data: "):
+                try:
+                    events.append(json.loads(line[6:]))
+                except json.JSONDecodeError:
+                    continue
+    return events
+
+
 def test_plan_build_toggle_roundtrip(server) -> None:
     _, state, port = server
     events = _events_of(port, "/plan")
@@ -122,6 +143,16 @@ def test_goal_lifecycle_via_slash(server) -> None:
     goal_ev = next(e for e in events if e["type"] == "goal_status")
     assert goal_ev["data"]["goal"]["status"] == "cancelled"
     assert state.store.get_active_goal(state.session_id) is None
+
+
+def test_goal_auto_continue_emits_extra_turns(server) -> None:
+    _, state, port = server
+    _events_of(port, "/goal 完成一个可验证的小目标")
+    events = _stream_events(port, "开始推进")
+    types = _types(events)
+    assert "goal_auto_continue" in types
+    assert types.count("turn_end") >= 2
+    assert state.store.get_active_goal(state.session_id) is not None
 
 
 def test_goal_evidence_gate(server) -> None:
@@ -200,3 +231,17 @@ def test_unknown_slash_still_passes_through(server) -> None:
     assert any(
         e.get("type") in ("text_delta", "turn_end", "tool_start") for e in events
     )
+
+
+def test_history_exposes_active_goal_for_resume_banner(server) -> None:
+    """跨重启/刷新后，历史接口必须回显活跃目标，否则续跑横幅永远不出现。"""
+    _, state, port = server
+    _events_of(port, "/goal 跨重启继续这个目标")
+    url = f"http://127.0.0.1:{port}/api/history"
+    with urllib.request.urlopen(url, timeout=10) as resp:
+        body = json.loads(resp.read().decode("utf-8"))
+    assert body["goal"]["objective"] == "跨重启继续这个目标"
+    assert body["goal"]["status"] == "active"
+
+    switch = _post(port, "/api/sessions/switch", {"session_id": state.session_id})
+    assert switch["goal"]["id"] == body["goal"]["id"]

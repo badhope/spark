@@ -41,6 +41,17 @@ from spark.web.remote_api import (
 
 if TYPE_CHECKING:
     from spark.providers.routing import Budget, TaskType
+from spark.web._handlers_workbench import (
+    handle_code_index_build,
+    handle_code_index_get,
+    handle_deliveries_get,
+    handle_delivery_create,
+    handle_delivery_export,
+    handle_delivery_update,
+    handle_inline_edit,
+    handle_inline_edit_apply,
+    handle_workbench_get,
+)
 from spark.web._handlers import (
     _handle_queue,  # noqa: F401  (re-export for backward-compat)
     _handle_agents_md,
@@ -79,6 +90,7 @@ from spark.web._handlers import (
     _handle_session_import,
     _handle_question_answer,
     _handle_session_lease,
+    _handle_sessions_archive,
     _handle_sessions_delete,
     _handle_sessions_fork,
     _handle_sessions_new,
@@ -422,7 +434,13 @@ def build_handler_class(html: str):
                 "/api/sessions/switch",
                 "/api/sessions/rename",
                 "/api/sessions/fork",
+                "/api/sessions/archive",
                 "/api/queue",
+                "/api/deliveries",
+                "/api/deliveries/update",
+                "/api/inline_edit",
+                "/api/inline_edit/apply",
+                "/api/code_index",
                 "/api/session/lease",
                 "/api/push/subscribe",
                 "/api/push/unsubscribe",
@@ -787,7 +805,9 @@ def build_handler_class(html: str):
                 )
                 return
             if path == "/api/sessions":
-                rows = state.store.list_sessions()
+                query = parse_qs(urlparse(self.path).query)
+                include_archived = (query.get("include_archived", ["0"])[0] or "0") in {"1", "true", "yes"}
+                rows = state.store.list_sessions(include_archived=include_archived)
                 sessions = [
                     {
                         k: row.get(k)
@@ -799,6 +819,7 @@ def build_handler_class(html: str):
                             "model",
                             "created_at",
                             "updated_at",
+                            "archived_at",
                         )
                     }
                     for row in rows
@@ -925,6 +946,7 @@ def build_handler_class(html: str):
                     {
                         "session_id": state.session_id,
                         "messages": _history_messages(state),
+                        "goal": state.store.get_active_goal(state.session_id),
                     },
                 )
                 return
@@ -942,6 +964,26 @@ def build_handler_class(html: str):
                 return
             if path == "/api/remote/audit":
                 handle_remote_audit(self, {})
+                return
+            if path == "/api/workbench":
+                handle_workbench_get(self)
+                return
+            if path == "/api/deliveries":
+                handle_deliveries_get(self)
+                return
+            if path == "/api/deliveries/export":
+                handle_delivery_export(self)
+                return
+            if path == "/api/code_index":
+                handle_code_index_get(self)
+                return
+            if path == "/api/metrics":
+                qs = parse_qs(urlparse(self.path).query)
+                sid = (qs.get("session_id", [""])[0] or state.session_id or "").strip()
+                if sid and state.runtime_for(sid) is None and sid != state.session_id:
+                    self._json(404, {"error": "unknown session"})
+                    return
+                self._json(200, {"session_id": sid, "metrics": state.store.list_turn_metrics(sid, limit=50)})
                 return
             if path == "/api/queue":
                 state = _route_state(self)
@@ -1045,6 +1087,11 @@ _POST_HANDLERS: dict[str, Any] = {
     "/api/debug/client_log": handle_debug_client_log,
     "/api/automations": _handle_automations,
     "/api/queue": _handle_queue,
+    "/api/deliveries": handle_delivery_create,
+    "/api/deliveries/update": handle_delivery_update,
+    "/api/inline_edit": handle_inline_edit,
+    "/api/inline_edit/apply": handle_inline_edit_apply,
+    "/api/code_index": handle_code_index_build,
     "/api/automations/cron_check": _handle_automations_cron_check,
     "/api/permissions/rules": _handle_permissions_rules,
     "/api/permissions/rules/delete": _handle_permissions_rules_delete,
@@ -1066,6 +1113,7 @@ _POST_HANDLERS: dict[str, Any] = {
     "/api/sessions/switch": _handle_sessions_switch,
     "/api/sessions/rename": _handle_sessions_rename,
     "/api/sessions/fork": _handle_sessions_fork,
+    "/api/sessions/archive": _handle_sessions_archive,
     "/api/selfheal": _handle_selfheal,
     "/api/sessions/export": _handle_session_export,
     "/api/sessions/import": _handle_session_import,

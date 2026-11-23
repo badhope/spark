@@ -27,7 +27,7 @@ from spark.tools.gitops import RunTestsArgs, run_tests
 logger = logging.getLogger(__name__)
 
 #: 已实现的 slash 命令名（小写）。未知 ``/xxx`` 一律按普通 prompt 透传给模型。
-KNOWN_COMMANDS = {"test", "plan", "build", "side", "goal"}
+KNOWN_COMMANDS = {"test", "plan", "build", "side", "goal", "editor", "vim"}
 
 #: 测试运行器可替换（单测用 mock runner 先失败后成功来验证回灌）。
 TestRunner = Callable[[WorkdirSandbox, str], ToolResult]
@@ -158,6 +158,7 @@ def handle_test(
 # ---------------------------------------------------------------------------
 
 COMMANDS_DIR = Path(".spark") / "commands"
+CLAUDE_COMMANDS_DIR = Path(".claude") / "commands"
 
 
 @dataclass(frozen=True)
@@ -232,15 +233,19 @@ def discover_commands(workdir: str | Path) -> list[CommandInfo]:
     """
     base = Path(workdir)
     commands: list[CommandInfo] = []
-    commands_dir = base / COMMANDS_DIR
-    if commands_dir.is_dir():
+    seen_names: set[str] = set()
+    roots = [base / COMMANDS_DIR, base / CLAUDE_COMMANDS_DIR, Path.home() / ".claude" / "commands"]
+    for commands_dir in roots:
+        if not commands_dir.is_dir():
+            continue
         for md in sorted(commands_dir.glob("*.md")):
             if md.name.startswith("."):
                 continue
             item = _read_command_file(md, md.stem)
-            if item is not None:
+            if item is not None and item.name not in seen_names:
                 commands.append(item)
-    seen = {c.name for c in commands}
+                seen_names.add(item.name)
+    seen = set(seen_names)
     for plugin, command, path in _plugin_command_files(base):
         if command in seen:
             continue
@@ -273,8 +278,13 @@ def expand_command(workdir: str | Path, text: str) -> str | None:
         # 内建命令优先：自定义文件永不遮蔽内建行为
         return None
     base = Path(workdir)
-    candidate = base / COMMANDS_DIR / f"{name}.md"
-    if not candidate.is_file():
+    candidate: Path | None = None
+    for root in (base / COMMANDS_DIR, base / CLAUDE_COMMANDS_DIR, Path.home() / ".claude" / "commands"):
+        hit = root / f"{name}.md"
+        if hit.is_file():
+            candidate = hit
+            break
+    if candidate is None:
         for plugin, command, plugin_path in _plugin_command_files(base):
             if command == name:
                 candidate = plugin_path

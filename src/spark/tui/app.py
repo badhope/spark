@@ -371,6 +371,9 @@ class SparkApp(App):
         if slash is not None and slash.name == "test":
             self.run_worker(self._run_test_slash(slash.args), exclusive=True)
             return
+        if slash is not None and slash.name in {"editor", "vim"}:
+            self.run_worker(self._run_editor_slash(slash.args, vim=slash.name == "vim"), exclusive=True)
+            return
         self.run_worker(self._run_prompt(text), exclusive=True)
 
     def action_cancel_turn(self) -> None:
@@ -449,6 +452,47 @@ class SparkApp(App):
             self._flush_text(chat)
             self._turn_running = False
             self._update_status()
+
+    async def _run_editor_slash(self, raw_args: str, *, vim: bool = False) -> None:
+        """``/editor [path]`` / ``/vim [path]``：临时挂起 TUI，交给外部编辑器。
+
+        The editor is resolved from ``$VISUAL`` / ``$EDITOR`` (``vim`` for the
+        explicit ``/vim`` alias). The path is sandbox-resolved so a slash cannot
+        escape the workspace. Textual's ``suspend()`` restores the terminal
+        driver around the child process; after exit the TUI redraws and the next
+        prompt sees the edited files.
+        """
+        import os
+        import shlex
+        import subprocess
+
+        chat = self.query_one("#chat", RichLog)
+        arg = raw_args.strip()
+        if arg:
+            try:
+                target = self.registry.ctx.sandbox.resolve(arg)
+            except Exception as exc:
+                chat.write(f"[red]✗ 路径不合法：{rich_escape(str(exc))}[/red]")
+                return
+        else:
+            target = Path(self.registry.ctx.sandbox.root)
+        command = "vim" if vim else (os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim")
+        argv = shlex.split(command)
+        if not argv:
+            chat.write("[red]✗ 未配置可用的编辑器（设置 $VISUAL 或 $EDITOR）[/red]")
+            return
+        chat.write(f"[dim]打开 {rich_escape(command)} {rich_escape(str(target))}；退出后回到 Spark…[/dim]")
+        self._turn_running = True
+        self._update_status()
+        try:
+            with self.suspend():
+                subprocess.run([*argv, str(target)], cwd=str(self.registry.ctx.sandbox.root), check=False)
+        except Exception as exc:  # noqa: BLE001 - editor absence must not kill TUI
+            chat.write(f"[red]✗ 编辑器启动失败：{rich_escape(str(exc))}[/red]")
+        finally:
+            self._turn_running = False
+            self._update_status()
+            chat.write("[dim]已回到 Spark；工作区文件改动可直接继续对话。[/dim]")
 
     async def _run_test_slash(self, raw_args: str) -> None:
         """/test：跑仓库测试，渲染摘要；失败时把 traceback 回灌给 agent 修正。"""

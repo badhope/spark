@@ -188,6 +188,13 @@ class PluginManifest(BaseModel):
     tools: list[str | PluginToolSpec] = Field(default_factory=list)
     commands: list[str] = Field(default_factory=list)
     hooks: list[PluginHook] = Field(default_factory=list)
+    #: Phase 4 supply-chain fields. Unsigned is allowed only when policy permits.
+    publisher: str = ""
+    key_id: str = ""
+    signature: str = ""
+    #: SHA-256 of every shipped file except this manifest. A signature over the
+    #: manifest alone would not protect entry/hook bytes from tampering.
+    artifact_sha256: str = ""
 
     @field_validator("name")
     @classmethod
@@ -307,6 +314,8 @@ class PluginRecord:
     manifest: PluginManifest | None = None
     error: str = ""
     legacy: bool = False
+    signature_status: str = ""
+    signature_error: str = ""
 
 
 def record_to_dict(record: PluginRecord) -> dict[str, Any]:
@@ -324,6 +333,8 @@ def record_to_dict(record: PluginRecord) -> dict[str, Any]:
         "path": record.path.as_posix(),
         "legacy": record.legacy,
         "error": record.error,
+        "signature_status": record.signature_status,
+        "signature_error": record.signature_error,
     }
 
 
@@ -398,6 +409,34 @@ def set_plugin_enabled(
     return target
 
 
+def set_plugin_require_signature(
+    required: bool, *, path: Path | None = None
+) -> Path:
+    """Persist ``[plugins].require_signature`` without rewriting other fields."""
+    import tomlkit
+
+    from spark.config import ConfigError, default_home
+
+    target = path or (default_home() / "config.toml")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        try:
+            doc = tomlkit.parse(target.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001 - keep the user's file intact
+            raise ConfigError(f"配置文件无法解析：{target}") from exc
+    else:
+        doc = tomlkit.document()
+    table = doc.get("plugins")
+    if table is None:
+        table = tomlkit.table()
+        doc["plugins"] = table
+    if not hasattr(table, "get"):
+        raise ConfigError("[plugins] 必须是表")
+    table["require_signature"] = bool(required)
+    target.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    return target
+
+
 def sanitized_env() -> dict[str, str]:
     """Return only benign process variables for plugin subprocesses."""
     return {key: os.environ[key] for key in SAFE_ENV_KEYS if key in os.environ}
@@ -438,8 +477,22 @@ def _plugin_command(
     return [str(target)]
 
 
+def _signature_gate(record: PluginRecord, require_signature: bool, issues: list[str]) -> bool:
+    if record.signature_status in {"invalid", "revoked", "untrusted"}:
+        issues.append(
+            f"plugin {record.name}: 签名校验失败（{record.signature_status}: {record.signature_error}），已拒绝执行"
+        )
+        return False
+    if require_signature and record.signature_status != "signed":
+        issues.append(
+            f"plugin {record.name}: 当前策略要求签名，但清单状态为 {record.signature_status}，已拒绝执行"
+        )
+        return False
+    return True
+
+
 def build_plugin_hooks(
-    enabled: Sequence[str], workdir: Path
+    enabled: Sequence[str], workdir: Path, *, require_signature: bool = False
 ) -> tuple[list[PluginHookBinding], list[str]]:
     """Build executable hook bindings for explicitly enabled plugins.
 
@@ -462,6 +515,8 @@ def build_plugin_hooks(
             continue
         if record.legacy:
             issues.append(f"plugin {name}: 旧 plugin.json 已跳过，请迁移到 {MANIFEST_NAME}")
+            continue
+        if not _signature_gate(record, require_signature, issues):
             continue
         if not record.manifest.hooks:
             continue
@@ -556,6 +611,7 @@ def build_plugin_tools(
     workdir: Path,
     *,
     max_output_chars: int = 8000,
+    require_signature: bool = False,
 ) -> tuple[
     list[dict[str, Any]],
     dict[str, Callable[[dict[str, Any]], ToolResult]],
@@ -584,6 +640,8 @@ def build_plugin_tools(
             continue
         if record.legacy:
             issues.append(f"plugin {name}: 旧 plugin.json 已跳过，请迁移到 {MANIFEST_NAME}")
+            continue
+        if not _signature_gate(record, require_signature, issues):
             continue
         if not record.manifest.tools:
             continue
@@ -766,6 +824,12 @@ def scan_plugins(workdir: Path) -> list[PluginRecord]:
                 error = str(exc)
         if legacy and not error:
             error = f"旧格式 {LEGACY_MANIFEST_NAME}；建议迁移到 {MANIFEST_NAME}"
+        try:
+            from spark.plugin_trust import verify_manifest
+
+            sig_status, sig_error = verify_manifest(manifest, root=entry)
+        except Exception as exc:  # noqa: BLE001 - signature is advisory metadata
+            sig_status, sig_error = "invalid", str(exc)
         records.append(
             PluginRecord(
                 name=manifest.name,
@@ -773,6 +837,8 @@ def scan_plugins(workdir: Path) -> list[PluginRecord]:
                 manifest=manifest,
                 error=error,
                 legacy=legacy,
+                signature_status=sig_status,
+                signature_error=sig_error,
             )
         )
     return records
@@ -800,7 +866,14 @@ def install_local(source: Path, workdir: Path, *, force: bool = False) -> Plugin
     backup: Path | None = None
     try:
         shutil.copytree(source, staging, ignore=_IGNORE, symlinks=True)
-        validate_plugin(staging, require_entry=True)
+        staged_manifest = validate_plugin(staging, require_entry=True)
+        from spark.plugin_trust import verify_manifest
+
+        sig_status, sig_error = verify_manifest(staged_manifest, root=staging)
+        if sig_status in {"invalid", "revoked"}:
+            raise PluginError(
+                f"插件包校验失败（{sig_status}: {sig_error}），拒绝安装"
+            )
         if destination.exists():
             backup_dir = root / ".backups"
             backup_dir.mkdir(parents=True, exist_ok=True)
@@ -818,6 +891,8 @@ def install_local(source: Path, workdir: Path, *, force: bool = False) -> Plugin
         path=destination,
         manifest=manifest,
         legacy=False,
+        signature_status=sig_status,
+        signature_error=sig_error,
     )
 
 

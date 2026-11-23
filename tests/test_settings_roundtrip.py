@@ -112,7 +112,9 @@ def _save(page, dialog) -> bool:
         body = dialog.inner_text()
         if "已保存" in body:
             return True
-        if "失败" in body or "错误" in body:
+        # 设置面板的说明文字里可能含“失败/错误”（例如自动续跑熔断说明），
+        # 不能拿整段正文做关键字判断，只认真正的保存结果提示。
+        if "保存失败" in body:
             return False
     return False
 

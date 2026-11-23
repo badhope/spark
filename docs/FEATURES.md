@@ -35,7 +35,7 @@
 | 长上下文压缩 | `core/compact.py` + `core/context_window.py` + `store.search_session_history()` | opencode 5 段结构化摘要（Objective/Important Details/Work State/Next Move/Relevant Files）缺段自动补 `(not provided)` 并告警；工具输出按 2k/8k 分三档留头尾；压缩后按当前问题在 `compact_from` 之前做会话内有界召回，注入只读片段，失败静默降级 |
 | 回滚 | `core/checkpoints.py` | 每轮写操作后自动快照，可整体回滚 |
 | 崩溃恢复 | `core/turn_store.py` + `core/runtime.py` | 审批中断的 turn 落盘，重启后仍可列出并恢复 |
-| 可观测 | `otel.py` | `SPARK_OTEL_ENDPOINT=...` 后 trace=turn / span=tool |
+| 可观测 | `otel.py` | `SPARK_OTEL_ENDPOINT=...` 后 trace=turn / span=tool + approval/workflow，metric 与显式审计 log 一并走 OTLP |
 | 逐轮复盘 | `core/replay.py` | 每 turn 一行 JSON，CLI 与 Web 都可查 |
 | 定时任务 | `automations.py` + 设置→定时任务 | cron 触发一段提示词；进程不在线时下次启动补跑一次；忙则跳过不排队 |
 | 额外目录 | `sandbox.py:extra_roots` | `--add-dir DIR` 或配置 `agent.extra_dirs`；只放行文件读写，不放宽 shell |
@@ -44,6 +44,7 @@
 | 代码智能（LSP） | `src/spark/lsp/` | 9 个工具：definition/references/hover/symbols/diagnostics/rename/code action/affected_tests；LSP 优先，无服务器显式降级；rename 默认 dry-run，落盘走沙箱+审批 |
 | VS Code 深度集成 | `vscode-spark/` | 编辑器内聊天面板、选区上下文、SSE 流式、内联 diff 审批、诊断回显、`file:line` 跳转、任务状态；VSIX 与 package.json/pyproject 三向版本锁 |
 | IDE 一键接入 | `ide.py` + `spark ide install` | Zed（`agent.custom_servers`）、JetBrains 2025.3+（原生 `~/.jetbrains/acp.json`）、Neovim（CodeCompanion 独立 Lua 模块）；先备份、未知键保留、坏配置拒绝覆盖 |
+| 内联编辑桥 | `inline_edit.py` + `spark inline` | VS Code 原生 inline provider；Web 工作台预览 + `base_sha256` 哈希守卫 + 显式应用；Neovim `<leader>si` 选中区；JetBrains/其他编辑器走 `spark inline --json` External Tool；默认不写盘 |
 | 自动审查 | `core/review.py` | `agent.auto_review`：写/执行前用独立模型审一次，block 即拒绝；默认关 |
 | 断网执行 | `tools/shell.py` | `agent.network_access = false`：bwrap 下跑空网络命名空间；不可用时如实告警 |
 | 评测回归门 | `evals/baseline.json` + `scripts/check_eval_regression.py` | mock eval 12 场景基线；掉 2 点或任一原通过场景转失败即阻断；push/PR + 每日夜间跑 |

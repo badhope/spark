@@ -1,6 +1,6 @@
 import { create } from "zustand"
-import type { ApprovalInfo, PlanStep, SessionRow, Status, ToolCall } from "../types"
-import { listSessions, newSession, switchSession, deleteSession, cancelTurn, respondApproval, forkSession, answerQuestion, fetchSessionPending } from "../api"
+import type { ApprovalInfo, GoalState, PlanStep, SessionRow, Status, ToolCall } from "../types"
+import { listSessions, newSession, switchSession, deleteSession, archiveSession, cancelTurn, respondApproval, forkSession, answerQuestion, fetchSessionPending } from "../api"
 import { useChatStore, historyToItems, attachReplayDurations, setDraftSession, type ChatMsg } from "./chatStore"
 import { useSessionRuntimeStore } from "./sessionRuntime"
 import { useUiStore } from "./uiStore"
@@ -22,6 +22,9 @@ interface SessionState {
   approvalBusy: boolean
   question: QuestionState | null
   plan: PlanStep[]
+  /** 跨重启仍存在的活跃目标；由 /api/history、切换/分叉响应和 goal_status 事件同步。 */
+  activeGoal: GoalState | null
+  setActiveGoal: (g: GoalState | null) => void
   setStatus: (s: Status | null) => void
   patchStatus: (patch: Partial<Status>) => void
   setApproval: (a: ApprovalState | null) => void
@@ -33,6 +36,7 @@ interface SessionState {
   handleNewSession: () => Promise<void>
   handleSwitch: (id: string) => Promise<void>
   handleDelete: (id: string) => Promise<void>
+  handleArchive: (id: string, archived?: boolean) => Promise<void>
   handleFork: (id?: string) => Promise<void>
   handleCancel: () => Promise<void>
   handleApproval: (decision: "allow" | "allow_always" | "deny") => Promise<void>
@@ -101,7 +105,9 @@ export const useSessionStore = create<SessionState>((set, get) => {
     approvalBusy: false,
     question: null,
     plan: [],
+    activeGoal: null,
 
+    setActiveGoal: (g) => set({ activeGoal: g }),
     setStatus: (s) => {
       setDraftSession(s?.session_id ?? "")
       if (s?.session_id) useSessionRuntimeStore.getState().ensure(s.session_id)
@@ -142,7 +148,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
 
     refreshSessions: async () => {
       try {
-        const data = await listSessions()
+        const data = await listSessions(true)
         set({ sessions: data.sessions })
       } catch (e) {
         useUiStore.getState().pushToast("toast.sessionLoadFailed", "error")
@@ -194,6 +200,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         chat.setItems(items)
         // Pick up this session's own draft (empty for a session never typed in).
         chat.setInput(localStorage.getItem(`spark.draft:${id}`) ?? "")
+        set({ activeGoal: data.goal?.status === "active" ? data.goal : null })
         await hydratePending(id)
         await get().refreshSessions()
       } catch (e) {
@@ -228,13 +235,27 @@ export const useSessionStore = create<SessionState>((set, get) => {
       }
     },
 
+    handleArchive: async (id, archived = true) => {
+      try {
+        await archiveSession(id, archived)
+        await get().refreshSessions()
+        useUiStore.getState().pushToast(archived ? "toast.sessionArchived" : "toast.sessionRestored", "success")
+      } catch {
+        useUiStore.getState().pushToast("toast.archiveFailed", "error")
+      }
+    },
+
     handleFork: async (id) => {
       try {
         const current = get().status?.session_id
         if (current) useChatStore.getState().saveVisibleItems(current)
         const data = await forkSession(id ?? current)
         useSessionRuntimeStore.getState().ensure(data.status.session_id)
-        set({ status: data.status, plan: data.status.plan || [] })
+        set({
+          status: data.status,
+          plan: data.status.plan || [],
+          activeGoal: data.goal?.status === "active" ? data.goal : null,
+        })
         syncVisibleStreaming(data.status.session_id)
         const items = historyToItems(data.messages)
         useChatStore.getState().setItems(items)

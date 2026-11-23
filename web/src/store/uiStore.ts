@@ -4,7 +4,7 @@ import type { Palette, Theme } from "../theme"
 import { applyPalette, applyTheme, getStoredPalette, getStoredTheme, initTheme } from "../theme"
 import type { CheckpointRow } from "../api"
 
-export type WorkbenchTab = "files" | "changes" | "run" | "web" | "trace"
+export type WorkbenchTab = "files" | "changes" | "run" | "web" | "trace" | "tasks"
 
 /** Phone shell top-level view. Desktop ignores this. */
 export type MobileTab = "home" | "chat"

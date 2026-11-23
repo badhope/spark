@@ -256,3 +256,20 @@ def test_plugin_command_disabled_and_local_shadow(tmp_path: Path, monkeypatch) -
     commands = [c for c in discover_commands(workdir) if c.name == "hello"]
     assert commands[0].plugin == ""
     assert expand_command(workdir, "/hello world") == "LOCAL says world"
+
+
+def test_claude_commands_are_expandable_and_native_wins(tmp_path: Path) -> None:
+    native = tmp_path / ".spark" / "commands" / "same.md"
+    native.parent.mkdir(parents=True)
+    native.write_text("---\ndescription: native\n---\nNATIVE $ARGUMENTS", encoding="utf-8")
+    compat = tmp_path / ".claude" / "commands" / "same.md"
+    compat.parent.mkdir(parents=True)
+    compat.write_text("---\ndescription: claude\n---\nCLAUDE $ARGUMENTS", encoding="utf-8")
+    other = tmp_path / ".claude" / "commands" / "legacy.md"
+    other.write_text("---\ndescription: legacy\n---\nLEGACY $ARGUMENTS", encoding="utf-8")
+    commands = discover_commands(tmp_path)
+    descriptions = {c.name: c.description for c in commands}
+    assert descriptions["same"] == "native"
+    assert descriptions["legacy"] == "legacy"
+    assert expand_command(tmp_path, "/same x") == "NATIVE x"
+    assert expand_command(tmp_path, "/legacy y") == "LEGACY y"

@@ -29,6 +29,12 @@
 | `protected_paths` | `[]` | 永远拒绝写入的额外路径（Spark 自身代码与配置始终受保护） |
 | `shell_timeout_sec` | `60` | 单条命令超时（1–3600） |
 | `max_tool_rounds` | `30` | 单回合最大工具轮次（1–1000） |
+| `goal_auto_turns` | `2` | 活跃 Goal 下每次用户消息后自动续跑的额外回合数（0–20）；任一回合失败立即熔断 |
+| `queue_daily_limit` | `0` | 空闲队列当天最多完成多少任务（成功/失败/取消都算）；0 = 不限 |
+| `queue_task_timeout_sec` | `0` | 单个排队任务的墙钟上限（秒）；超时回 queued 重试，0 = 不限 |
+| `queue_daily_cost_usd` | `0` | 空闲队列当天累计估算成本上限（USD，0 = 不限；按公开价目估算，不是账单） |
+| `queue_workers` | `1` | 空闲队列并行 worker 数（1–4，重启生效）；用户可见回合仍优先 |
+| `tool_preset` | `full` | 工具面：`full` 全部内置工具；`coding` 只暴露读写/检索/shell/测试/git/计划等 21 个工具，每轮少约 3/4 的工具 schema token |
 | `max_repeat_calls` | `4` | 同一 (工具， 参数) 签名的熔断阈值（0 = 关闭） |
 | `max_turn_tokens` | `0` | 单回合 token 预算（0 = 关闭） |
 | `max_output_chars` | `8000` | 工具输出截断长度（200–1,000,000） |
@@ -118,7 +124,12 @@ readonly_tools = []                  # 声明为只读的工具名（免审批�
 ```toml
 [plugins]
 enabled = ["demo"]
+# 可选：强制所有插件带有效签名；开启后未签名插件即使被 enable 也会被执行层拒绝。
+require_signature = false
 ```
+
+设置页「强制插件签名」开关等价于 `POST /api/plugins` 的 `action="policy"`：仅本机
+或 `device_admin` 可改，写入后立即重建 AgentLoop；已启用的未签名插件会在执行层被拒绝。
 
 用 CLI 维护这一项（不会重写其他配置，也不会把环境变量里的密钥落盘）：
 

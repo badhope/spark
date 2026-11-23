@@ -65,6 +65,16 @@
         "command": "spark.askAgent",
         "title": "Spark: Ask about selection",
         "category": "Spark"
+      },
+      {
+        "command": "spark.inline.edit",
+        "title": "Spark: 内联编辑选中代码",
+        "category": "Spark"
+      },
+      {
+        "command": "spark.inline.toggle",
+        "title": "Spark: 开关 NES 内联建议",
+        "category": "Spark"
       }
     ],
     "menus": {
@@ -78,6 +88,11 @@
           "command": "spark.chat.fixSelection",
           "when": "editorHasSelection",
           "group": "navigation@21"
+        },
+        {
+          "command": "spark.inline.edit",
+          "when": "editorHasSelection",
+          "group": "navigation@22"
         }
       ]
     },
@@ -99,7 +114,14 @@
         },
         "spark.approval": {
           "type": "string",
-          "enum": ["suggest", "auto-edit", "full-auto", "plan-only", "approve-plan", "manual"],
+          "enum": [
+            "suggest",
+            "auto-edit",
+            "full-auto",
+            "plan-only",
+            "approve-plan",
+            "manual"
+          ],
           "default": "suggest",
           "description": "从 VS Code 启动的会话审批档位。"
         },
@@ -117,6 +139,34 @@
           "type": "boolean",
           "default": true,
           "description": "审批请求带 diff 时自动打开内联 diff 预览。"
+        },
+        "spark.inlineCompletions.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "开启编辑器内 NES 内联建议。默认关闭：每次触发都会调用一次模型，按需开启。"
+        },
+        "spark.inlineCompletions.mode": {
+          "type": "string",
+          "enum": [
+            "nes",
+            "edit"
+          ],
+          "default": "nes",
+          "description": "内联建议模式；nes = 光标处下一步编辑，edit = 以选中文本为上下文。"
+        },
+        "spark.inlineCompletions.debounceMs": {
+          "type": "number",
+          "default": 450,
+          "minimum": 0,
+          "maximum": 5000,
+          "description": "内联建议防抖毫秒数。"
+        },
+        "spark.inlineCompletions.maxContextChars": {
+          "type": "number",
+          "default": 3000,
+          "minimum": 500,
+          "maximum": 12000,
+          "description": "光标前后各取多少字符作为上下文。"
         }
       }
     }

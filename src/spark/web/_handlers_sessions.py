@@ -154,6 +154,39 @@ def _handle_sessions_delete(handler: HandlerBase, body: dict) -> None:
     handler._json(200, {"ok": True, "status": state.status()})
 
 
+def _handle_sessions_archive(handler: HandlerBase, body: dict) -> None:
+    """Archive/restore a session without deleting messages or checkpoints."""
+    state = _route_state(handler)
+    session_id = str(body.get("session_id") or "").strip()
+    archived = bool(body.get("archived", True))
+    if not session_id:
+        handler._json(400, {"error": "session_id required"})
+        return
+    row = state.store.get_session(session_id)
+    if not row or row.get("workdir") != str(state.workdir):
+        handler._json(404, {"error": "unknown session"})
+        return
+    runtime = state.runtime_for(session_id)
+    if (runtime is not None and runtime.busy) or (
+        runtime is None and session_id == state.session_id and state.busy
+    ):
+        handler._json(409, {"error": "agent is busy"})
+        return
+    updated = state.store.archive_session(session_id, archived=archived)
+    if updated is None:
+        handler._json(404, {"error": "unknown session"})
+        return
+    if session_id == state.session_id and archived:
+        remaining = [
+            r for r in state.store.list_sessions() if r["workdir"] == str(state.workdir)
+        ]
+        if remaining:
+            state.rebuild_loop(session_id=remaining[0]["id"])
+        else:
+            state.rebuild_loop()
+    handler._json(200, {"ok": True, "session": updated, "status": state.status()})
+
+
 def _handle_sessions_switch(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)
     session_id = str(body.get("session_id") or "").strip()
@@ -161,6 +194,9 @@ def _handle_sessions_switch(handler: HandlerBase, body: dict) -> None:
     if not row or row.get("workdir") != str(state.workdir):
         handler._json(404, {"error": "unknown session"})
         return
+    if int(row.get("archived_at") or 0):
+        # Opening an archived conversation is an implicit restore.
+        state.store.archive_session(session_id, archived=False)
     # Switching is a pointer move, not a rebuild: the outgoing stream keeps
     # its loop/approver/question bridge in the runtime registry.
     if not state.switch_session(session_id):
@@ -172,6 +208,7 @@ def _handle_sessions_switch(handler: HandlerBase, body: dict) -> None:
             "ok": True,
             "status": state.status(),
             "messages": _history_messages(state),
+            "goal": state.store.get_active_goal(state.session_id),
         },
     )
 
@@ -221,6 +258,7 @@ def _handle_sessions_fork(handler: HandlerBase, body: dict) -> None:
             "ok": True,
             "status": state.status(),
             "messages": _history_messages(state),
+            "goal": state.store.get_active_goal(state.session_id),
         },
     )
 

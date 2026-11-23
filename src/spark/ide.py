@@ -195,6 +195,36 @@ function M.adapter()
   })
 end
 
+function M.inline_edit()
+  local start_line = vim.fn.line("'<")
+  local end_line = vim.fn.line("'>")
+  if start_line < 1 or end_line < start_line then
+    vim.notify("Spark: select a visual range first", vim.log.levels.WARN)
+    return
+  end
+  local instruction = vim.fn.input("Spark inline: ")
+  if instruction == "" then return end
+  local cmd = {
+    __SPARK_CMD__, "inline", vim.fn.expand("%:p"),
+    "--workdir", __WORKDIR__,
+    "--instruction", instruction,
+    "--start-line", tostring(start_line),
+    "--end-line", tostring(end_line),
+    "--json",
+  }
+  local out = vim.fn.system(cmd)
+  local ok, result = pcall(vim.json.decode, out)
+  if not ok or type(result) ~= "table" or not result.text then
+    vim.notify("Spark inline failed: " .. tostring(out), vim.log.levels.ERROR)
+    return
+  end
+  vim.ui.select({ "Apply", "Cancel" }, { prompt = "Spark inline" }, function(choice)
+    if choice ~= "Apply" then return end
+    vim.api.nvim_buf_set_lines(0, start_line - 1, end_line, false, vim.split(result.text, "\\n", { plain = true }))
+    vim.notify("Spark: inline edit applied", vim.log.levels.INFO)
+  end)
+end
+
 function M.setup(opts)
   local ok, cc = pcall(require, "codecompanion")
   if not ok then
@@ -205,6 +235,7 @@ function M.setup(opts)
     adapters = { acp = { spark = M.adapter } },
     interactions = { chat = { adapter = "spark" } },
   }, opts))
+  vim.keymap.set("v", "<leader>si", M.inline_edit, { desc = "Spark inline edit" })
   return true
 end
 
@@ -214,8 +245,12 @@ return M
 
 def _neovim_lua(workdir: Path, command: str) -> str:
     command_args = [command, "acp", "--workdir", workdir.resolve().as_posix()]
-    return _NEOVIM_TEMPLATE.replace(
-        "__ARGS__", ", ".join(_lua_string(arg) for arg in command_args)
+    return (
+        _NEOVIM_TEMPLATE.replace(
+            "__ARGS__", ", ".join(_lua_string(arg) for arg in command_args)
+        )
+        .replace("__SPARK_CMD__", _lua_string(command))
+        .replace("__WORKDIR__", _lua_string(workdir.resolve().as_posix()))
     )
 
 

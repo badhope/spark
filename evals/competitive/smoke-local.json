@@ -1,0 +1,262 @@
+{
+  "generated_at": "2026-11-23T02:10:49+0800",
+  "profiles": [
+    "local-minicpm-1b"
+  ],
+  "rounds": 1,
+  "task_count": 3,
+  "summary": {
+    "local-minicpm-1b": {
+      "total": 3,
+      "passed": 0,
+      "pass@1": 0.0,
+      "ttft_p50_ms": 12369.2,
+      "ttft_p95_ms": 24994.4,
+      "turn_p50_ms": 25012.9,
+      "turn_p95_ms": 53780.9,
+      "cost_usd": 0.0
+    }
+  },
+  "skipped": [],
+  "results": [
+    {
+      "task_id": "bugfix-calc-add",
+      "category": "bugfix",
+      "profile": "local-minicpm-1b",
+      "passed": false,
+      "elapsed_ms": 25074.3,
+      "metrics": {
+        "version": 1,
+        "queue_ms": null,
+        "context_ms": 252.8,
+        "llm_ms": 23218.3,
+        "ttft_ms": 24994.4,
+        "first_text_ms": 24994.4,
+        "first_tool_ms": null,
+        "total_ms": 25012.9,
+        "rounds": 1,
+        "tool_calls": 0,
+        "provider_runs": [
+          {
+            "start_ms": 1776.2,
+            "end_ms": 24994.5,
+            "duration_ms": 23218.3,
+            "first_delta_ms": 23218.2,
+            "error": null
+          }
+        ],
+        "render_ms": null,
+        "usage": {
+          "input_tokens": 2534,
+          "output_tokens": 68,
+          "reasoning_tokens": 0,
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0,
+          "source": "reported"
+        }
+      },
+      "tool_calls": [],
+      "final_text": "我需要先修复 calc.py 中的 add() 函数，然后运行 test_calc.py。请稍等，我正在处理这个任务：\n1.首先检查 calc.py 文件\n2.修复 add() 函数的实现\n3.验证修复后的代码是否正确执行\n\n让我开始第一步：查看 calc.py 文件内容。",
+      "error": "",
+      "check_output": "FF                                                                       [100%]\n=================================== FAILURES ===================================\n______________________________ test_add_positive _______________________________\n\n    def test_add_positive():\n>       assert add(2, 3) == 5\nE       assert -1 == 5\nE        +  where -1 = add(2, 3)\n\ntest_calc.py:4: AssertionError\n______________________________ test_add_negative _______________________________\n\n    def test_add_negative():\n>       assert add(-1, 1) == 0\nE       assert -2 == 0\nE        +  where -2 = add(-1, 1)\n\ntest_calc.py:7: AssertionError\n=========================== short test summary info ============================\nFAILED test_calc.py::test_add_positive - assert -1 == 5\nFAILED test_calc.py::test_add_negative - assert -2 == 0\n2 failed in 0.04s\n/home/user/Doubao/chats/38454959947244034/spark/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n",
+      "usage": {
+        "input_tokens": 2534,
+        "output_tokens": 68,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "total_tokens": 2602,
+        "cost_usd": null,
+        "calls": 1,
+        "cache_hit_rate": 0.0,
+        "cache_savings_tokens": 0
+      },
+      "round": 1
+    },
+    {
+      "task_id": "bugfix-mean-empty",
+      "category": "bugfix",
+      "profile": "local-minicpm-1b",
+      "passed": false,
+      "elapsed_ms": 53786.1,
+      "metrics": {
+        "version": 1,
+        "queue_ms": null,
+        "context_ms": 20.1,
+        "llm_ms": 53686.0,
+        "ttft_ms": 11939.4,
+        "first_text_ms": 11939.4,
+        "first_tool_ms": 11941.7,
+        "total_ms": 53780.9,
+        "rounds": 8,
+        "tool_calls": 8,
+        "provider_runs": [
+          {
+            "start_ms": 24.0,
+            "end_ms": 11939.4,
+            "duration_ms": 11915.4,
+            "first_delta_ms": 11915.3,
+            "error": null
+          },
+          {
+            "start_ms": 11948.6,
+            "end_ms": 19611.5,
+            "duration_ms": 7662.9,
+            "first_delta_ms": 7662.8,
+            "error": null
+          },
+          {
+            "start_ms": 19618.1,
+            "end_ms": 27101.8,
+            "duration_ms": 7483.7,
+            "first_delta_ms": 7483.7,
+            "error": null
+          },
+          {
+            "start_ms": 27121.1,
+            "end_ms": 31887.7,
+            "duration_ms": 4766.6,
+            "first_delta_ms": 4766.5,
+            "error": null
+          },
+          {
+            "start_ms": 31895.8,
+            "end_ms": 34875.0,
+            "duration_ms": 2979.2,
+            "first_delta_ms": 2979.1,
+            "error": null
+          },
+          {
+            "start_ms": 34882.3,
+            "end_ms": 40764.4,
+            "duration_ms": 5882.1,
+            "first_delta_ms": 5882.0,
+            "error": null
+          },
+          {
+            "start_ms": 40772.0,
+            "end_ms": 47027.4,
+            "duration_ms": 6255.4,
+            "first_delta_ms": 6255.4,
+            "error": null
+          },
+          {
+            "start_ms": 47036.9,
+            "end_ms": 53777.6,
+            "duration_ms": 6740.7,
+            "first_delta_ms": 6740.6,
+            "error": null
+          }
+        ],
+        "render_ms": null,
+        "usage": {
+          "input_tokens": 27342,
+          "output_tokens": 789,
+          "reasoning_tokens": 0,
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0,
+          "source": "reported"
+        }
+      },
+      "tool_calls": [
+        "run_tests",
+        "read_file",
+        "write_file",
+        "run_tests",
+        "read_file",
+        "read_file",
+        "read_file"
+      ],
+      "final_text": "",
+      "error": "模型重复调用同一个工具",
+      "check_output": ".F.                                                                      [100%]\n=================================== FAILURES ===================================\n_______________________________ test_mean_single _______________________________\n\n    def test_mean_single():\n>       assert mean([5]) == 5\nE       assert 0 == 5\nE        +  where 0 = mean([5])\n\ntest_stats.py:7: AssertionError\n=========================== short test summary info ============================\nFAILED test_stats.py::test_mean_single - assert 0 == 5\n1 failed, 2 passed in 0.03s\n/home/user/Doubao/chats/38454959947244034/spark/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n",
+      "usage": {
+        "input_tokens": 27342,
+        "output_tokens": 789,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "total_tokens": 28131,
+        "cost_usd": null,
+        "calls": 8,
+        "cache_hit_rate": 0.0,
+        "cache_savings_tokens": 0
+      },
+      "round": 1
+    },
+    {
+      "task_id": "bugfix-slugify",
+      "category": "bugfix",
+      "profile": "local-minicpm-1b",
+      "passed": false,
+      "elapsed_ms": 22244.4,
+      "metrics": {
+        "version": 1,
+        "queue_ms": null,
+        "context_ms": 19.6,
+        "llm_ms": 22054.8,
+        "ttft_ms": 12369.2,
+        "first_text_ms": 12369.2,
+        "first_tool_ms": 12372.9,
+        "total_ms": 22239.6,
+        "rounds": 3,
+        "tool_calls": 2,
+        "provider_runs": [
+          {
+            "start_ms": 23.5,
+            "end_ms": 12369.2,
+            "duration_ms": 12345.7,
+            "first_delta_ms": 12345.6,
+            "error": null
+          },
+          {
+            "start_ms": 12516.1,
+            "end_ms": 20334.6,
+            "duration_ms": 7818.5,
+            "first_delta_ms": 7818.4,
+            "error": null
+          },
+          {
+            "start_ms": 20344.4,
+            "end_ms": 22235.0,
+            "duration_ms": 1890.6,
+            "first_delta_ms": 1890.6,
+            "error": null
+          }
+        ],
+        "render_ms": null,
+        "usage": {
+          "input_tokens": 8443,
+          "output_tokens": 145,
+          "reasoning_tokens": 0,
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0,
+          "source": "reported"
+        }
+      },
+      "tool_calls": [
+        "grep",
+        "run_tests"
+      ],
+      "final_text": "根据工具返回结果，README.md 中没有匹配的纯字母数字单词序列，因此无法执行测试。我将向用户说明这个情况并询问是否需要进一步的帮助。请告诉我您需要的具体信息。",
+      "error": "",
+      "check_output": "FFF                                                                      [100%]\n=================================== FAILURES ===================================\n__________________________________ test_basic __________________________________\n\n    def test_basic():\n>       assert slugify('Hello World') == 'hello-world'\nE       AssertionError: assert 'Hello-World' == 'hello-world'\nE         \nE         - hello-world\nE         ? ^     ^\nE         + Hello-World\nE         ? ^     ^\n\ntest_slug.py:4: AssertionError\n________________________________ test_collapse _________________________________\n\n    def test_collapse():\n>       assert slugify('A  B') == 'a-b'\nE       AssertionError: assert 'A--B' == 'a-b'\nE         \nE         - a-b\nE         + A--B\n\ntest_slug.py:7: AssertionError\n__________________________________ test_strip __________________________________\n\n    def test_strip():\n>       assert slugify('  Hello  ') == 'hello'\nE       AssertionError: assert '--Hello--' == 'hello'\nE         \nE         - hello\nE         + --Hello--\n\ntest_slug.py:10: AssertionError\n=========================== short test summary info ============================\nFAILED test_slug.py::test_basic - AssertionError: assert 'Hello-World' == 'he...\nFAILED test_slug.py::test_collapse - AssertionError: assert 'A--B' == 'a-b'\nFAILED test_slug.py::test_strip - AssertionError: assert '--Hello--' == 'hello'\n3 failed in 0.04s\n/home/user/Doubao/chats/38454959947244034/spark/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n",
+      "usage": {
+        "input_tokens": 8443,
+        "output_tokens": 145,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "total_tokens": 8588,
+        "cost_usd": null,
+        "calls": 3,
+        "cache_hit_rate": 0.0,
+        "cache_savings_tokens": 0
+      },
+      "round": 1
+    }
+  ]
+}

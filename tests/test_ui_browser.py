@@ -309,3 +309,48 @@ def test_workbench_five_tabs_render(page) -> None:
         page.wait_for_timeout(400)
         # The panel body must still be present after the lazy tab loads.
         assert workbench.is_visible(), label
+
+
+def test_composer_vim_keys_are_real(page) -> None:
+    """Vim 开关必须真正接管 textarea 键位，而不是只改一个角标。"""
+    page, _base = page
+    button = page.locator("button", has_text="VIM").first
+    assert button.count() == 1
+    button.click()
+    ta = page.locator("textarea").first
+    ta.click()
+    ta.press("Escape")
+    assert "VIM N" in button.inner_text().replace("\n", " ")
+    ta.press("i")
+    assert "VIM I" in button.inner_text().replace("\n", " ")
+    ta.type("abc")
+    assert ta.input_value() == "abc"
+    ta.press("Escape")
+    ta.press("0")
+    ta.press("x")
+    assert ta.input_value() == "bc"
+    ta.press("i")
+    ta.type("d")
+    assert ta.input_value() == "dbc"
+
+
+def test_active_goal_survives_reload_and_offers_resume(page) -> None:
+    """刷新后活跃目标仍可见；这是跨重启续跑的入口，不靠内存事件。"""
+    page, base = page
+    import json
+    import urllib.request
+
+    data = json.dumps({"prompt": "/goal 刷新后继续这个目标"}).encode("utf-8")
+    req = urllib.request.Request(
+        f"{base}/api/chat",
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        assert resp.status == 200
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(600)
+    banner = page.get_by_text("目标仍在进行：刷新后继续这个目标")
+    assert banner.count() == 1
+    assert page.get_by_role("button", name="继续推进").count() == 1

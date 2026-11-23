@@ -21,6 +21,7 @@ import atexit
 import logging
 import os
 import threading
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,11 @@ _tracer: Any | None = None
 _meter: Any | None = None
 _processor: Any | None = None
 _exporter: Any | None = None
+_metric_reader: Any | None = None
+_log_provider: Any | None = None
+_log_processor: Any | None = None
+_log_exporter: Any | None = None
+_logging_handler: Any | None = None
 _lock = threading.Lock()
 _INITIALIZED = False
 
@@ -53,6 +59,83 @@ def _noop_tracer() -> Any:
         return None
 
 
+def _endpoint_scheme(endpoint: str) -> str:
+    return endpoint.split("://", 1)[0].lower() if "://" in endpoint else ""
+
+
+def _http_signal_endpoint(endpoint: str, signal: str) -> str:
+    base = endpoint.rstrip("/")
+    if base.endswith("/v1/" + signal):
+        return base
+    if base.endswith("/v1"):
+        return f"{base}/{signal}"
+    return f"{base}/v1/{signal}"
+
+
+def _sample_ratio() -> float:
+    raw = os.environ.get("SPARK_OTEL_SAMPLE_RATIO", "1").strip()
+    try:
+        return max(0.0, min(1.0, float(raw)))
+    except ValueError:
+        return 1.0
+
+
+def _safe_attributes(attributes: dict[str, Any] | None) -> dict[str, Any]:
+    """Drop credential-shaped attributes before they leave the process.
+
+    Token counts (``input_tokens``, ``gen_ai.usage.output_tokens``) are metrics,
+    not secrets, so only exact credential names and credential suffixes match.
+    """
+    if not attributes:
+        return {}
+    safe: dict[str, Any] = {}
+    for key, value in attributes.items():
+        name = str(key).lower()
+        if name in {
+            "token",
+            "access_token",
+            "refresh_token",
+            "id_token",
+            "api_key",
+            "apikey",
+            "authorization",
+            "cookie",
+            "set-cookie",
+            "password",
+            "secret",
+            "private_key",
+        } or name.endswith(("_api_key", "_secret", "_password", "_authorization")):
+            safe[key] = "[REDACTED]"
+        elif isinstance(value, dict):
+            safe[key] = _safe_attributes(value)
+        else:
+            safe[key] = value
+    return safe
+
+
+def _attach_logging_bridge() -> None:
+    """Bridge Python stdlib logging into OTel when explicitly requested.
+
+    Off by default: a bridge duplicates every log line into OTLP and can be
+    noisy for a local coding agent. ``SPARK_OTEL_BRIDGE_LOGGING=1`` opts in;
+    ``SPARK_OTEL_LOG_LEVEL`` controls the threshold (default INFO).
+    """
+    global _logging_handler
+    if _logging_handler is not None or _log_provider is None:
+        return
+    if os.environ.get("SPARK_OTEL_BRIDGE_LOGGING", "").strip() not in {"1", "true", "yes"}:
+        return
+    try:
+        from opentelemetry.sdk._logs import LoggingHandler
+
+        level_name = os.environ.get("SPARK_OTEL_LOG_LEVEL", "INFO").upper()
+        level = getattr(logging, level_name, logging.INFO)
+        _logging_handler = LoggingHandler(level=level, logger_provider=_log_provider)
+        logging.getLogger().addHandler(_logging_handler)
+    except Exception:  # pragma: no cover - API 版本差异
+        logger.debug("stdlib logging bridge unavailable", exc_info=True)
+
+
 def init_telemetry(service_name: str | None = None) -> Any | None:
     """初始化 tracer/meter（幂等；**自管 provider**，不依赖 OTel 全局单例）。
 
@@ -61,6 +144,7 @@ def init_telemetry(service_name: str | None = None) -> Any | None:
     注入模式）。返回 Tracer；未启用时返回 NoOp tracer（观测永不阻塞主流程）。
     """
     global _tracer, _meter, _INITIALIZED, _exporter, _processor
+    global _metric_reader, _log_provider, _log_processor, _log_exporter
     if _INITIALIZED:
         return _tracer
     with _lock:
@@ -82,13 +166,40 @@ def init_telemetry(service_name: str | None = None) -> Any | None:
             from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
             endpoint = os.environ.get("SPARK_OTEL_ENDPOINT", "").strip()
-            provider = TracerProvider()
-            if endpoint and endpoint.lower() != "inmemory":
-                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-                    OTLPSpanExporter,
-                )
+            in_memory = (not endpoint) or endpoint.lower() == "inmemory"
+            from opentelemetry.sdk.trace.sampling import (
+                ParentBased,
+                TraceIdRatioBased,
+            )
 
-                _exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
+            provider = TracerProvider(
+                sampler=ParentBased(TraceIdRatioBased(_sample_ratio()))
+            )
+            if not in_memory:
+                if _endpoint_scheme(endpoint) in {"http", "https"}:
+                    try:
+                        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+                            OTLPSpanExporter as HTTPOTLPSpanExporter,
+                        )
+
+                        _exporter = HTTPOTLPSpanExporter(
+                            endpoint=_http_signal_endpoint(endpoint, "traces")
+                        )
+                    except Exception:
+                        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+                            OTLPSpanExporter,
+                        )
+
+                        _exporter = OTLPSpanExporter(
+                            endpoint=_grpc_endpoint(endpoint), insecure=True
+                        )
+                else:
+                    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+                        OTLPSpanExporter,
+                    )
+
+                    grpc_endpoint = _grpc_endpoint(endpoint)
+                    _exporter = OTLPSpanExporter(endpoint=grpc_endpoint, insecure=True)
             else:
                 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
                     InMemorySpanExporter,
@@ -100,8 +211,84 @@ def init_telemetry(service_name: str | None = None) -> Any | None:
             provider.add_span_processor(_processor)
             _tracer = provider.get_tracer(service)
 
-            meter_provider = MeterProvider()
+            if in_memory:
+                from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+                _metric_reader = InMemoryMetricReader()
+            else:
+                from opentelemetry.sdk.metrics.export import (
+                    PeriodicExportingMetricReader,
+                )
+
+                if _endpoint_scheme(endpoint) in {"http", "https"}:
+                    try:
+                        from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+                            OTLPMetricExporter as HTTPOTLPMetricExporter,
+                        )
+
+                        metric_exporter = HTTPOTLPMetricExporter(
+                            endpoint=_http_signal_endpoint(endpoint, "metrics")
+                        )
+                    except Exception:
+                        from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+                            OTLPMetricExporter,
+                        )
+
+                        metric_exporter = OTLPMetricExporter(
+                            endpoint=_grpc_endpoint(endpoint), insecure=True
+                        )
+                else:
+                    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+                        OTLPMetricExporter,
+                    )
+
+                    metric_exporter = OTLPMetricExporter(
+                        endpoint=_grpc_endpoint(endpoint), insecure=True
+                    )
+                _metric_reader = PeriodicExportingMetricReader(
+                    metric_exporter,
+                    export_interval_millis=15000,
+                )
+            meter_provider = MeterProvider(metric_readers=[_metric_reader])
             _meter = meter_provider.get_meter("spark-agent")
+
+            if in_memory:
+                from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter
+
+                _log_exporter = InMemoryLogRecordExporter()
+            else:
+                if _endpoint_scheme(endpoint) in {"http", "https"}:
+                    try:
+                        from opentelemetry.exporter.otlp.proto.http._log_exporter import (
+                            OTLPLogExporter as HTTPOTLPLogExporter,
+                        )
+
+                        _log_exporter = HTTPOTLPLogExporter(
+                            endpoint=_http_signal_endpoint(endpoint, "logs")
+                        )
+                    except Exception:
+                        from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (
+                            OTLPLogExporter,
+                        )
+
+                        _log_exporter = OTLPLogExporter(
+                            endpoint=_grpc_endpoint(endpoint), insecure=True
+                        )
+                else:
+                    from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (
+                        OTLPLogExporter,
+                    )
+
+                    _log_exporter = OTLPLogExporter(
+                        endpoint=_grpc_endpoint(endpoint), insecure=True
+                    )
+            from opentelemetry.sdk._logs import LoggerProvider
+            from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+
+            _log_provider = LoggerProvider()
+            _log_processor = BatchLogRecordProcessor(_log_exporter)
+            _log_provider.add_log_record_processor(_log_processor)
+            _attach_logging_bridge()
             logger.info("telemetry enabled (endpoint=%s)", endpoint or "in-memory")
         except Exception as exc:  # pragma: no cover - 环境差异
             logger.debug("telemetry unavailable, using NoOp: %s", exc)
@@ -115,11 +302,30 @@ def init_telemetry(service_name: str | None = None) -> Any | None:
         return _tracer
 
 
+def _grpc_endpoint(endpoint: str) -> str:
+    """Normalize an OTLP endpoint to the host:port form gRPC exporters expect."""
+    raw = endpoint.strip()
+    if raw.startswith("grpc://"):
+        return raw[len("grpc://") :]
+    if "://" in raw:
+        # http(s)://host:4318 is accepted for compatibility with the docs, but
+        # gRPC still speaks to that host:port. Prefer grpc://host:4317.
+        return raw.split("://", 1)[1]
+    return raw
+
+
 def flush() -> None:
-    """冲刷待导出 span（进程退出前自动调用；未初始化时为 no-op）。"""
-    if _processor is not None:
+    """冲刷待导出 span/metric/log（进程退出前自动调用；未初始化时为 no-op）。"""
+    for processor in (_processor, _log_processor):
+        if processor is not None:
+            try:
+                processor.force_flush()
+            except Exception:  # pragma: no cover
+                pass
+    reader = _metric_reader
+    if reader is not None:
         try:
-            _processor.force_flush()
+            reader.force_flush()
         except Exception:  # pragma: no cover
             pass
 
@@ -142,6 +348,56 @@ def get_meter() -> Any | None:
     return _meter
 
 
+def in_memory_metric_reader() -> Any | None:
+    """Test-only: return the in-memory metric reader when enabled."""
+    return _metric_reader if _metric_reader is not None and hasattr(_metric_reader, "get_metrics_data") else None
+
+
+def in_memory_log_exporter() -> Any | None:
+    """Test-only: return the in-memory log exporter when enabled."""
+    try:
+        from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter
+
+        return _log_exporter if isinstance(_log_exporter, InMemoryLogRecordExporter) else None
+    except Exception:
+        return None
+
+
+def record_event(
+    name: str,
+    attributes: dict[str, Any] | None = None,
+    body: str = "",
+    *,
+    severity: str = "INFO",
+) -> None:
+    """Emit an explicit OTel log record (audit events, not a logging bridge)."""
+    provider = _log_provider
+    if provider is None:
+        return
+    try:
+        from opentelemetry._logs import SeverityNumber
+        from opentelemetry.sdk._logs._internal import LogRecord
+
+        sev = {
+            "INFO": SeverityNumber.INFO,
+            "WARN": SeverityNumber.WARN,
+            "ERROR": SeverityNumber.ERROR,
+        }.get(severity.upper(), SeverityNumber.INFO)
+        provider.get_logger("spark.audit").emit(
+            LogRecord(
+                timestamp=time.time_ns(),
+                observed_timestamp=time.time_ns(),
+                severity_text=severity.upper(),
+                severity_number=sev,
+                body=body or name,
+                attributes={"event.name": name, **_safe_attributes(attributes)},
+                event_name=name,
+            )
+        )
+    except Exception:  # pragma: no cover
+        logger.debug("otel log record failed", exc_info=True)
+
+
 def in_memory_exporter() -> Any | None:
     """测试专用：读取 in-memory exporter（未处于 in-memory 模式时返回 None）。"""
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
@@ -154,11 +410,23 @@ def in_memory_exporter() -> Any | None:
 def reset_for_tests() -> None:
     """测试专用：还原未初始化状态（清空全局单例）。"""
     global _tracer, _meter, _INITIALIZED, _exporter, _processor
+    global _metric_reader, _log_provider, _log_processor, _log_exporter
+    global _logging_handler
     with _lock:
+        if _logging_handler is not None:
+            try:
+                logging.getLogger().removeHandler(_logging_handler)
+            except Exception:
+                pass
+        _logging_handler = None
         _tracer = None
         _meter = None
         _exporter = None
         _processor = None
+        _metric_reader = None
+        _log_provider = None
+        _log_processor = None
+        _log_exporter = None
         _INITIALIZED = False
 
 
@@ -287,6 +555,16 @@ def end_tool_span(
         if not ok:
             span.set_status(Status(StatusCode.ERROR, "tool failed"))
         span.end()
+        if not ok:
+            record_event(
+                "spark.tool.failed",
+                {
+                    "gen_ai.tool.name": (span.attributes or {}).get("gen_ai.tool.name", ""),
+                    "latency_ms": latency_ms,
+                },
+                body="tool failed",
+                severity="WARN",
+            )
 
         meter = get_meter()
         if meter is not None:
@@ -296,3 +574,102 @@ def end_tool_span(
             )
     except Exception:  # pragma: no cover
         logger.debug("tool span end failed", exc_info=True)
+
+
+def start_approval_span(parent: Any | None, *, tool_name: str, summary: str) -> Any | None:
+    """span=approval：记录人工审批的等待时间与决定。"""
+    if parent is None:
+        return None
+    try:
+        from opentelemetry import trace
+
+        return get_tracer().start_span(
+            "spark.approval",
+            attributes={"gen_ai.tool.name": tool_name, "spark.approval.summary": summary[:200]},
+            context=trace.set_span_in_context(parent),
+        )
+    except Exception:  # pragma: no cover
+        return None
+
+
+def end_approval_span(span: Any | None, *, decision: str, latency_ms: int) -> None:
+    if span is None:
+        return
+    try:
+        span.set_attribute("spark.approval.decision", decision)
+        span.set_attribute("spark.approval.latency_ms", latency_ms)
+        span.end()
+        record_event(
+            "spark.approval.decision",
+            {
+                "gen_ai.tool.name": (span.attributes or {}).get("gen_ai.tool.name", ""),
+                "decision": decision,
+                "latency_ms": latency_ms,
+            },
+            body="approval decision",
+        )
+    except Exception:  # pragma: no cover
+        pass
+
+
+def start_workflow_span(*, name: str, version: str, steps: int, max_parallel: int) -> Any | None:
+    try:
+        return get_tracer().start_span(
+            "spark.workflow",
+            attributes={
+                "spark.workflow.name": name,
+                "spark.workflow.version": version,
+                "spark.workflow.steps": steps,
+                "spark.workflow.max_parallel": max_parallel,
+            },
+        )
+    except Exception:  # pragma: no cover
+        return None
+
+
+def start_step_span(parent: Any | None, *, workflow: str, step: str, attempt: int = 0) -> Any | None:
+    if parent is None:
+        return None
+    try:
+        from opentelemetry import trace
+
+        return get_tracer().start_span(
+            "spark.workflow.step",
+            attributes={"spark.workflow.name": workflow, "spark.step.id": step, "spark.step.attempt": attempt},
+            context=trace.set_span_in_context(parent),
+        )
+    except Exception:  # pragma: no cover
+        return None
+
+
+def end_step_span(span: Any | None, *, status: str, cost_usd: float = 0.0) -> None:
+    if span is None:
+        return
+    try:
+        span.set_attribute("spark.step.status", status)
+        span.set_attribute("spark.step.cost_usd", cost_usd)
+        span.end()
+    except Exception:  # pragma: no cover
+        pass
+
+
+def end_workflow_span(span: Any | None, *, statuses: dict[str, str], cost_usd: float) -> None:
+    if span is None:
+        return
+    try:
+        failed = sum(1 for value in statuses.values() if value != "completed")
+        span.set_attribute("spark.workflow.failed_steps", failed)
+        span.set_attribute("spark.workflow.cost_usd", cost_usd)
+        span.end()
+        record_event(
+            "spark.workflow.finished",
+            {
+                "workflow.name": (span.attributes or {}).get("spark.workflow.name", ""),
+                "failed_steps": failed,
+                "cost_usd": cost_usd,
+            },
+            body="workflow finished",
+            severity="ERROR" if failed else "INFO",
+        )
+    except Exception:  # pragma: no cover
+        pass

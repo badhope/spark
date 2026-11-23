@@ -6,6 +6,24 @@
 
 ### Added
 
+- 会话归档/恢复：`sessions.archived_at`（v6）+ `SessionStore.archive_session()`；`POST /api/sessions/archive` 仅本机或设备写权限；归档保留消息与检查点、默认列表隐藏；归档当前会话自动切到下一个活跃会话，切到归档会话隐式恢复；Web 侧栏“已归档”分组与恢复按钮。
+- 插件代码包签名：`package_digest(root)` 对 manifest 外每个文件按“相对路径 + SHA-256”计算总摘要；`PluginManifest.artifact_sha256`；`verify_manifest(root=...)` 必须同时校验签名与包摘要，缺摘要或包变更均 invalid；`spark plugins sign` 先算摘要再签，`install_local()` 在 staging 校验并拒绝篡改/撤销包。
+- Claude Code 兼容层扩展：只读扫描 `.claude/skills`、`~/.claude/skills`、`.claude/commands`、`~/.claude/commands`；同名 `.spark` 原生优先，避免兼容层反向覆盖。
+- TUI 外部编辑器：`/editor [path]` / `/vim [path]` 注册进 `KNOWN_COMMANDS`，路径经 sandbox 解析后 `suspend()` 挂起 TUI，调 `$VISUAL`/`$EDITOR`（`/vim` 强制 vim），退出恢复并刷新；帮助页同步展示。
+- OTel 审批/工作流 span：`spark.approval` 记录工具、摘要、决定与等待毫秒；`spark.workflow` / `spark.workflow.step` 记录 DAG 名称/版本/并发、step/attempt/status/cost 与失败步数/总成本。
+- OTel metric/log 导出：metric reader（in-memory / PeriodicExporting）与 LoggerProvider/BatchLogRecordProcessor 接入，审批决定、工具失败、工作流结束写显式审计 log；`_grpc_endpoint` 统一 `grpc://` / `http(s)://` 到 host:port。
+- Goal 自动续跑：`agent.goal_auto_turns`（默认 2，0–20）在活跃目标下同一 SSE 流内自动继续，序号连续不重置；任一回合 `turn_error` 立即熔断；前端 `goal_auto_continue` 提示；设置页可改。
+- 空闲队列每日配额：`agent.queue_daily_limit`（默认 0 = 不限）按本地日统计 `ok/failed/cancelled`，达到上限停止领取；设置页可改，`TaskQueue.status()` 返回 `daily_limit/completed_today`。
+- 排队任务墙钟超时：`agent.queue_task_timeout_sec`（默认 0 = 不限）经 `AgentRuntime.iterate(max_seconds=...)` 的总时长守卫触发 `TimeoutError`，任务回 `queued` 重试而不是假装完成；设置页可改。
+- 队列成本配额与多 worker：`agent.queue_daily_cost_usd` 按本地日累计 `agent_queue.cost_usd`（含失败重试的已花成本），与任务数配额叠加节流；`agent.queue_workers`（1–4）启动多个 worker，队列会话标记 `origin="queue"`，不会把彼此当作“用户正在忙”而互相阻塞；设置页可改，worker 数重启生效。
+- Composer Vim 键位：输入框可选 VIM 模式（localStorage 记忆），Esc 回 Normal，i/a/I/A 回 Insert，支持 h/j/k/l、w/b、0/$、x、dd、o；底部显示 `VIM · N/I`，默认关闭不影响普通输入。
+- Goal 跨重启可见/续跑：`/api/history`、切换与分叉响应回显活跃 Goal；刷新或重启后聊天页显示目标横幅，点“继续推进”注入带目标契约的续跑提示，不再要求用户重新 `/goal`。仍不是无确认的自动后台续跑。
+- OTel 生产化补强：`SPARK_OTEL_BRIDGE_LOGGING=1` 可把 Python stdlib logging 桥接到 OTLP；`SPARK_OTEL_SAMPLE_RATIO` 支持 trace 采样；审计 attributes 对 `api_key` / `password` / `secret` 等凭据键统一 `[REDACTED]`；HTTP OTLP exporter 在安装了 `opentelemetry-exporter-otlp-proto-http` 时自动启用，否则回退 gRPC。
+- 交付账本自动入账：聊天回合出现 `write_file` / `apply_patch` / `apply_edit` / `notebook_edit` / `git_commit` 时，流式与非流式都自动生成 `review` 状态的 delivery；按 `since_id` 限定本轮工具事件，只从写工具参数提取 touched paths，测试证据只认 `run_tests` 或命中测试运行器的 `run_shell`；回合失败写 `rejected`，只读闲聊不产生噪音。队列与手动入口保留。
+- 语义索引后台建：`AgentLoop._semantic_context` 发现索引缺失时启动 daemon 构建线程并立即返回，首轮不阻塞 TTFT，次轮起可用；手动重建与 `semantic_search` 不变。
+- 内联编辑桥：`spark inline` 支持 `--selection` 或 `--start-line/--end-line`、`--mode edit|nes`、`--json`、`--apply`；Web 工作台新增预览卡片，`/api/inline_edit/apply` 用 `base_sha256` 与选中文本唯一性守卫，过期返回 `409`；Neovim 模板新增 `<leader>si`；JetBrains 走 External Tool CLI 桥。
+- 插件签名策略：`[plugins].require_signature` 可在设置页开关，等价于 `POST /api/plugins` 的 `action="policy"`；仅本机或 `device_admin` 可改，开启后未签名插件 enable 被拒。
+- Phase 0 真实评测：`qwen-flash` 30 任务 30/30 PASS、`pass@1=1.0`、errors=0；报告 `cost_usd` 保持 `null`，仅按公开价目估算约 `$0.048722`，不伪装成账单。
 - 项目知识库混合检索：BM25 + 可选向量召回，向量存 `knowledge/<project_hash>/vectors.json` sidecar；旧索引首次检索自动回填，embedding 不可用/超时/维度不一致时静默退回 BM25。复用 `memory.embedding_*` 配置，不新建服务或数据库。
 - 长上下文压缩增强：5 段摘要缺段检测并在落盘前补 `(not provided)`（自定义提示词不强制套用该格式）；工具输出按 2k/8k 分三档留头尾；压缩后按当前问题在 `compact_from` 之前做会话内有界词法召回，注入只读片段，检索失败静默降级。
 - 小模型工具调用护栏：`tools/validation.py` 零依赖 JSON Schema 子集校验（object/properties/required/type/items/enum/minimum/maxItems/minLength/maxLength/additionalProperties，参数上限 2 MiB）；`ToolRegistry` 统一补 `additionalProperties: false` 并在审批前返回 `unknown_tool` / `tool_disabled` / `tool_not_allowed` / `invalid_tool_arguments` / `tool_arguments_too_large`；本地模型 provider 端 12 工具白名单再按读/写/执行/联网意图裁剪 schema；非法调用只给一次修正机会，同一工具第二次非法标 `retry_exhausted`，不进入审批/执行。
@@ -24,6 +42,11 @@
 
 ### Fixed
 
+- 交付账本持久化丢字段：`deliveries` 增 `diff_json/metrics_json/privacy_json`（v5 迁移），`save_delivery()` 写入、读回映射，导出恢复 Diff/成本与真实 privacy；`list_tool_events()` 改取最新 500 条再反转，修复长会话账本窗口读到最早事件。
+- 自动账本幽灵工具：触发集合去掉不存在的 `multi_edit`/`replace_in_file`，补入真正改文件的 `apply_patch`/`notebook_edit`；不再把整个 worktree 的变更和 `run_shell("ls")` 算成任务证据。
+- 插件“只签 manifest”：替换 `entry.py`/hook 脚本后仍显示 signed；现以代码包摘要绑定签名，篡改包在安装期被拒绝；旧版仅签 manifest 的插件显示 invalid（有意收紧）。
+- 内联编辑缺上下文与过期 Range：prompt 注入选中区前后代码；Web handler 读取前后各 3000 字符；VS Code 捕获 `document.version` 与 offset，模态框期间文件变化则取消应用。
+- “归档”此前只有删除、无归档/恢复：补存储列、API、Web 分组与测试；归档不再销毁消息/检查点。
 - `update_plan` 的步骤 schema 不再强制 `status`：`required` 只保留 `title`，缺失时按 handler 语义默认 `pending`；修正此前 schema 与执行逻辑不一致导致的 `test_plan_tool_updates_registry` 失败。
 - 测试基础设施改用 Playwright 固定版本 Chromium 优先启动（Edge 仍优先），并统一加 `--disable-dev-shm-usage` / `--disable-gpu`；系统 `/usr/local/bin/chromium` 146 在完整设置页挂载后会 `Page crashed`，现仅作兜底。
 

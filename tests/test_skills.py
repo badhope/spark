@@ -102,3 +102,16 @@ Body.
     assert skills[0].name == "quoted-skill"
     assert skills[0].description == "Quoted description"
     assert skills[0].when_to_use == "When testing quotes"
+
+
+def test_claude_skills_fallback_without_shadowing_native(tmp_path):
+    native = tmp_path / ".spark" / "skills" / "same"
+    native.mkdir(parents=True)
+    (native / "SKILL.md").write_text("---\nname: same\ndescription: native\n---\nnative body")
+    compat = tmp_path / ".claude" / "skills" / "compat"
+    compat.mkdir(parents=True)
+    (compat / "SKILL.md").write_text("---\nname: compat\ndescription: from claude\n---\ncompat body")
+    skills = discover_skills(tmp_path)
+    names = {s.name: s.description for s in skills}
+    assert names["same"] == "native"
+    assert names["compat"] == "from claude"

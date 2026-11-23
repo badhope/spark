@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import threading
 import time
 import uuid
 from collections import deque
@@ -38,6 +39,27 @@ Approver = Callable[[ApprovalRequest], Awaitable[ApprovalDecision]]
 
 logger = logging.getLogger(__name__)
 
+# One background cold-index build per workdir, shared by all loops. The first
+# turn returns without semantic context; the next turn can use the finished
+# index. This keeps a cold repository out of TTFT while removing the old
+# "user must press a button before semantic search exists" caveat.
+_SEMANTIC_BUILD_LOCK = threading.Lock()
+_SEMANTIC_BUILDING: set[str] = set()
+
+
+def _start_semantic_build(workdir: Path, index, key: str) -> None:
+    def build() -> None:
+        try:
+            index.refresh()
+        except Exception:  # noqa: BLE001 - retrieval is an enhancement
+            logger.debug("background semantic index build failed", exc_info=True)
+        finally:
+            with _SEMANTIC_BUILD_LOCK:
+                _SEMANTIC_BUILDING.discard(key)
+
+    thread = threading.Thread(target=build, daemon=True, name="spark-semantic-index")
+    thread.start()
+
 
 class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentRunnerMixin):
     def __init__(
@@ -57,6 +79,7 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
         self.cfg = cfg
         self.provider = provider
         self.registry = registry
+        self.registry.apply_tool_preset(getattr(cfg.agent, "tool_preset", "full"))
         self.store = store
         self.session_id = session_id
         self.approver = approver
@@ -103,6 +126,7 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
         self._last_checkpoint_id: int | None = None
         self._turn_graph = None  # LangGraph 状态机（首次 iter_turn 编译缓存）
         self._last_round: dict[str, Any] = {"tool_calls": [], "text": "", "error": None}
+        self._turn_metrics: Any = None  # 当前 turn 的本地延迟快照
         self._otel_span: Any = None  # 当前 turn 的观测 span（trace=turn）
         self._active_children: list[AgentLoop] = []
         # P1-4: 声明式子代理的专属 system prompt（body 注入 system 槽，而非用户消息）
@@ -135,7 +159,11 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
             try:
                 from spark.plugins import build_plugin_hooks
 
-                bindings, issues = build_plugin_hooks(plugin_names, workdir)
+                bindings, issues = build_plugin_hooks(
+                    plugin_names,
+                    workdir,
+                    require_signature=bool(getattr(cfg.plugins, "require_signature", False)),
+                )
                 for binding in bindings:
                     self.hooks.register(binding.event, binding.hook)
                 self.plugin_hook_issues = issues
@@ -148,6 +176,7 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
                     plugin_names,
                     workdir,
                     max_output_chars=cfg.agent.max_output_chars,
+                    require_signature=bool(getattr(cfg.plugins, "require_signature", False)),
                 )
                 self.registry.register_plugin_tools(schemas, handlers)
                 self.plugin_hook_issues.extend(tool_issues)
@@ -205,6 +234,34 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
             return block or None
         except Exception as exc:  # noqa: BLE001 — 知识库失败不能影响对话
             logger.debug("Knowledge retrieve failed: %s", exc)
+            return None
+
+    def _semantic_context(self, query: str) -> str | None:
+        """Inject pre-built local code index hits; never build on the hot path.
+
+        First-time indexing is explicit (the ``semantic_search`` tool or the
+        Web index button), so a cold repository cannot add seconds to TTFT.
+        """
+        try:
+            if not getattr(self.cfg.context, "semantic_index_enabled", True):
+                return None
+            from spark.config import ensure_home
+            from spark.semantic_index import build_context_block, make_code_index
+
+            index = make_code_index(self.workdir, self.cfg, ensure_home())
+            if not index.exists():
+                key = str(self.workdir.resolve())
+                with _SEMANTIC_BUILD_LOCK:
+                    if key not in _SEMANTIC_BUILDING:
+                        _SEMANTIC_BUILDING.add(key)
+                        _start_semantic_build(self.workdir, index, key)
+                return None
+            hits = index.search(query, top_k=int(self.cfg.context.semantic_top_k))
+            if not hits:
+                return None
+            return build_context_block(hits, max_chars=self.cfg.context.semantic_max_chars) or None
+        except Exception as exc:  # noqa: BLE001 — retrieval is an enhancement
+            logger.debug("Semantic index retrieval failed: %s", exc)
             return None
 
     def _compacted_history_context(self, query: str) -> str | None:
@@ -430,7 +487,7 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
             events.append(event)
         return events
 
-    def iter_turn_sync(self, user_text: str, images=None):
+    def iter_turn_sync(self, user_text: str, images=None, timeout_sec: float | None = None):
         """Drive a turn from a non-async thread.
 
         Runs on the process-wide :class:`~spark.core.runtime.AgentRuntime` loop
@@ -443,7 +500,10 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
         from spark.core.runtime import get_runtime
 
         self.cancelled = False
-        yield from get_runtime().iterate(self.iter_turn(user_text, images=images))
+        yield from get_runtime().iterate(
+            self.iter_turn(user_text, images=images),
+            max_seconds=timeout_sec,
+        )
 
     async def iter_turn_managed(self, user_text: str, images=None):
         """Drive a turn from a surface that owns its own asyncio loop (TUI/ACP).
@@ -540,6 +600,9 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
             workdir=str(self.workdir),
         )
         turn_started = time.monotonic()
+        from spark.core.turn_metrics import TurnMetrics
+
+        self._turn_metrics = TurnMetrics(started_at=turn_started)
 
         compacted = await self._maybe_compact()
         if compacted:
@@ -571,8 +634,9 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
         # 项目知识库：与记忆同槽注入，但独立配置、独立开关。检索失败只降级，
         # 不能影响本轮对话（知识库是增强项，不是依赖）。
         knowledge_block = self._knowledge_context(user_text)
+        semantic_block = self._semantic_context(user_text)
         compacted_block = self._compacted_history_context(user_text)
-        for block in (compacted_block, knowledge_block):
+        for block in (compacted_block, knowledge_block, semantic_block):
             if block:
                 memory_block = f"{memory_block}\n\n{block}" if memory_block else block
         user = ChatMessage(role="user", content=user_text, images=images)
@@ -598,6 +662,8 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
         self._call_counts.clear()
         self._tool_validation_failures.clear()
         self._classification_cache.clear()
+        if self._turn_metrics is not None:
+            self._turn_metrics.mark_context_ready()
         # 控制流移交 LangGraph 状态机（graph.py = 唯一真相源）：
         # llm →(有工具) approve →(interrupt 审批) execute → llm → … → finalize / END。
         if self._turn_graph is None:
@@ -623,6 +689,15 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
             snapshot = await self._turn_graph.aget_state(config)
             if not snapshot.next:
                 await self._checkpointer.unregister(thread_id)
+        metrics = None
+        if self._turn_metrics is not None:
+            metrics = self._turn_metrics.snapshot(self._turn_usage_totals)
+            try:
+                self.store.append_turn_metric(self.session_id, metrics)
+            except Exception:
+                logger.debug("persist turn metrics failed", exc_info=True)
+        if metrics is not None and getattr(self.cfg.agent, "show_metrics", False):
+            yield TurnEvent(type="metrics", data=metrics)
         logger.info("turn_end session=%s", sid_prefix)
 
     async def _drive_graph(self, graph_input: Any, config: dict):
@@ -665,7 +740,20 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
                 if self.approver is None:
                     verdict = {"action": "deny", "reason": "no approver"}
                 else:
+                    from spark.otel import end_approval_span, start_approval_span
+
+                    started_approval = time.monotonic()
+                    approval_span = start_approval_span(
+                        self._otel_span,
+                        tool_name=request.tool_call.name,
+                        summary=request.summary,
+                    )
                     decision = await self.approver(request)
+                    end_approval_span(
+                        approval_span,
+                        decision=decision.action,
+                        latency_ms=int((time.monotonic() - started_approval) * 1000),
+                    )
                     verdict = {
                         "action": decision.action,
                         # 与旧路径 approver-deny 的 payload 文案保持一致
@@ -798,6 +886,8 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
         reasoning_parts: list[str] = []
         tool_calls: list[ToolCall] = []
         self._reported_usage: dict[str, int] | None = None  # P1：本轮流式真实 usage
+        if self._turn_metrics is not None:
+            self._turn_metrics.begin_provider_round()
         try:
             async for delta in self.provider.stream(
                 messages, self.registry.schemas(), **self._stream_extra
@@ -806,6 +896,8 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
                     yield TurnEvent(type="turn_error", text="Turn cancelled")
                     self._last_round["error"] = "cancelled"
                     return
+                if self._turn_metrics is not None:
+                    self._turn_metrics.mark_delta()
                 if delta.type == "reasoning" and delta.text:
                     reasoning_parts.append(delta.text)
                     # show_thinking=False 时不下发 SSE（节省带宽），仍计入 token 用量
@@ -813,6 +905,8 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
                         yield TurnEvent(type="reasoning_delta", text=delta.text)
                 elif delta.type == "text" and delta.text:
                     text_parts.append(delta.text)
+                    if self._turn_metrics is not None:
+                        self._turn_metrics.mark_text()
                     yield TurnEvent(type="text_delta", text=delta.text)
                 elif delta.type == "tool_call" and delta.tool_call:
                     tool_calls.append(delta.tool_call)
@@ -832,6 +926,8 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
             )
             self._notify_safe("provider_error", info.to_dict())
             self._notify_safe("turn_error", {"error": info.text, "stage": "llm", "diagnostic": info.to_dict()})
+            if self._turn_metrics is not None:
+                self._turn_metrics.end_provider_round(error=info.text)
             yield TurnEvent(
                 type="turn_error",
                 text=info.text,
@@ -840,10 +936,14 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
             self._last_round["error"] = info.text
             return
 
+        if self._turn_metrics is not None:
+            self._turn_metrics.end_provider_round()
         self._charge_tokens(text_parts, reasoning_parts)
         self._persist_usage(None, messages, text_parts, reasoning_parts)
 
         if tool_calls:
+            if self._turn_metrics is not None:
+                self._turn_metrics.mark_tool_call(len(tool_calls))
             tripped = None
             for call in tool_calls:
                 guard = self._record_call(call)

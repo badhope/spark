@@ -26,6 +26,7 @@ from spark.tools import (
     pr_tools,
     repo_context,
     search,
+    semantic,
     shell,
     web,
 )
@@ -33,6 +34,16 @@ from spark.tools.validation import argument_size_error, validate_arguments
 
 MCP_PREFIX = "mcp__"
 POST_WRITE_TOOLS = {"write_file", "apply_patch", "apply_edit"}
+
+# Coding 工作台的最小工具面：覆盖读、写、检索、执行、测试、git 与交互。
+# 浏览器 / LSP / PR / 工作流 / 后台任务等大块 schema 不进入每轮上下文。
+CODING_TOOL_ALLOWLIST = frozenset({
+    "read_file", "list_dir", "write_file", "apply_patch", "apply_edit",
+    "run_shell", "semantic_search", "grep", "glob", "diagnostics",
+    "find_symbol", "repo_context", "run_tests", "task", "ask_user",
+    "update_plan", "git_status", "git_diff", "git_add", "git_commit",
+    "load_skill",
+})
 
 
 @dataclass
@@ -144,6 +155,7 @@ class ToolRegistry:
         self._registered_scopes: dict[str, set[str]] = {}
         # P1-4: 声明式子代理的工具白名单（None = 全部工具，行为不变）
         self.tool_allowlist: set[str] | None = None
+        self._preset_allowlist_active = False
         # 单轮禁用集（如输入框"联网搜索"关闭时移除 web_search/web_fetch）。
         # 与 allowlist 分开：这是「这一轮不给」，不是「这个 agent 永远不给」，
         # 下一轮由调用方清空，不需要重建 loop。
@@ -167,6 +179,22 @@ class ToolRegistry:
         # otherwise closing the web switch leaves the estimated prompt size stale.
         self._disabled_tools = set(value)
         self._schema_revision += 1
+
+    def apply_tool_preset(self, name: str) -> None:
+        """Apply a named tool surface without overriding an explicit allowlist."""
+        if name == "coding":
+            if self.tool_allowlist is None or self._preset_allowlist_active:
+                self.tool_allowlist = set(CODING_TOOL_ALLOWLIST)
+                self._preset_allowlist_active = True
+                self._schema_revision += 1
+            return
+        if name == "full":
+            if self._preset_allowlist_active:
+                self.tool_allowlist = None
+                self._preset_allowlist_active = False
+                self._schema_revision += 1
+            return
+        raise ValueError(f"unknown tool preset: {name}")
 
     @property
     def schema_revision(self) -> int:
@@ -339,6 +367,20 @@ class ToolRegistry:
                 ["path", "content"]),
             _schema_from_model(
                 "run_shell", "Run a shell command inside workdir.", shell.RunShellArgs
+            ),
+            _schema_from_model(
+                "semantic_search",
+                "Search the workspace with the local semantic code index. "
+                "Use it when grep is too literal: natural-language questions, "
+                "cross-file concepts, or code whose identifiers differ from the "
+                "question's wording. Returns path/line/symbol windows. The first "
+                "call builds a bounded local index; set refresh=true after large edits.",
+                semantic.SemanticSearchArgs,
+                descriptions={
+                    "query": "what behaviour or concept you are looking for",
+                    "top_k": "default 8",
+                    "refresh": "rebuild the index first",
+                },
             ),
             _schema_from_model(
                 "grep",
@@ -1039,6 +1081,9 @@ class ToolRegistry:
             "task_finish": lambda a: git_memory.task_finish(ctx.sandbox, git_memory.TaskFinishArgs.model_validate(a)),
             # --- search ---
             "grep": lambda a: search.grep_tool(ctx.sandbox, search.GrepArgs.model_validate(a)),
+            "semantic_search": lambda a: semantic.semantic_search(
+                ctx, semantic.SemanticSearchArgs.model_validate(a)
+            ),
             "diagnostics": lambda a: diagnostics.diagnostics_tool(ctx.sandbox, diagnostics.DiagnosticsArgs.model_validate(a)),
             "find_symbol": lambda a: _find_symbol_tool(ctx, a),
             "lsp_definition": lambda a: lsp_tools.lsp_definition(
