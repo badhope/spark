@@ -1,12 +1,14 @@
 # Spark Product Positioning
 
-> Revised 2026-11-23. This document supersedes every earlier "local-first" product description. Historical reviews keep their original wording but are marked as obsolete positioning.
+> Revised 2026-11-24. This document is the single canonical positioning: the core is an AI coding application, not a document/meeting product identity. It also supersedes every earlier "local-first" description. Historical reviews keep their original wording but are marked as obsolete positioning.
 
 ## One line
 
-**Spark is a browser-native, cross-platform, open-source AI coding and office workbench.**
+**Spark is a browser-native, cross-platform, open-source, extensible AI coding application.**
 
 One agent runtime runs across the browser, terminal, desktop shell, IDE and API. Models, tools, Skills, MCP servers, themes, workflows and deployment targets are replaceable and self-hostable.
+
+The core identity is an **AI coding application**: task understanding, code retrieval and editing, test feedback, review and rollback are the main line. Documents, meetings and spreadsheets are auxiliary enterprise-control-plane workflows, not the product identity.
 
 ## Three pillars
 
@@ -17,8 +19,9 @@ One agent runtime runs across the browser, terminal, desktop shell, IDE and API.
 ## What it is not
 
 - Not a "local-first" product. Local storage is a deployment fact, not the identity.
+- Not a general-office suite. The enterprise control plane offers document and meeting workflows, but they are auxiliary capabilities, not the main identity.
 - Not a single IDE plugin.
 - Not a closed cloud platform that requires an account.
 - Not "all browser capabilities are already done". The current boundary is 24 `browser_*` tools, five engines, persistent profiles, CDP attach, per-domain rules, sensitive-site confirmation, traces and Chromium metrics. The extension bridge ships as an official Playwright MCP `--extension` preset plus an acceptance guide, not as a bundled native extension.
 
-Recommended wording: **A browser-native, cross-platform, open-source AI coding and office workbench.**
+Recommended wording: **A browser-native, cross-platform, open-source, extensible AI coding application.**

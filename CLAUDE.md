@@ -1,6 +1,6 @@
 # Spark — AI Coding Agent
 
-浏览器原生、跨平台的 AI 编码与办公工作台，Python + React 双形态（CLI/typer + TUI/textual + Web/pywebview）。
+浏览器原生、跨平台的 AI 编程应用，Python + React 双形态（CLI/typer + TUI/textual + Web/pywebview）。
 
 ## 架构
 

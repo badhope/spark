@@ -2,7 +2,7 @@
 
 # Spark
 
-**A browser-native, cross-platform, open-source AI coding and office workbench.**
+**A browser-native, cross-platform, open-source, extensible AI coding application.**
 
 Spark gives you one agent loop across the browser, terminal, desktop, IDE, mobile layout and API. Every write is gated by approval and a sandbox, every turn can be rolled back, and models, tools, Skills, MCP servers and UI are replaceable. Code and ledgers live in the workspace you choose by default.
 
@@ -28,7 +28,7 @@ No API key? Spark still starts, but reports the real configuration error and ref
 - **Auditable execution.** Approval modes and sandbox levels are enforced before a write or command runs. Wildcard rules are scoped to user, project and local config; `deny` always wins. Protected credential paths and shell token checks stay on.
 - **Recoverable by design.** Each turn snapshots the workspace and can restore files and conversation together, including outside git repositories.
 - **Task-as-branch.** Start a task, commit each verified step, and finish on green tests; a failed run abandons its branch instead of leaking changes.
-- **Built for real files.** The office workbench turns documents, meeting recordings and spreadsheets into cited minutes, action items, reports and exports. Local OCR and transcription keep the source on your machine.
+- **Real files when the task calls for it.** The enterprise control plane can turn documents, meeting recordings and spreadsheets into cited minutes, action items, reports and exports; local OCR and transcription keep the source on your machine.
 - **Provider freedom.** Any OpenAI-compatible endpoint, fallback model chain and credential pool, plus a separate small model for auxiliary calls.
 
 ## Run it
@@ -45,7 +45,7 @@ spark doctor                  # check config, credentials and runtime
 spark browser-doctor          # launch the configured engine and render a test page
 ```
 
-The office workbench runs through the enterprise control plane:
+The enterprise control plane also provides document and meeting workflows:
 
 ```bash
 spark enterprise --host 127.0.0.1 --port 18800

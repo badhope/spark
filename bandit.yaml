@@ -1,4 +1,4 @@
-# Spark: browser-native AI coding and office workbench — bandit config
+# Spark: browser-native AI coding application — bandit config
 #
 # 键名说明：bandit 只识别 ``skips`` / ``exclude_dirs`` / ``tests`` 等键。
 # 早期版本误用了 ``skipped_tests``（不存在的键），导致整份跳过列表静默失效，

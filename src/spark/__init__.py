@@ -1,4 +1,4 @@
-"""Spark — browser-native, cross-platform AI coding and office workbench."""
+"""Spark — browser-native, cross-platform AI coding application."""
 
 import os
 

@@ -1,6 +1,6 @@
 # Spark
 
-Browser-native, cross-platform, open-source AI coding and office workbench, with guardrails you can audit.
+Browser-native, cross-platform, open-source AI coding application, with guardrails you can audit.
 
 [English README](https://github.com/badhope/spark/blob/main/README.md) · [中文 README](https://github.com/badhope/spark/blob/main/README_zh.md) · [English docs index](en/README.md)
 

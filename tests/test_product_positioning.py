@@ -34,6 +34,9 @@ OLD_POSITIVE_PHRASES = [
     "本地优先编码 Agent",
     "Local-first coding agent",
     "本地优先的 AI 编码助手",
+    "AI 编程与办公工作台",
+    "AI coding and office workbench",
+    "AI 编码与办公工作台",
 ]
 
 
@@ -50,7 +53,9 @@ def test_public_surfaces_do_not_use_retired_positioning() -> None:
 def test_canonical_positioning_exists_and_names_the_three_pillars() -> None:
     text = (ROOT / "docs/PRODUCT_POSITIONING.md").read_text(encoding="utf-8")
     assert "浏览器原生、跨平台、开源可扩展" in text
+    assert "AI 编程应用" in text
     assert "不是“本地优先”产品" in text
+    assert "不是通用办公套件" in text
     assert "全浏览器能力接入层" in text
 
 

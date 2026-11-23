@@ -63,7 +63,7 @@
 
 ### Changed
 
-- 产品定位修正：废止“本地优先 / local-first”产品口径，统一为“浏览器原生、跨平台、开源可扩展的 AI 编程与办公工作台”；README、架构、包元数据、桌面标题、A2A Agent Card、移动端副标题、分发元数据同步更新；新增 `docs/PRODUCT_POSITIONING.md` 作为唯一口径，历史评审加废止说明。
+- 产品定位校正：废止“本地优先 / local-first”，统一为“浏览器原生、跨平台、开源可扩展的 AI 编程应用”；明确代码任务闭环是主身份，文档/会议只是企业控制面辅助能力。README、架构、包元数据、桌面标题、A2A Agent Card、文档站、分发元数据同步更新；`docs/PRODUCT_POSITIONING.md` 保持唯一口径。
 - 核心能力与外部生态盘点：新增 `docs/CORE_CAPABILITY_GAPS.md`（10 个核心模块、P0/P1/P2、差异化与验收标准）与 `docs/INTEGRATION_MAP.md`（可直接接的 10 个开源/MCP 资源、分层与落地顺序）。
 - 内置 MCP 精选从 3 个扩到 7 个：新增 Playwright、Chrome DevTools、Repomix（`--mcp --sandbox`）、MarkItDown；浏览器与文档转换默认不自动批准，写入类动作仍走审批。
 - `docs/FEATURES.md`、`docs/CONFIG.md` 同步知识库混合检索与 `embedding_enabled` 共用边界；`knowledge.py` 模块 docstring 与类注释统一为“BM25 + 可选向量，不建第二套库”。

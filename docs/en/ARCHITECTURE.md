@@ -6,8 +6,8 @@
 
 ## Overview
 
-Spark is a **browser-native, cross-platform, open-source AI coding and office
-workbench**: one Codex-style ReAct loop serves the browser, terminal, desktop,
+Spark is a **browser-native, cross-platform, open-source AI coding
+application**: one Codex-style ReAct loop serves the browser, terminal, desktop,
 IDE, mobile layout and API. Models, tools, Skills, MCP servers, themes and
 workflows are replaceable, while code and ledgers live in the workspace you
 choose. A four-level sandbox, human approval gates, checkpoint/rollback and

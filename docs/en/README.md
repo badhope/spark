@@ -1,6 +1,6 @@
 # Spark Documentation
 
-Browser-native, cross-platform, open-source AI coding and office workbench. Start with the [project README](https://github.com/badhope/spark/blob/main/README.md), then pick the reference you need.
+Browser-native, cross-platform, open-source AI coding application. Start with the [project README](https://github.com/badhope/spark/blob/main/README.md), then pick the reference you need.
 
 | Topic | English | 中文 |
 |---|---|---|
