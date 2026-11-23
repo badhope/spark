@@ -22,6 +22,7 @@ import re
 import threading
 import time
 from concurrent.futures import Future
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Literal
 from urllib.parse import quote_plus, unquote, urljoin, urlparse
@@ -217,6 +218,70 @@ class BrowserError(RuntimeError):
     pass
 
 
+BROWSER_ENGINES = ("chromium", "chrome", "msedge", "firefox", "webkit")
+_CHROMIUM_ENGINES = frozenset({"chromium", "chrome", "msedge"})
+_ENGINE_CHANNELS = {"chrome": "chrome", "msedge": "msedge"}
+_PROFILE_RE = re.compile(r"[A-Za-z0-9._-]{1,64}")
+_CHROME_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+
+
+@dataclass(frozen=True)
+class BrowserOptions:
+    """Per-workdir browser execution surface.
+
+    The options are part of the worker identity: changing one rebuilds the
+    worker on the next browser action instead of silently keeping the old
+    engine/profile.
+    """
+
+    engine: str = "chromium"
+    profile: str = ""
+    cdp_endpoint: str = ""
+    headless: bool = True
+
+
+def browser_options(cfg: Any | None) -> BrowserOptions:
+    agent = getattr(cfg, "agent", None) if cfg is not None else None
+    engine = str(getattr(agent, "browser_engine", "chromium") or "chromium")
+    profile = str(getattr(agent, "browser_profile", "") or "").strip()
+    endpoint = str(getattr(agent, "browser_cdp_endpoint", "") or "").strip()
+    headless = bool(getattr(agent, "browser_headless", True))
+    return BrowserOptions(
+        engine=engine, profile=profile, cdp_endpoint=endpoint, headless=headless
+    )
+
+
+def _engine_family(engine: str) -> Literal["chromium", "firefox", "webkit"]:
+    if engine in _CHROMIUM_ENGINES:
+        return "chromium"
+    if engine == "firefox":
+        return "firefox"
+    if engine == "webkit":
+        return "webkit"
+    raise BrowserError(
+        f"不支持的浏览器引擎: {engine!r}（可选 {'/'.join(BROWSER_ENGINES)}）"
+    )
+
+
+def _engine_channel(engine: str) -> str | None:
+    return _ENGINE_CHANNELS.get(engine)
+
+
+def _profile_dir(workdir: Path, profile: str) -> Path | None:
+    name = profile.strip()
+    if not name:
+        return None
+    if not _PROFILE_RE.fullmatch(name) or name in {".", ".."}:
+        raise BrowserError(
+            "browser_profile 只能包含字母、数字、点、下划线与短横线（1-64 字符）"
+        )
+    return workdir.resolve() / BROWSER_DIR / "profiles" / name
+
+
+
 def _is_local_file(url: str, workdir: Path) -> tuple[bool, str]:
     parsed = urlparse(url)
     if parsed.scheme != "file":
@@ -302,10 +367,13 @@ def _log_url(url: str) -> str:
 class _Worker:
     """A dedicated thread owning the Playwright sync API + browser."""
 
-    def __init__(self, workdir: Path) -> None:
+    def __init__(self, workdir: Path, options: BrowserOptions | None = None) -> None:
         self.workdir = workdir
+        self.options = options or BrowserOptions()
         self._startup_error: Exception | None = None
         self.allow_network = True
+        self._owns_browser = True
+        self._owns_context = True
         self._queue: queue.Queue[Callable[[], Any] | None] = queue.Queue()
         self._thread = threading.Thread(target=self._run, name="spark-browser", daemon=True)
         self._thread.start()
@@ -351,30 +419,127 @@ class _Worker:
         route.continue_()
 
     @staticmethod
-    def _launch(chromium: Any) -> Any:
+    def _chromium_candidates() -> list[Path]:
+        roots = [
+            os.environ.get("PLAYWRIGHT_BROWSERS_PATH", ""),
+            str(Path.home() / ".cache" / "ms-playwright"),
+        ]
+        candidates: list[Path] = []
+        for root in roots:
+            if not root:
+                continue
+            base = Path(root)
+            if not base.is_dir():
+                continue
+            for item in sorted(base.glob("chromium-*"), reverse=True):
+                exe = item / "chrome-linux" / "chrome"
+                if exe.is_file():
+                    candidates.append(exe)
+        return candidates
+
+    @classmethod
+    def _launch(
+        cls, launcher: Any, *, headless: bool = True, channel: str | None = None
+    ) -> Any:
+        kwargs: dict[str, Any] = {"headless": headless}
+        if channel:
+            kwargs["channel"] = channel
         try:
-            return chromium.launch(headless=True)
+            return launcher.launch(**kwargs)
         except Exception as first:
-            # Playwright's bundled browser revision may not match the one preinstalled
-            # in the container. Fall back to any Chromium binary we can find.
-            roots = [os.environ.get("PLAYWRIGHT_BROWSERS_PATH", ""), str(Path.home() / ".cache" / "ms-playwright")]
-            candidates: list[Path] = []
-            for root in roots:
-                if not root:
-                    continue
-                base = Path(root)
-                if not base.is_dir():
-                    continue
-                for item in sorted(base.glob("chromium-*"), reverse=True):
-                    exe = item / "chrome-linux" / "chrome"
-                    if exe.is_file():
-                        candidates.append(exe)
-            for exe in candidates:
+            # Chrome/Edge channels point at a system browser; a failure there
+            # must be reported as-is instead of silently falling back to a
+            # different engine. Only the bundled Chromium gets the fallback.
+            if channel:
+                raise first
+            # Playwright's bundled browser revision may not match the one
+            # preinstalled in the container. Fall back to any Chromium binary
+            # we can find.
+            for exe in cls._chromium_candidates():
                 try:
-                    return chromium.launch(headless=True, executable_path=str(exe))
+                    return launcher.launch(headless=headless, executable_path=str(exe))
                 except Exception:
                     continue
             raise first
+
+    def _context_kwargs(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "viewport": {"width": 1280, "height": 800},
+            "locale": "zh-CN",
+            "color_scheme": "light",
+            "timezone_id": "Asia/Shanghai",
+            "accept_downloads": True,
+        }
+        if _engine_family(self.options.engine) == "chromium":
+            # Firefox/WebKit reject a Chrome UA; let them report their real
+            # identity instead of breaking sites that sniff the browser.
+            kwargs["user_agent"] = _CHROME_UA
+        return kwargs
+
+    def _launch_persistent(
+        self, launcher: Any, profile_dir: Path, launch_kwargs: dict[str, Any]
+    ) -> Any:
+        try:
+            return launcher.launch_persistent_context(
+                str(profile_dir), **launch_kwargs, **self._context_kwargs()
+            )
+        except Exception as first:
+            if _engine_channel(self.options.engine):
+                raise first
+            for exe in self._chromium_candidates():
+                try:
+                    return launcher.launch_persistent_context(
+                        str(profile_dir),
+                        **launch_kwargs,
+                        executable_path=str(exe),
+                        **self._context_kwargs(),
+                    )
+                except Exception:
+                    continue
+            raise first
+
+    def _open_browser(self) -> None:
+        opts = self.options
+        family = _engine_family(opts.engine)
+        endpoint = opts.cdp_endpoint.strip()
+        if endpoint:
+            if family != "chromium":
+                raise BrowserError("远程 CDP 只能连接 Chromium / Chrome / Edge")
+            try:
+                self._browser = self._playwright.chromium.connect_over_cdp(endpoint)
+            except Exception as exc:  # noqa: BLE001 - report through call()
+                raise BrowserError(f"连接 CDP 失败: {endpoint}: {exc}") from exc
+            self._owns_browser = False
+            contexts = list(self._browser.contexts)
+            if contexts:
+                # Respect the user's already-open window and tabs; creating a
+                # new context would hide their logged-in session.
+                self._context = contexts[0]
+                self._owns_context = False
+            else:
+                self._context = self._browser.new_context(**self._context_kwargs())
+                self._owns_context = True
+            return
+
+        launcher = getattr(self._playwright, family)
+        launch_kwargs: dict[str, Any] = {"headless": bool(opts.headless)}
+        channel = _engine_channel(opts.engine)
+        if channel:
+            launch_kwargs["channel"] = channel
+
+        profile_dir = _profile_dir(self.workdir, opts.profile)
+        if profile_dir is not None:
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            self._context = self._launch_persistent(launcher, profile_dir, launch_kwargs)
+            self._browser = getattr(self._context, "browser", None)
+            self._owns_browser = True
+            self._owns_context = True
+            return
+
+        self._browser = self._launch(launcher, **launch_kwargs)
+        self._context = self._browser.new_context(**self._context_kwargs())
+        self._owns_browser = True
+        self._owns_context = True
 
     def _wire_page(self, page: Any) -> None:
         page.route("**/*", self._guard_request)
@@ -517,28 +682,30 @@ class _Worker:
             self._startup_error = exc
             return
         try:
-            self._browser = self._launch(self._playwright.chromium)
+            self._open_browser()
         except Exception as exc:  # noqa: BLE001 - report through call()
             self._startup_error = exc
             self._playwright.stop()
             return
         self._startup_error = None
-        self._context = self._browser.new_context(
-            viewport={"width": 1280, "height": 800},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-            ),
-            locale="zh-CN",
-            color_scheme="light",
-            timezone_id="Asia/Shanghai",
-            accept_downloads=True,
-        )
-        self._page = self._context.new_page()
-        self._wire_page(self._page)
-        self._pages = [self._page]
-        self._page_guids = {_page_guid(self._page)}
-        self._active_index = 0
+        try:
+            existing = list(self._context.pages)
+        except Exception:
+            existing = []
+        if existing:
+            # Persistent profiles and remote CDP sessions can come with tabs
+            # already open; reuse them instead of replacing the user's window.
+            for page in existing:
+                self._wire_page(page)
+                self._pages.append(page)
+                self._page_guids.add(_page_guid(page))
+            self._active_index = len(self._pages) - 1
+        else:
+            self._page = self._context.new_page()
+            self._wire_page(self._page)
+            self._pages = [self._page]
+            self._page_guids = {_page_guid(self._page)}
+            self._active_index = 0
         while True:
             item = self._queue.get()
             if item is None:
@@ -550,7 +717,16 @@ class _Worker:
                 # the worker only needs to stay alive.
                 pass
         try:
-            self._browser.close()
+            if self._owns_context and self._context is not None:
+                try:
+                    self._context.close()
+                except Exception:
+                    pass
+            if self._owns_browser and self._browser is not None:
+                try:
+                    self._browser.close()
+                except Exception:
+                    pass
         finally:
             self._playwright.stop()
 
@@ -619,7 +795,7 @@ def has_worker(workdir: Path) -> bool:
         return key in _workers
 
 
-def live_state(workdir: Path) -> dict[str, Any]:
+def live_state(workdir: Path, cfg: Any | None = None) -> dict[str, Any]:
     """Read the shared Playwright page for the sidebar live view.
 
     Never starts a browser just because the panel asked for state: an idle
@@ -630,11 +806,16 @@ def live_state(workdir: Path) -> dict[str, Any]:
     with _lock:
         worker = _workers.get(key)
         revision = _revision
+    configured = browser_options(cfg)
     base = {
         "home": DEFAULT_BROWSER_HOME,
         "search_engine": "bing",
         "search_url": DEFAULT_BROWSER_SEARCH,
         "revision": revision,
+        "configured_engine": configured.engine,
+        "configured_profile": configured.profile,
+        "configured_remote": bool(configured.cdp_endpoint),
+        "headless": configured.headless,
     }
     if worker is None:
         return {"active": False, **base}
@@ -643,6 +824,10 @@ def live_state(workdir: Path) -> dict[str, Any]:
             "active": True,
             "error": f"浏览器启动失败: {worker._startup_error}",
             **base,
+            "engine": worker.options.engine,
+            "profile": worker.options.profile,
+            "remote": bool(worker.options.cdp_endpoint),
+            "restart_required": worker.options != configured,
         }
     try:
         info = worker.call(
@@ -654,8 +839,24 @@ def live_state(workdir: Path) -> dict[str, Any]:
             }
         )
     except Exception as exc:  # noqa: BLE001 - surface through the panel
-        return {"active": True, "error": f"读取浏览器状态失败: {exc}", **base}
-    return {"active": True, **info, **base}
+        return {
+            "active": True,
+            "error": f"读取浏览器状态失败: {exc}",
+            **base,
+            "engine": worker.options.engine,
+            "profile": worker.options.profile,
+            "remote": bool(worker.options.cdp_endpoint),
+            "restart_required": worker.options != configured,
+        }
+    return {
+        "active": True,
+        **info,
+        **base,
+        "engine": worker.options.engine,
+        "profile": worker.options.profile,
+        "remote": bool(worker.options.cdp_endpoint),
+        "restart_required": worker.options != configured,
+    }
 
 
 def live_screenshot(workdir: Path) -> bytes | None:
@@ -683,7 +884,7 @@ def live_action(
     key: str = "",
 ) -> dict[str, Any]:
     """Actions initiated from the sidebar viewport (not the model tool path)."""
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
     worker.allow_network = bool(getattr(ctx.config.agent, "network_access", True))
 
     def run(page: Any) -> dict[str, Any]:
@@ -714,12 +915,19 @@ def live_action(
     return {"ok": True, **result}
 
 
-def _get_worker(workdir: Path) -> _Worker:
+def _get_worker(workdir: Path, cfg: Any | None = None) -> _Worker:
     key = str(workdir.resolve())
+    options = browser_options(cfg)
     with _lock:
         worker = _workers.get(key)
+        if worker is not None and worker.options != options:
+            # Config changed (engine/profile/CDP). Retire the old worker so the
+            # next action cannot silently keep the previous browser surface.
+            worker.close()
+            worker = None
+            _workers.pop(key, None)
         if worker is None:
-            worker = _Worker(workdir)
+            worker = _Worker(workdir, options)
             _workers[key] = worker
         return worker
 
@@ -1009,7 +1217,7 @@ def browser_open(ctx: Any, args: BrowserArgs) -> ToolResult:
         validate_browser_url(target, ctx.sandbox.root)
     except BrowserError as exc:
         return ToolResult(ok=False, payload={"error": str(exc)})
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
     worker.allow_network = _network_allowed(ctx)
 
     def action(page: Any) -> dict[str, Any]:
@@ -1039,7 +1247,7 @@ def browser_search(ctx: Any, args: BrowserSearchArgs) -> ToolResult:
         validate_browser_url(target, ctx.sandbox.root)
     except BrowserError as exc:
         return ToolResult(ok=False, payload={"error": str(exc)})
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
     worker.allow_network = _network_allowed(ctx)
     max_results = max(1, min(args.max_results, 10))
     script = """
@@ -1085,7 +1293,7 @@ def browser_search(ctx: Any, args: BrowserSearchArgs) -> ToolResult:
 
 
 def browser_snapshot(ctx: Any, args: BrowserSnapshotArgs) -> ToolResult:
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
     try:
         result = worker.call(
             lambda page: _snapshot(
@@ -1101,7 +1309,7 @@ def browser_snapshot(ctx: Any, args: BrowserSnapshotArgs) -> ToolResult:
 
 
 def browser_click(ctx: Any, args: BrowserClickArgs) -> ToolResult:
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
 
     def action(page: Any) -> dict[str, Any]:
         target = _frame(page, args.frame_index)
@@ -1131,7 +1339,7 @@ def browser_click(ctx: Any, args: BrowserClickArgs) -> ToolResult:
 
 
 def browser_type(ctx: Any, args: BrowserTypeArgs) -> ToolResult:
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
 
     def action(page: Any) -> dict[str, Any]:
         target = _frame(page, args.frame_index)
@@ -1171,7 +1379,7 @@ def browser_type(ctx: Any, args: BrowserTypeArgs) -> ToolResult:
 def browser_press(ctx: Any, args: BrowserPressArgs) -> ToolResult:
     if not args.key.strip():
         return ToolResult(ok=False, payload={"error": "key 不能为空"})
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
 
     def action(page: Any) -> dict[str, Any]:
         frame = _frame(page, args.frame_index)
@@ -1195,7 +1403,7 @@ def browser_press(ctx: Any, args: BrowserPressArgs) -> ToolResult:
 
 
 def browser_hover(ctx: Any, args: BrowserHoverArgs) -> ToolResult:
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
 
     def action(page: Any) -> dict[str, Any]:
         frame = _frame(page, args.frame_index)
@@ -1215,7 +1423,7 @@ def browser_hover(ctx: Any, args: BrowserHoverArgs) -> ToolResult:
 def browser_select(ctx: Any, args: BrowserSelectArgs) -> ToolResult:
     if not (args.value or args.label or args.index >= 0):
         return ToolResult(ok=False, payload={"error": "需要 value、label 或 index"})
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
 
     def action(page: Any) -> dict[str, Any]:
         frame = _frame(page, args.frame_index)
@@ -1240,7 +1448,7 @@ def browser_select(ctx: Any, args: BrowserSelectArgs) -> ToolResult:
 
 
 def browser_scroll(ctx: Any, args: BrowserScrollArgs) -> ToolResult:
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
 
     def action(page: Any) -> dict[str, Any]:
         frame = _frame(page, args.frame_index)
@@ -1268,7 +1476,7 @@ def browser_scroll(ctx: Any, args: BrowserScrollArgs) -> ToolResult:
 
 
 def browser_history(ctx: Any, args: BrowserHistoryArgs) -> ToolResult:
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
 
     def action(page: Any) -> dict[str, Any]:
         timeout = max(1000, min(args.timeout_ms, 30_000))
@@ -1309,7 +1517,7 @@ def _tabs(worker: _Worker) -> list[dict[str, Any]]:
 
 
 def browser_tabs(ctx: Any, args: BrowserTabsArgs) -> ToolResult:
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
     action = args.action
     index = args.index
 
@@ -1357,7 +1565,7 @@ def browser_tabs(ctx: Any, args: BrowserTabsArgs) -> ToolResult:
 
 
 def browser_wait(ctx: Any, args: BrowserWaitArgs) -> ToolResult:
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
 
     def action(page: Any) -> dict[str, Any]:
         timeout = max(1000, min(args.timeout_ms, 30_000))
@@ -1383,7 +1591,7 @@ def browser_wait(ctx: Any, args: BrowserWaitArgs) -> ToolResult:
 
 
 def browser_screenshot(ctx: Any, args: BrowserScreenshotArgs) -> ToolResult:
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
     out_dir = ctx.sandbox.root / BROWSER_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -1421,7 +1629,7 @@ def browser_screenshot(ctx: Any, args: BrowserScreenshotArgs) -> ToolResult:
 
 
 def browser_viewport(ctx: Any, args: BrowserViewportArgs) -> ToolResult:
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
     width = max(320, min(args.width, 3840))
     height = max(240, min(args.height, 2160))
 
@@ -1441,7 +1649,7 @@ def browser_eval(ctx: Any, args: BrowserEvalArgs) -> ToolResult:
     expression = args.expression.strip()
     if not expression:
         return ToolResult(ok=False, payload={"error": "expression 不能为空"})
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
     max_chars = max(500, min(args.max_chars, 50_000))
 
     def action(page: Any) -> dict[str, Any]:
@@ -1473,7 +1681,7 @@ def browser_file_upload(ctx: Any, args: BrowserFileUploadArgs) -> ToolResult:
         return ToolResult(ok=False, payload={"error": f"文件路径不可用: {exc}"})
     if not path.is_file():
         return ToolResult(ok=False, payload={"error": f"文件不存在: {path}"})
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
 
     def action(page: Any) -> dict[str, Any]:
         frame = _frame(page, args.frame_index)
@@ -1498,7 +1706,7 @@ def _safe_filename(name: str, fallback: str = "download") -> str:
 
 def browser_download(ctx: Any, args: BrowserDownloadArgs) -> ToolResult:
     """Save a browser download or a cookie-authenticated direct response."""
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
     out_dir = ctx.sandbox.root / BROWSER_DIR / "downloads"
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -1572,7 +1780,7 @@ def browser_download(ctx: Any, args: BrowserDownloadArgs) -> ToolResult:
 
 
 def browser_pdf(ctx: Any, args: BrowserPDFArgs) -> ToolResult:
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
     out_dir = ctx.sandbox.root / BROWSER_DIR / "pdf"
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -1606,7 +1814,7 @@ def browser_pdf(ctx: Any, args: BrowserPDFArgs) -> ToolResult:
 
 
 def browser_console(ctx: Any, args: BrowserConsoleArgs) -> ToolResult:
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
     limit = max(1, min(args.max_items, 200))
     level = args.level.strip().lower()
     contains = args.contains.strip().lower()
@@ -1640,7 +1848,7 @@ def browser_console(ctx: Any, args: BrowserConsoleArgs) -> ToolResult:
 
 
 def browser_network(ctx: Any, args: BrowserNetworkArgs) -> ToolResult:
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
     limit = max(1, min(args.max_items, 200))
     contains = args.contains.strip().lower()
 
@@ -1673,7 +1881,7 @@ def browser_network(ctx: Any, args: BrowserNetworkArgs) -> ToolResult:
 
 def browser_dialog(ctx: Any, args: BrowserDialogArgs) -> ToolResult:
     """Inspect recent dialogs, or arm accept/dismiss for the next dialog."""
-    worker = _get_worker(ctx.sandbox.root)
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
 
     def action(_page: Any) -> dict[str, Any]:
         if args.action == "status":

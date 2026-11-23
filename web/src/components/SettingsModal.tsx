@@ -722,6 +722,10 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
           ...(cfg.agent.auto_review !== undefined ? { auto_review: cfg.agent.auto_review } : {}),
           ...(cfg.agent.network_access !== undefined ? { network_access: cfg.agent.network_access } : {}),
           ...(cfg.agent.format_on_write !== undefined ? { format_on_write: cfg.agent.format_on_write } : {}),
+          ...(cfg.agent.browser_engine !== undefined ? { browser_engine: cfg.agent.browser_engine } : {}),
+          ...(cfg.agent.browser_profile !== undefined ? { browser_profile: cfg.agent.browser_profile } : {}),
+          ...(cfg.agent.browser_cdp_endpoint !== undefined ? { browser_cdp_endpoint: cfg.agent.browser_cdp_endpoint } : {}),
+          ...(cfg.agent.browser_headless !== undefined ? { browser_headless: cfg.agent.browser_headless } : {}),
         },
         // Project tab edits land here; without this field every context change
         // was silently discarded on save. Optional keys are omitted when the
@@ -1568,6 +1572,53 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                 <Field label={t("agent.maxOutput", lang)}>
                   <TextInput type="number" value={cfg.agent.max_output_chars} onChange={(e) => patchAgent({ max_output_chars: Number(e.target.value) || 0 })} />
                 </Field>
+              </section>
+
+              <section className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-ink">{t("agent.browserSurface", lang)}</h3>
+                  <p className="mt-1 text-[11.5px] leading-relaxed text-ink3">{t("agent.browserSurfaceHint", lang)}</p>
+                </div>
+                <Field label={t("agent.browserEngine", lang)} hint={t("agent.browserEngineHint", lang)}>
+                  <Select
+                    value={cfg.agent.browser_engine ?? "chromium"}
+                    onChange={(e) =>
+                      patchAgent({
+                        browser_engine: e.target.value as SettingsPayload["agent"]["browser_engine"],
+                      })
+                    }
+                  >
+                    <option value="chromium">Chromium</option>
+                    <option value="chrome">Chrome</option>
+                    <option value="msedge">Edge</option>
+                    <option value="firefox">Firefox</option>
+                    <option value="webkit">WebKit</option>
+                  </Select>
+                </Field>
+                <Field label={t("agent.browserProfile", lang)} hint={t("agent.browserProfileHint", lang)}>
+                  <TextInput
+                    value={cfg.agent.browser_profile ?? ""}
+                    placeholder="personal"
+                    onChange={(e) => patchAgent({ browser_profile: e.target.value })}
+                  />
+                </Field>
+                <Field label={t("agent.browserCdp", lang)} hint={t("agent.browserCdpHint", lang)}>
+                  <TextInput
+                    value={cfg.agent.browser_cdp_endpoint ?? ""}
+                    placeholder="http://127.0.0.1:9222"
+                    onChange={(e) => patchAgent({ browser_cdp_endpoint: e.target.value })}
+                  />
+                </Field>
+                <label className="flex items-start justify-between gap-3">
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-[12.5px] text-ink">{t("agent.browserHeadless", lang)}</span>
+                    <span className="text-[10.5px] leading-snug text-ink3">{t("agent.browserHeadlessHint", lang)}</span>
+                  </span>
+                  <Toggle
+                    checked={cfg.agent.browser_headless ?? true}
+                    onChange={(v) => patchAgent({ browser_headless: v })}
+                  />
+                </label>
               </section>
 
               <section className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-4">

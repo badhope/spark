@@ -20,7 +20,7 @@
 | 让模型操作 Git | `tools/gitops.py` | status/diff/log/branch/add/commit；push/pull 明确不提供 |
 | 任务即分支（自动提交） | `git_memory.py` | `task_begin` → 绿测后 `task_step_commit` → `task_finish` |
 | 联网查资料 | `tools/web.py` | `web_search` / `web_fetch`，含 SSRF 防护 |
-| 浏览器操作 | `tools/browser.py` | 21 个 `browser_*`：Bing 默认首页/搜索引擎；ref 快照、点击/输入/按键/悬停/下拉/滚动/历史/标签页/等待/截图/PDF/下载/视口/JS/文件上传/控制台/网络/对话框；支持 iframe frame_index；Playwright 后台线程持有页面；只允许公网 http(s) 或工作目录内 `file://`；页面文本进 untrusted 围栏；截图落 `.spark/browser/`。**当前只跑 Playwright Chromium**；多引擎、已登录会话扩展桥与远程浏览器见 `docs/CORE_CAPABILITY_GAPS.md` 的 P0 项，尚未完成 |
+| 浏览器操作 | `tools/browser.py` | 21 个 `browser_*`：Bing 默认首页/搜索引擎；ref 快照、点击/输入/按键/悬停/下拉/滚动/历史/标签页/等待/截图/PDF/下载/视口/JS/文件上传/控制台/网络/对话框；支持 iframe frame_index；Playwright 后台线程持有页面；只允许公网 http(s) 或工作目录内 `file://`；页面文本进 untrusted 围栏；截图落 `.spark/browser/`。**执行面已支持 Chromium / Chrome / Edge / Firefox / WebKit 五引擎**，可持久化 Profile 复用登录态，也可通过 CDP 接管已运行的 Chromium/Chrome/Edge；扩展桥、按域名授权与性能 trace 仍在后续清单 |
 | PR 审查上下文 | `pr.py` + `tools/pr_tools.py` | `pr_context` / `pr_view` / `pr_diff` / `pr_checks` / `pr_review`；GitHub / GitCode / Gitee REST，origin 自动解析，平台 token 可选；CLI `spark pr view/diff/checks/review`，`spark pr publish --confirm` 才写评论；review brief 给风险、测试缺口与 CI 清单；PR 文本进 untrusted 围栏 |
 | 接第三方能力 | `tools/mcp_bridge.py` | stdio / sse / streamable_http 三种传输；也可从内置 registry 一键添加，工具以 `mcp__<server>__<tool>` 出现 |
 | 多 Agent 工作流 | `workflow.py` + `spark workflow` | YAML roles/steps/DAG 校验、拓扑顺序、`workflow graph`；`WorkspaceLocks` 跨进程路径锁；`run_workflow` 有界并发、重试、失败阻断与取消；`AgentWorkflowRunner` + `spark workflow run` 已接 AgentLoop 子代理；状态 JSON、暂停续跑、单节点重跑、Web 执行图读取最近运行；子代理 usage/cost 回传、`--max-cost-usd` 成本上限；`--isolate-worktree` 整次运行隔离到任务分支 |
@@ -89,7 +89,7 @@ spark --version           # 版本号（与 pyproject / PyPI 同源）
 | 形态 | 实测方式 | 结果 |
 | --- | --- | --- |
 | TUI | PTY 内启动、键入任务、回车提交、读屏 | 输入 → 工具调用 → 结果渲染 → 回复，全链路可用 |
-| Web | Playwright + Chromium | 设置 5 页（模型/外观/工作区/扩展/系统，页内 16 个细分页签）、30+ 控件、Workbench 5 tab、会话/工具/文件树/终端/命令面板 |
+| Web | Playwright（Chromium/Chrome/Edge/Firefox/WebKit，支持 Profile 与 CDP） | 设置 5 页（模型/外观/工作区/扩展/系统，页内 16 个细分页签）、30+ 控件、Workbench 5 tab、会话/工具/文件树/终端/命令面板 |
 | 桌面 | pywebview + WebView2 | 起服务、加载完整前端、窗口创建 |
 | CLI | `spark exec --json` | NDJSON 事件流，`final` 收尾 |
 | 企业控制面 | 真实 PostgreSQL + Keycloak | OIDC 鉴权、Casbin 授权、会议/报告/审计、全格式导出 |

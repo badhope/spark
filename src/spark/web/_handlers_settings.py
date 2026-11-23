@@ -124,6 +124,27 @@ def _agent_validation_error(approval: str, sandbox_mode: str, effort: str) -> st
     return None
 
 
+def _browser_validation_error(
+    engine: str, profile: str, cdp_endpoint: str
+) -> str | None:
+    if engine not in {"chromium", "chrome", "msedge", "firefox", "webkit"}:
+        return "browser_engine must be chromium, chrome, msedge, firefox or webkit"
+    if profile and (
+        len(profile) > 64
+        or profile in {".", ".."}
+        or "/" in profile
+        or "\\" in profile
+    ):
+        return "browser_profile may only contain letters, digits, dot, underscore or hyphen"
+    if cdp_endpoint and engine not in {"chromium", "chrome", "msedge"}:
+        return "browser_cdp_endpoint requires a Chromium / Chrome / Edge engine"
+    if cdp_endpoint and not cdp_endpoint.startswith(
+        ("http://", "https://", "ws://", "wss://")
+    ):
+        return "browser_cdp_endpoint must start with http://, https://, ws:// or wss://"
+    return None
+
+
 def _parse_agent_numbers(agent_in: dict, state) -> dict[str, Any] | str:
     """解析 agent 数值字段；失败返回错误字符串。
 
@@ -448,6 +469,19 @@ def _extract_request_fields(state, body: dict) -> dict[str, Any]:
         "tool_preset": str(
             agent_in.get("tool_preset") or state.cfg.agent.tool_preset
         ).strip(),
+        "browser_engine": str(
+            agent_in.get("browser_engine") or state.cfg.agent.browser_engine
+        ).strip(),
+        "browser_profile": str(
+            agent_in.get("browser_profile", state.cfg.agent.browser_profile) or ""
+        ).strip(),
+        "browser_cdp_endpoint": str(
+            agent_in.get("browser_cdp_endpoint", state.cfg.agent.browser_cdp_endpoint)
+            or ""
+        ).strip(),
+        "browser_headless": bool(
+            agent_in.get("browser_headless", state.cfg.agent.browser_headless)
+        ),
         "provider_resilience": (
             {
                 "api_keys": provider_in.get("api_keys"),
@@ -532,6 +566,13 @@ def _apply_validated_settings(
     cfg.agent.sandbox_mode = cast(SandboxMode, fields["sandbox_mode"])
     cfg.agent.effort = cast(Literal["low", "medium", "high"], fields["effort"])
     cfg.agent.tool_preset = cast(Literal["full", "coding"], fields["tool_preset"])
+    cfg.agent.browser_engine = cast(
+        Literal["chromium", "chrome", "msedge", "firefox", "webkit"],
+        fields["browser_engine"],
+    )
+    cfg.agent.browser_profile = fields["browser_profile"]
+    cfg.agent.browser_cdp_endpoint = fields["browser_cdp_endpoint"]
+    cfg.agent.browser_headless = fields["browser_headless"]
     cfg.agent.workdir_only = numbers["workdir_only"]
     cfg.agent.shell_timeout_sec = numbers["shell_timeout_sec"]
     cfg.agent.max_tool_rounds = numbers["max_tool_rounds"]
@@ -627,6 +668,15 @@ def _handle_settings_locked(handler: HandlerBase, body: dict) -> None:
         return
     if fields["tool_preset"] not in {"full", "coding"}:
         handler._json(400, {"error": "tool_preset must be full or coding"})
+        return
+
+    browser_error = _browser_validation_error(
+        fields["browser_engine"],
+        fields["browser_profile"],
+        fields["browser_cdp_endpoint"],
+    )
+    if browser_error:
+        handler._json(400, {"error": browser_error})
         return
 
     display_flags = {

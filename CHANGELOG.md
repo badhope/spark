@@ -6,6 +6,7 @@
 
 ### Added
 
+- 浏览器能力层 v1（CP-01）：`agent.browser_engine` 支持 Chromium / Chrome / Edge / Firefox / WebKit；`agent.browser_profile` 把登录态持久化到 `.spark/browser/profiles/<name>`；`agent.browser_cdp_endpoint` 通过 CDP 接管已运行的 Chromium/Chrome/Edge；`agent.browser_headless` 控制本地窗口。配置变更在下一个浏览器动作时自动重建 worker，侧栏状态回显实际引擎、Profile、是否远程与待重启标记；设置页新增“浏览器执行面”区块，并校验引擎、Profile 名与 CDP 协议/引擎组合。
 - 会话归档/恢复：`sessions.archived_at`（v6）+ `SessionStore.archive_session()`；`POST /api/sessions/archive` 仅本机或设备写权限；归档保留消息与检查点、默认列表隐藏；归档当前会话自动切到下一个活跃会话，切到归档会话隐式恢复；Web 侧栏“已归档”分组与恢复按钮。
 - 插件代码包签名：`package_digest(root)` 对 manifest 外每个文件按“相对路径 + SHA-256”计算总摘要；`PluginManifest.artifact_sha256`；`verify_manifest(root=...)` 必须同时校验签名与包摘要，缺摘要或包变更均 invalid；`spark plugins sign` 先算摘要再签，`install_local()` 在 staging 校验并拒绝篡改/撤销包。
 - Claude Code 兼容层扩展：只读扫描 `.claude/skills`、`~/.claude/skills`、`.claude/commands`、`~/.claude/commands`；同名 `.spark` 原生优先，避免兼容层反向覆盖。

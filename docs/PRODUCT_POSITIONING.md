@@ -14,7 +14,7 @@
 
 - Web 界面是主入口，面向 Chrome / Edge / Firefox / Safari 等现代浏览器设计；当前 UI 回归以 Chromium/Edge 为主，Firefox/Safari 仍需补跨浏览器门禁。桌面壳、CLI/TUI、VS Code、JetBrains、Neovim、移动端布局与 A2A API 共用同一套后端能力。
 - 不是“某个编辑器里的插件”，也不是“只能装在 Windows 的桌面软件”。入口在浏览器里，能力在服务端，前端只是壳。
-- 当前真实边界：Web UI 已经浏览器原生化；Agent 的浏览器操作目前由 Playwright Chromium 承担，尚未做到“所有浏览器引擎 + 所有已登录会话”的统一接入。下一阶段补浏览器能力抽象层，不把目标写成既成事实。
+- 当前真实边界：Web UI 已经浏览器原生化；Agent 浏览器执行面已支持 Chromium / Chrome / Edge / Firefox / WebKit、持久化 Profile 与 CDP 接管已运行浏览器，但浏览器扩展桥、按域名授权与性能 trace 仍在后续清单，不把目标写成既成事实。
 
 ### 2. 全浏览器能力接入层，而不是只有一个 `browser_*` 工具
 
@@ -25,7 +25,7 @@
 - 能力：标签页与窗口管理、已登录会话复用、Cookie/Storage、下载/上传、截图/PDF、控制台/网络、性能 trace、权限与对话框、文件选择、跨域 iframe。
 - 安全：按域名/动作分级授权，敏感站点与凭据页面默认阻断，页面文本一律按不可信内容处理。
 
-当前已落地的是 Playwright Chromium 的 21 个 `browser_*` 工具，以及 Web 工作台里的网页/阅读模式入口；这是“能操作浏览器”，还不是“浏览器能力层”。两者要分开说。
+当前已落地的是 Playwright 五引擎（Chromium / Chrome / Edge / Firefox / WebKit）的 21 个 `browser_*` 工具、持久化 Profile 与 CDP 接管，以及 Web 工作台里的网页/阅读模式入口；这是“浏览器执行面 v1”，还不是完整的“浏览器能力层”。扩展桥、按域名/动作分级授权、性能 trace 与更深的多会话管理仍待补齐。
 
 ### 3. 高度开源、自定义属性强
 

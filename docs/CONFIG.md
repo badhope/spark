@@ -38,6 +38,10 @@
 | `max_repeat_calls` | `4` | 同一 (工具， 参数) 签名的熔断阈值（0 = 关闭） |
 | `max_turn_tokens` | `0` | 单回合 token 预算（0 = 关闭） |
 | `max_output_chars` | `8000` | 工具输出截断长度（200–1,000,000） |
+| `browser_engine` | `chromium` | 浏览器引擎：`chromium`（Playwright 自带）/ `chrome` / `msedge`（系统浏览器）/ `firefox` / `webkit` |
+| `browser_profile` | `""` | 持久化 Profile 名；空 = 一次性上下文，填写后登录态保存到 `.spark/browser/profiles/<name>`。Profile 内含 Cookie/登录态，请按凭据保护 |
+| `browser_cdp_endpoint` | `""` | 接管已运行的 Chromium/Chrome/Edge：`http://host:9222` 或 `ws://...`；仅 Chromium 系引擎可用 |
+| `browser_headless` | `true` | 本地启动是否无头；远程 CDP 与已登录窗口不受影响 |
 | `show_thinking` / `show_tools` / `show_plan` / `show_context` / `show_keywords` / `show_notices` | `true` | 前端显示开关 |
 | `status_items` | `[]` | TUI 状态栏有序项；空 = 默认（模型/接口/密钥/审批/访问/目录/会话）。合法项：`model` `base_url` `key` `approval` `sandbox` `workdir` `session`；未知项静默跳过 |
 

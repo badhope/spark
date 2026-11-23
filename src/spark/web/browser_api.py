@@ -22,7 +22,7 @@ def _ctx(state: Any) -> ToolContext:
 
 def handle_browser_state(handler: Any, body: dict | None = None) -> None:
     state = _route_state(handler)
-    handler._json(200, browser.live_state(state.sandbox.root))
+    handler._json(200, browser.live_state(state.sandbox.root, state.cfg))
 
 
 def handle_browser_shot(handler: Any, body: dict | None = None) -> None:
@@ -63,7 +63,7 @@ def handle_browser_navigate(handler: Any, body: dict) -> None:
     if not result.ok:
         handler._json(200, {"ok": False, **result.payload})
         return
-    live = browser.live_state(state.sandbox.root)
+    live = browser.live_state(state.sandbox.root, state.cfg)
     handler._json(200, {"ok": True, **result.payload, "revision": live.get("revision", 0)})
 
 
@@ -83,5 +83,5 @@ def handle_browser_action(handler: Any, body: dict) -> None:
         text=str(body.get("text") or ""),
         key=str(body.get("key") or ""),
     )
-    live = browser.live_state(state.sandbox.root)
+    live = browser.live_state(state.sandbox.root, state.cfg)
     handler._json(200, {**result, "revision": live.get("revision", 0)})

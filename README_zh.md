@@ -23,7 +23,7 @@ spark web     # 打开浏览器界面
 
 ## 核心能力
 
-- **浏览器是执行面。** Web、桌面、CLI/TUI、IDE、移动端与 API 共用同一条 Agent 循环；浏览器操作、审批、回滚和账本不分裂成多套。当前浏览器自动化基于 Playwright Chromium，多引擎、已登录会话扩展桥与远程浏览器是下一阶段核心项。
+- **浏览器是执行面。** Web、桌面、CLI/TUI、IDE、移动端与 API 共用同一条 Agent 循环；浏览器操作、审批、回滚和账本不分裂成多套。浏览器自动化基于 Playwright，可切 Chromium / Chrome / Edge / Firefox / WebKit，可用持久化 Profile 复用登录态，也可通过 CDP 接管已运行的浏览器。
 - **每一层都可替换。** MIT 开源；Provider、工具、MCP、Skills、命令、插件、主题与工作流都可换，也可自托管。
 - **执行可审计。** 写入和命令执行前先过审批与沙箱；通配规则覆盖 user / project / local 三个作用域，`deny` 始终优先。凭据路径保护与 shell token 检查保持开启。
 - **失败可回滚。** 每个回合快照工作区，文件与对话可一起恢复，非 git 目录同样有效。

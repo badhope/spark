@@ -303,3 +303,95 @@ def test_browser_click_download(tmp_path: Path) -> None:
     assert result.ok, result.payload
     saved = tmp_path / result.payload["path"]
     assert saved.read_bytes() == b"hello"
+
+
+def test_browser_engine_options_and_profile_path_validation(tmp_path: Path) -> None:
+    cfg = SparkConfig()
+    assert browser.browser_options(cfg) == browser.BrowserOptions()
+    cfg.agent.browser_engine = "firefox"
+    cfg.agent.browser_profile = "work"
+    cfg.agent.browser_cdp_endpoint = ""
+    cfg.agent.browser_headless = False
+    options = browser.browser_options(cfg)
+    assert options.engine == "firefox"
+    assert options.profile == "work"
+    assert options.headless is False
+    assert browser._engine_family("chrome") == "chromium"
+    assert browser._engine_family("msedge") == "chromium"
+    assert browser._engine_family("firefox") == "firefox"
+    assert browser._engine_family("webkit") == "webkit"
+    with pytest.raises(browser.BrowserError):
+        browser._engine_family("netscape")
+    with pytest.raises(browser.BrowserError):
+        browser._profile_dir(tmp_path, "../escape")
+    assert browser._profile_dir(tmp_path, "") is None
+
+
+def test_browser_profile_config_roundtrip(tmp_path: Path) -> None:
+    from spark.config import load_config, save_config
+
+    cfg = SparkConfig()
+    cfg.agent.browser_engine = "msedge"
+    cfg.agent.browser_profile = "work"
+    cfg.agent.browser_cdp_endpoint = "http://127.0.0.1:9222"
+    cfg.agent.browser_headless = False
+    target = tmp_path / "config.toml"
+    save_config(cfg, target)
+    loaded = load_config(config_path=target, workdir=tmp_path)
+    assert loaded.agent.browser_engine == "msedge"
+    assert loaded.agent.browser_profile == "work"
+    assert loaded.agent.browser_cdp_endpoint == "http://127.0.0.1:9222"
+    assert loaded.agent.browser_headless is False
+
+
+def test_project_config_cannot_redirect_browser() -> None:
+    from spark.config import _sanitize_project_config
+
+    clean = _sanitize_project_config(
+        {
+            "agent": {
+                "browser_engine": "webkit",
+                "browser_profile": "saved-login",
+                "browser_cdp_endpoint": "http://evil.example:9222",
+            }
+        }
+    )
+    agent = clean["agent"]
+    assert agent["browser_engine"] == "webkit"
+    assert "browser_profile" not in agent
+    assert "browser_cdp_endpoint" not in agent
+
+
+def test_browser_persistent_profile_keeps_login_state(tmp_path: Path) -> None:
+    page = tmp_path / "profile.html"
+    page.write_text("<html><body>profile</body></html>")
+    cfg = SparkConfig()
+    cfg.agent.browser_profile = "persistent"
+    ctx = ToolContext(sandbox=WorkdirSandbox(tmp_path), config=cfg)
+
+    opened = browser.browser_open(ctx, browser.BrowserArgs(url=page.as_uri()))
+    assert opened.ok, opened.payload
+    assert (tmp_path / ".spark" / "browser" / "profiles" / "persistent").is_dir()
+    saved = browser.browser_eval(
+        ctx,
+        browser.BrowserEvalArgs(
+            expression="localStorage.setItem('spark-profile', 'kept')"
+        ),
+    )
+    assert saved.ok, saved.payload
+    worker = browser._get_worker(tmp_path, cfg)
+    browser._close_all()
+    worker._thread.join(timeout=10)
+
+    reopened = browser.browser_open(ctx, browser.BrowserArgs(url=page.as_uri()))
+    assert reopened.ok, reopened.payload
+    restored = browser.browser_eval(
+        ctx,
+        browser.BrowserEvalArgs(expression="localStorage.getItem('spark-profile')"),
+    )
+    assert restored.ok, restored.payload
+    assert "kept" in str(restored.payload["result"])
+    state = browser.live_state(tmp_path, cfg)
+    assert state["engine"] == "chromium"
+    assert state["profile"] == "persistent"
+    browser._close_all()

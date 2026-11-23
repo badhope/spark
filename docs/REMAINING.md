@@ -56,7 +56,7 @@
 | 会话租约与接管（RC-04） | ✅ | `web/state.py` 的 `SessionRuntime` 租约 + `web/lease.py` 写入门 + `/api/session/lease`；设备 chat/stream/browser 自动认领，审批/问答/取消只认持有设备或本机；心跳续租、120 秒释放；`tests/test_session_lease.py` 3 项、远程/路由定向回归 134 项通过 |
 | 远程控制 2.0（扫码/在线/审计/推送） | ✅ | `web/remote_access.py` + `web/remote.py` + `web/web_push.py`：二维码一次性链接、7 天设备令牌、LAN/公网入口、60 秒在线心跳、`remote-audit.jsonl`、审批 Web Push；详见 `docs/REMOTE.md`，测试 `tests/test_remote_access.py` / `test_remote_presence.py` / `test_web_push.py` |
 | 项目知识库混合检索 | ✅ | `knowledge.py`：BM25 始终兜底，开启 `memory.embedding_enabled` 后叠加向量召回；`vectors.json` sidecar、旧索引首次检索回填、embedding 失败/维度不一致降级；`tests/test_knowledge.py` 36 项通过 |
-| 内置可驱动浏览器 | ✅ | `tools/browser.py` 21 个 `browser_*` 工具，Playwright 后台线程、ref 快照、点击/输入/上传/截图/PDF/控制台/网络；右侧“网页”工作台复用同一浏览器 |
+| 内置可驱动浏览器 | ✅ | `tools/browser.py` 21 个 `browser_*` 工具，Playwright 后台线程、ref 快照、点击/输入/上传/截图/PDF/控制台/网络；Chromium/Chrome/Edge/Firefox/WebKit 五引擎、持久化 Profile、CDP 接管已运行浏览器；右侧“网页”工作台复用同一浏览器 |
 | Git PR 工作流 | ✅ | `pr.py` + `tools/pr_tools.py`：`pr_context` / `pr_view` / `pr_diff` / `pr_checks` / `pr_review`，`spark pr publish --confirm` 才写评论；GitHub / GitCode / Gitee |
 | IDE/ACP 深度集成 | ✅ | `vscode-spark/` VSIX（聊天面板、选区上下文、内联 diff、诊断）、`spark ide install` 覆盖 Zed / JetBrains 2025.3+ / Neovim；Neovim 额外带 `<leader>si` 选中区内联桥，JetBrains 用 `spark inline` External Tool 桥；真实客户端冒烟仍标注为环境限制 |
 
@@ -179,7 +179,7 @@
 
 | 能力 | 理由 |
 | --- | --- |
-| 云端沙箱 / 托管账号体系 / 第二套原生移动 App | 当前不做托管账号与多租户；移动端走 Web 响应式与远程接管，不新起第二套原生 App。浏览器能力层与远程浏览器另行推进 |
+| 云端沙箱 / 托管账号体系 / 第二套原生移动 App | 当前不做托管账号与多租户；移动端走 Web 响应式与远程接管，不新起第二套原生 App。浏览器五引擎、Profile 与 CDP 已落地；扩展桥与按域名授权继续推进 |
 | 完整 Tab 补全 | Phase 3 先做 NES 与内联编辑；完整 Tab 补全要过“真实模型接受率 ≥25%、p95 ≤1.5s”门禁后再决定，不先斩后奏 |
 | 允许 LSP 绕过 Spark 写路径 | 语言服务器只能返回 WorkspaceEdit；实际写入必须走 sandbox/policy/approval |
 

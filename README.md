@@ -23,7 +23,7 @@ No API key? Spark still starts, but reports the real configuration error and ref
 
 ## What it does
 
-- **The browser is an execution surface.** The Web UI, desktop shell, CLI/TUI, IDE, mobile layout and API share one agent loop, so browser actions, approvals, rollback and ledgers do not split into separate stacks. Browser automation currently runs on Playwright Chromium; multi-engine support, a logged-in-session extension bridge and remote browsers are the next core milestone.
+- **The browser is an execution surface.** The Web UI, desktop shell, CLI/TUI, IDE, mobile layout and API share one agent loop, so browser actions, approvals, rollback and ledgers do not split into separate stacks. Browser automation runs on Playwright with Chromium / Chrome / Edge / Firefox / WebKit engines, persistent profiles for logged-in sessions, and CDP attachment to an already-running browser.
 - **Every layer is replaceable.** MIT licensed; providers, tools, MCP servers, Skills, slash commands, plugins, themes and workflows can all be swapped, and the stack can be self-hosted.
 - **Auditable execution.** Approval modes and sandbox levels are enforced before a write or command runs. Wildcard rules are scoped to user, project and local config; `deny` always wins. Protected credential paths and shell token checks stay on.
 - **Recoverable by design.** Each turn snapshots the workspace and can restore files and conversation together, including outside git repositories.

@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Literal, cast, get_args
 
 import tomlkit
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from spark.errors import ConfigError
@@ -190,10 +190,48 @@ class AgentConfig(BaseModel):
     show_metrics: bool = False
     # 自定义系统提示词：留空 = 使用内置 prompts/system.md；填写后覆盖默认
     system_prompt: str = ""
+    #: 浏览器能力层：引擎、持久化 Profile 与远程 CDP 接入。默认仍是
+    #: Playwright 自带 Chromium；Chrome/Edge 走系统已安装浏览器，Firefox/
+    #: WebKit 走 Playwright 对应引擎。配置变更会重建浏览器 worker。
+    browser_engine: Literal[
+        "chromium", "chrome", "msedge", "firefox", "webkit"
+    ] = "chromium"
+    #: 持久化 Profile 名（空 = 一次性上下文）。实际目录固定在
+    #: ``<workdir>/.spark/browser/profiles/<name>``，避免任意路径写入。
+    browser_profile: str = Field(default="", max_length=64)
+    #: 远程 Chromium CDP 地址（如 ``http://127.0.0.1:9222``）。填写后不再
+    #: 本地启动浏览器，直接接管已运行的会话；仅 Chromium 系引擎可用。
+    browser_cdp_endpoint: str = Field(default="", max_length=2048)
+    #: 本地启动时是否无头。远程 CDP 与已登录窗口不受此开关影响。
+    browser_headless: bool = True
     #: TUI 状态栏有序项：空 = 默认顺序（模型/接口/密钥/审批/访问/目录/会话）。
     #: 合法项：model, base_url, key, approval, sandbox, workdir, session；
     #: 未知项静默跳过，目录为空时自动省略——错配置不应撑破状态栏。
     status_items: list[str] = Field(default_factory=list)
+
+    @field_validator("browser_profile")
+    @classmethod
+    def _validate_browser_profile(cls, value: str) -> str:
+        name = (value or "").strip()
+        if name and (
+            name in {".", ".."} or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", name)
+        ):
+            raise ValueError(
+                "browser_profile may only contain letters, digits, dot, underscore or hyphen"
+            )
+        return name
+
+    @field_validator("browser_cdp_endpoint")
+    @classmethod
+    def _validate_browser_cdp_endpoint(cls, value: str) -> str:
+        endpoint = (value or "").strip()
+        if endpoint and not endpoint.startswith(
+            ("http://", "https://", "ws://", "wss://")
+        ):
+            raise ValueError(
+                "browser_cdp_endpoint must start with http://, https://, ws:// or wss://"
+            )
+        return endpoint
 
 
 class ContextConfig(BaseModel):
@@ -652,6 +690,11 @@ def _sanitize_project_config(raw: dict[str, Any]) -> dict[str, Any]:
         # leave the repository at all — a repo must not be able to widen them.
         agent.pop("workdir_only", None)
         agent.pop("protected_paths", None)
+        # A cloned repository must not redirect the browser to an attacker-
+        # controlled CDP endpoint or reuse a saved logged-in profile. Both are
+        # credential-bearing decisions that only the user-level config may set.
+        agent.pop("browser_cdp_endpoint", None)
+        agent.pop("browser_profile", None)
         clean["agent"] = agent
     # ``context.agents_md`` controls which file is injected into the system
     # prompt — a malicious repo could point it at a sensitive file.  The
@@ -957,6 +1000,14 @@ def _agent_table(cfg: SparkConfig) -> tomlkit.items.Table:
     agent.add("show_notices", cfg.agent.show_notices)
     agent.add("effort", cfg.agent.effort)
     agent.add("system_prompt", cfg.agent.system_prompt or "")
+    if cfg.agent.browser_engine != "chromium":
+        agent.add("browser_engine", cfg.agent.browser_engine)
+    if cfg.agent.browser_profile:
+        agent.add("browser_profile", cfg.agent.browser_profile)
+    if cfg.agent.browser_cdp_endpoint:
+        agent.add("browser_cdp_endpoint", cfg.agent.browser_cdp_endpoint)
+    if not cfg.agent.browser_headless:
+        agent.add("browser_headless", cfg.agent.browser_headless)
     if cfg.agent.status_items:
         # 有序项列表只在用户真的定制过时写入，保持配置文件干净。
         agent.add("status_items", list(cfg.agent.status_items))

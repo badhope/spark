@@ -195,3 +195,44 @@ def test_agent_config_defaults_match_ui_contract() -> None:
     agent = AgentConfig()
     assert agent.max_repeat_calls == 4
     assert agent.max_turn_tokens == 0
+    assert agent.browser_engine == "chromium"
+    assert agent.browser_profile == ""
+    assert agent.browser_cdp_endpoint == ""
+    assert agent.browser_headless is True
+
+
+def test_settings_accepts_browser_surface(live) -> None:
+    base, cfg, _, saved_paths = live
+    post_json(
+        base,
+        "/api/settings",
+        {
+            "agent": {
+                "browser_engine": "msedge",
+                "browser_profile": "work",
+                "browser_cdp_endpoint": "http://127.0.0.1:9222",
+                "browser_headless": False,
+            }
+        },
+    )
+    agent = get_json(base, "/api/config")["agent"]
+    assert agent["browser_engine"] == "msedge"
+    assert agent["browser_profile"] == "work"
+    assert agent["browser_cdp_endpoint"] == "http://127.0.0.1:9222"
+    assert agent["browser_headless"] is False
+    reloaded = load_config(config_path=saved_paths[-1], workdir=saved_paths[-1].parent)
+    assert reloaded.agent.browser_engine == "msedge"
+    assert reloaded.agent.browser_profile == "work"
+    assert reloaded.agent.browser_cdp_endpoint == "http://127.0.0.1:9222"
+    assert reloaded.agent.browser_headless is False
+
+
+def test_settings_rejects_bad_browser_profile(live) -> None:
+    base, _, _, _ = live
+    with pytest.raises(urllib.error.HTTPError) as excinfo:
+        post_json(
+            base,
+            "/api/settings",
+            {"agent": {"browser_profile": "../escape"}},
+        )
+    assert excinfo.value.code == 400

@@ -40,6 +40,10 @@ fields and limitations. The code is authoritative for defaults.
 | `max_repeat_calls` | `4` | Circuit-breaker threshold for a repeated (tool, arguments) signature (0 = off) |
 | `max_turn_tokens` | `0` | Per-turn token budget (0 = off) |
 | `max_output_chars` | `8000` | Tool output truncation (200–1,000,000) |
+| `browser_engine` | `chromium` | `chromium` (Playwright bundled) / `chrome` / `msedge` (installed system browser) / `firefox` / `webkit` |
+| `browser_profile` | `""` | Persistent profile name; empty = one-off session, a name stores login state under `.spark/browser/profiles/<name>`. Treat the profile directory as credentials |
+| `browser_cdp_endpoint` | `""` | Attach to a running Chromium/Chrome/Edge: `http://host:9222` or `ws://...`; Chromium-family engines only |
+| `browser_headless` | `true` | Headless for local launches; remote CDP and already-open windows are unaffected |
 | `status_items` | `[]` | Ordered items for the TUI status bar; empty = default (model / base_url / key / approval / sandbox / workdir / session). Valid items: `model` `base_url` `key` `approval` `sandbox` `workdir` `session`; unknown items are skipped |
 
 ## Compaction prompt override

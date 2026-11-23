@@ -147,6 +147,10 @@ export interface FullConfig {
     max_turn_tokens: number
     max_session_cost_usd: number
     max_output_chars: number
+    browser_engine?: "chromium" | "chrome" | "msedge" | "firefox" | "webkit"
+    browser_profile?: string
+    browser_cdp_endpoint?: string
+    browser_headless?: boolean
     effort: "low" | "medium" | "high"
     show_thinking: boolean
     show_tools: boolean
@@ -251,6 +255,10 @@ export interface SettingsPayload {
     max_turn_tokens?: number
     max_session_cost_usd?: number
     max_output_chars: number
+    browser_engine?: "chromium" | "chrome" | "msedge" | "firefox" | "webkit"
+    browser_profile?: string
+    browser_cdp_endpoint?: string
+    browser_headless?: boolean
     show_thinking?: boolean
     show_tools?: boolean
     show_plan?: boolean

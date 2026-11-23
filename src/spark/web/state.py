@@ -1203,6 +1203,10 @@ class SparkWebState:
                 "queue_task_timeout_sec": self.cfg.agent.queue_task_timeout_sec,
                 "max_output_chars": self.cfg.agent.max_output_chars,
                 "effort": self.cfg.agent.effort,
+                "browser_engine": self.cfg.agent.browser_engine,
+                "browser_profile": self.cfg.agent.browser_profile,
+                "browser_cdp_endpoint": self.cfg.agent.browser_cdp_endpoint,
+                "browser_headless": self.cfg.agent.browser_headless,
                 "system_prompt": self.cfg.agent.system_prompt,
                 # 安全相关开关：只回显，写入仍走 /api/settings 的 agent 节。
                 "auto_review": self.cfg.agent.auto_review,

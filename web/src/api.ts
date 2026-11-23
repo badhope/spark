@@ -1289,6 +1289,14 @@ export type BrowserLiveState = {
   search_engine?: string
   search_url?: string
   revision?: number
+  engine?: "chromium" | "chrome" | "msedge" | "firefox" | "webkit"
+  profile?: string
+  remote?: boolean
+  configured_engine?: "chromium" | "chrome" | "msedge" | "firefox" | "webkit"
+  configured_profile?: string
+  configured_remote?: boolean
+  headless?: boolean
+  restart_required?: boolean
   error?: string
 }
 
