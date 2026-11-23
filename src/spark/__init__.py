@@ -1,4 +1,4 @@
-"""Spark — local-first AI coding agent."""
+"""Spark — browser-native, cross-platform AI coding and office workbench."""
 
 import os
 

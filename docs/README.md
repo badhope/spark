@@ -4,6 +4,9 @@ The English README is the primary entry point; a [Chinese translation](../README
 
 | Topic | English | 中文 |
 |---|---|---|
+| Product positioning | [en/PRODUCT_POSITIONING.md](en/PRODUCT_POSITIONING.md) | [PRODUCT_POSITIONING.md](PRODUCT_POSITIONING.md) |
+| Core capability gaps | [CORE_CAPABILITY_GAPS.md](CORE_CAPABILITY_GAPS.md) | [核心能力差距](CORE_CAPABILITY_GAPS.md) |
+| Integration map | [INTEGRATION_MAP.md](INTEGRATION_MAP.md) | [外部集成地图](INTEGRATION_MAP.md) |
 | Feature map | [FEATURES.md](FEATURES.md) | [功能总览](FEATURES.md) |
 | Install and packaging | [en/INSTALL.md](en/INSTALL.md) | [INSTALL.md](INSTALL.md) |
 | Configuration reference | [en/CONFIG.md](en/CONFIG.md) | [CONFIG.md](CONFIG.md) |

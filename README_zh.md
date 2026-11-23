@@ -2,9 +2,9 @@
 
 # Spark
 
-**本地优先的 AI 编程智能体与办公工作台，护栏可审计。**
+**浏览器原生、跨平台、开源可扩展的 AI 编程与办公工作台。**
 
-Spark 把同一条 Agent 循环带到终端、浏览器、桌面、IDE 与 API。每次写入先过审批和沙箱，每个回合都能回滚，模型层兼容任意 OpenAI 兼容端点。
+Spark 把同一条 Agent 循环带到浏览器、终端、桌面、IDE、移动端与 API。每次写入先过审批和沙箱，每个回合都能回滚；模型、工具、Skills、MCP 与界面都可替换，代码与账本默认存储在你指定的工作区。
 
 ```bash
 # Linux / macOS —— 一行安装，SHA256 校验
@@ -23,6 +23,8 @@ spark web     # 打开浏览器界面
 
 ## 核心能力
 
+- **浏览器是执行面。** Web、桌面、CLI/TUI、IDE、移动端与 API 共用同一条 Agent 循环；浏览器操作、审批、回滚和账本不分裂成多套。当前浏览器自动化基于 Playwright Chromium，多引擎、已登录会话扩展桥与远程浏览器是下一阶段核心项。
+- **每一层都可替换。** MIT 开源；Provider、工具、MCP、Skills、命令、插件、主题与工作流都可换，也可自托管。
 - **执行可审计。** 写入和命令执行前先过审批与沙箱；通配规则覆盖 user / project / local 三个作用域，`deny` 始终优先。凭据路径保护与 shell token 检查保持开启。
 - **失败可回滚。** 每个回合快照工作区，文件与对话可一起恢复，非 git 目录同样有效。
 - **任务即分支。** 开始任务、逐步提交、绿测后收尾；失败的运行会放弃分支，不把改动泄漏到主工作区。
@@ -92,6 +94,9 @@ spark enterprise --host 127.0.0.1 --port 18800
 
 | 英文 | 中文 |
 |---|---|
+| [Product positioning](docs/en/PRODUCT_POSITIONING.md) | [产品定位](docs/PRODUCT_POSITIONING.md) |
+| [Core capability gaps](docs/CORE_CAPABILITY_GAPS.md) | [核心能力差距](docs/CORE_CAPABILITY_GAPS.md) |
+| [Integration map](docs/INTEGRATION_MAP.md) | [外部集成地图](docs/INTEGRATION_MAP.md) |
 | [Install & build](docs/en/INSTALL.md) | [安装与打包](docs/INSTALL.md) |
 | [Configuration](docs/en/CONFIG.md) | [配置](docs/CONFIG.md) |
 | [HTTP API](docs/en/API.md) | [API](docs/API.md) |

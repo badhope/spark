@@ -7,7 +7,7 @@ a local chunk index over the workdir and ranks it with BM25, optionally mixing
 in embeddings from the same endpoint the knowledge base already uses.
 
 Design constraints:
-- local-first: the index and vectors live under ``<spark_home>/code_index``,
+- workspace-scoped: the index and vectors live under ``<spark_home>/code_index``,
   never inside the user's repository;
 - bounded: source files only, size/count limits, no binary scanning;
 - degradable: no embedding key still works, only with lexical recall;

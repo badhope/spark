@@ -14,8 +14,12 @@ Spark 第一次打开一个工作区时，会把一套经过筛选的工程 Skil
   最小 diff、测试先行、改完验证、安全边界、不过度设计等工程原则。
 - **一个原生只读工具**：`repo_context`。一次返回项目语言、包管理器、真实 test/build/lint/dev
   命令、关键清单、顶层结构、入口候选和 Git 状态，减少在陌生仓库里反复 `list_dir`。
-- **3 个内置 MCP 精选**：Git、Sequential Thinking、Memory。它们默认只出现在 MCP 设置页，
-  点“一键加入”后才写入配置；不会在启动时自动拉起 `npx`/`uvx` 进程。
+- **7 个内置 MCP 精选**：Playwright、Chrome DevTools、Git、Sequential Thinking、Memory、
+  Repomix、MarkItDown。它们默认只出现在 MCP 设置页，点“一键加入”后才写入配置；
+  不会在启动时自动拉起 `npx`/`uvx` 进程。浏览器、仓库打包与文档转换类 server 默认按只读
+  工具/沙箱模式接入，写入类动作仍走 Spark 审批。Playwright 预设可在 args 里加
+  `--browser firefox` / `webkit` / `msedge` 切换引擎，加 `--extension` 连接已登录的
+  Chrome/Edge 标签页；Chrome DevTools 官方只保证 Chrome/Chromium。
 - **1 个真实可跑的插件**：`repo-health`。带 manifest、只读工具 `scan` 和 `/health` 命令；
   Web 首次播种时默认启用，TUI 只播种不启用。
 
@@ -75,7 +79,7 @@ Git 预设默认只暴露 `git_status`、`git_diff`、`git_log` 等只读工具�
   Code & Development 分类的现成 SKILL.md 工作流。
 - [modelcontextprotocol/servers](https://github.com/modelcontextprotocol/servers)：官方
   Filesystem / Git / Memory / Sequential Thinking 等本地 server。
-- [LocalNest MCP](https://github.com/wmt-mobile/LocalNest)：local-first、代码检索 + 持久记忆
+- [LocalNest MCP](https://github.com/wmt-mobile/LocalNest)：代码检索 + 持久记忆
   的思路；本项目没有直接内置它，因为它的能力集偏重，不符合“轻量默认”的目标。
 
 ## 自定义

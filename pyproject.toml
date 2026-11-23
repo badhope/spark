@@ -5,10 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "spark-agent"
 version = "0.15.4"
-description = "Local-first AI coding agent and office workbench with auditable guardrails"
+description = "Browser-native, cross-platform, open-source AI coding and office workbench with auditable guardrails"
 readme = "README.md"
 license = { text = "MIT" }
-keywords = ["ai-agent", "coding-agent", "local-first", "openai-compatible", "office-automation", "mcp"]
+keywords = ["ai-agent", "coding-agent", "browser-native", "cross-platform", "open-source", "openai-compatible", "office-automation", "mcp"]
 requires-python = ">=3.11.5"
 classifiers = [
     "Development Status :: 3 - Alpha",

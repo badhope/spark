@@ -67,7 +67,7 @@
 |---|---|---|
 | 新建/恢复/切换 | ✅ TUI ctrl+r、Web 侧栏、`spark resume` | 全都有 |
 | Fork | ✅ `POST /api/sessions/fork` + 顶栏按钮 + 侧栏入口 | codex `/fork`；opencode `--fork`；ZCode Edit History 分支 |
-| 分享链接 | ✅ 单文件 HTML 离线分享（零 JS、零外链、消息内容转义）；无云托管链接（与本地定位一致）（`web/_handlers_sessions.py` + `HeaderToolsMenu.tsx`） | opencode `/share` → `opncd.ai/s/<id>` |
+| 分享链接 | ✅ 单文件 HTML 离线分享（零 JS、零外链、消息内容转义）；当前不做绑定账号的云托管分享，可后续接自托管/对象存储（`web/_handlers_sessions.py` + `HeaderToolsMenu.tsx`） | opencode `/share` → `opncd.ai/s/<id>` |
 | 导出/导入 | ✅ 导出 md/JSON/HTML；✅ 导入 spark 导出 JSON（`POST /api/sessions/import`，仅恢复 user/assistant 文本） | opencode `/export`（md/JSON）；codex `/export`；codex `/import` 从 Claude Code 迁移 |
 | 归档 | ✅ `sessions.archived_at`（v6）+ `/api/sessions/archive` + Web“已归档”分组/恢复；归档当前会话自动切换；测试 `test_session_archive.py` | codex `/archive`；ZCode 自动归档候选（窗口可配） |
 | 重命名 | ✅ 自动标题 + Web 手动改名（`Sidebar.tsx` / `web/_handlers_sessions.py`） | codex `/rename`；opencode ctrl+r |
@@ -206,7 +206,7 @@
 - 插件市场公共治理（已做 manifest+代码包摘要签名、篡改拒装、trust/revoke；仍缺公共索引、上架审核、撤销列表）
 - 多 agent 专业编排（Experts/Workflows 级）
 
-**不建议做**：云端沙箱/账号体系/移动 App（与本地优先、可审计定位不符）；完整 Tab 补全先过 Phase 3 接受率/延迟门禁，当前只交付内联编辑与 NES 入口。
+**当前不做**：托管账号体系/多租户云沙箱/第二套原生移动 App（移动端走 Web 响应式与远程接管）；完整 Tab 补全先过 Phase 3 接受率/延迟门禁，当前只交付内联编辑与 NES 入口。浏览器能力层、多引擎与远程浏览器是核心路线，不因旧“本地优先”结论而放弃。
 
 ## 13. 来源
 

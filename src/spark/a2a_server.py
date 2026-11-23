@@ -305,8 +305,9 @@ def agent_card(cfg: SparkConfig, url: str) -> dict:
     return {
         "name": "spark",
         "description": (
-            "Spark — local-first AI coding agent with auditable approval, "
-            "sandboxing and rollback. Bring any OpenAI-compatible endpoint."
+            "Spark — browser-native, cross-platform AI coding and office workbench "
+            "with auditable approval, sandboxing and rollback. "
+            "Bring any OpenAI-compatible endpoint."
         ),
         "url": url,
         "version": _spark_version(),

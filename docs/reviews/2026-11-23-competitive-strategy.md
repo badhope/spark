@@ -1,5 +1,8 @@
 # Spark 竞争位与下一阶段路线：做“可审计的 Agent 工作台”，不做第二个 Cursor
 
+> **定位说明（2026-11-23）**：本文写作于“本地优先”旧口径时期，该口径已废止。现行定位见 [PRODUCT_POSITIONING](../PRODUCT_POSITIONING.md)；本文仅作历史审计与事实记录，不再作为路线依据。
+
+
 > 调研日期：2026-11-23｜范围：ZCode 3.18.2 源码与 3.19.1 文档、Cursor、Claude Code、Codex、Qoder、Trae、Cline/Continue，以及 Spark 本仓库代码、测试与本机实测。
 
 ## 核心判断

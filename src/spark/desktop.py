@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_WIDTH = 1280
 DEFAULT_HEIGHT = 832
-DEFAULT_TITLE = "Spark — Local-first AI Coding Agent"
+DEFAULT_TITLE = "Spark — Browser-native AI Coding & Office Workbench"
 
 
 def _ensure_webview():

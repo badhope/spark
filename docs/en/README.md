@@ -1,9 +1,10 @@
 # Spark Documentation
 
-Local-first AI coding agent and office workbench. Start with the [project README](https://github.com/badhope/spark/blob/main/README.md), then pick the reference you need.
+Browser-native, cross-platform, open-source AI coding and office workbench. Start with the [project README](https://github.com/badhope/spark/blob/main/README.md), then pick the reference you need.
 
 | Topic | English | 中文 |
 |---|---|---|
+| Product positioning | [PRODUCT_POSITIONING.md](PRODUCT_POSITIONING.md) | [产品定位](../PRODUCT_POSITIONING.md) |
 | Install, package, update | [INSTALL.md](INSTALL.md) | [安装与打包](../INSTALL.md) |
 | Configuration reference | [CONFIG.md](CONFIG.md) | [配置](../CONFIG.md) |
 | HTTP API and SSE | [API.md](API.md) | [API](../API.md) |

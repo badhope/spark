@@ -1,5 +1,8 @@
 # Spark 总体建设计划（Master Plan）
 
+> **定位说明（2026-11-23）**：本文写作于“本地优先”旧口径时期，该口径已废止。现行定位见 [PRODUCT_POSITIONING](../PRODUCT_POSITIONING.md)；本文仅作历史审计与事实记录，不再作为路线依据。
+
+
 > 版本：v1.0 · 日期：2026-10-17 · 依据：`2026-10-17-audit-and-direction.md`（审查+两轮方向拍板）
 > 范围：**内核、CLI、TUI、Web 前端、Web 服务端、Desktop EXE、文档体系、CI/CD、五平台分发** —— 全端覆盖，不止后端。
 > 原则（已拍板）：生态优先不造轮子；好组件直接换；LangGraph 迁入；主仓 badhope、四仓纯镜像；pip 先行 + EXE 软件轨并行。

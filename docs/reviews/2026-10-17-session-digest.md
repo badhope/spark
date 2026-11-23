@@ -1,5 +1,8 @@
 # 会话精华锚点（2026-10-17）——新会话从这里接手
 
+> **定位说明（2026-11-23）**：本文写作于“本地优先”旧口径时期，该口径已废止。现行定位见 [PRODUCT_POSITIONING](../PRODUCT_POSITIONING.md)；本文仅作历史审计与事实记录，不再作为路线依据。
+
+
 > **终态更新（2026-10-18 收官）**：P0/P1 全部交付、P2 首批交付，当前基线 **v0.9.6 @ ba622a8 系**
 > ——五仓对齐、PyPI 已上线（pip install spark-agent / uvx spark-agent）、主仓 10/10 检查绿、
 > 文档站 gh-pages 已部署、发布链 tag 触发全自动化、架构图表入库 docs/assets/diagrams/。

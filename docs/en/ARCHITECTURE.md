@@ -6,10 +6,12 @@
 
 ## Overview
 
-Spark is a **local-first AI coding agent**: a Codex-style ReAct loop over an
-OpenAI-compatible LLM, with a four-level sandbox, human approval gates,
-checkpoint/rollback, long-term memory, and a browser UI served from the same
-process.
+Spark is a **browser-native, cross-platform, open-source AI coding and office
+workbench**: one Codex-style ReAct loop serves the browser, terminal, desktop,
+IDE, mobile layout and API. Models, tools, Skills, MCP servers, themes and
+workflows are replaceable, while code and ledgers live in the workspace you
+choose. A four-level sandbox, human approval gates, checkpoint/rollback and
+long-term memory are part of the same runtime.
 
 ```
 user input → AgentLoop (turn engine) → model call → tool execution → feedback → next round
@@ -190,7 +192,8 @@ spark init / doctor / version / config show|set|path
 
 ## Design principles
 
-- **Local-first**: code, keys, conversation, memory never leave the machine
+- **Browser-native, cross-platform**: one agent runtime serves the Web UI, CLI/TUI, desktop, IDE and API without binding to one OS or editor
+- **Data sovereignty**: code, conversation, memory and checkpoints live in the workspace you choose; self-hosting is supported, not required as a product identity
 - **Boring web stack**: stdlib HTTP server + SSE; no framework to pin
 - **Layered safety**: sandbox levels → approval policy → protected paths →
   egress sanitization (`sanitize.py`)

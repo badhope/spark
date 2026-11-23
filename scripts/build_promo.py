@@ -2,7 +2,7 @@ import pathlib
 import subprocess
 
 shots = [
-    ("10-empty-state.png", "Spark · 本地优先的 AI 编程 Agent"),
+    ("10-empty-state.png", "Spark · 浏览器原生的 AI 编程 Agent"),
     ("11-chat.png", "真实模型 · 工具调用 · 流式回答"),
     ("20-inline-shell.png", "!cmd 内联 shell · 结果不进模型上下文"),
     ("12-settings-model.png", "任意 OpenAI 兼容端点 · 多模型档案"),

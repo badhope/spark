@@ -1,5 +1,5 @@
 site_name: Spark
-site_description: Local-first AI coding agent and office workbench with auditable guardrails
+site_description: Browser-native, cross-platform, open-source AI coding and office workbench with auditable guardrails
 repo_url: https://github.com/badhope/spark
 repo_name: badhope/spark
 
@@ -25,6 +25,11 @@ theme:
 
 nav:
   - Home: index.md
+  - Product:
+      - Positioning: PRODUCT_POSITIONING.md
+      - Core capability gaps: CORE_CAPABILITY_GAPS.md
+      - Integration map: INTEGRATION_MAP.md
+      - Competitive comparison: competitive-comparison.md
   - Features: FEATURES.md
   - Start:
       - Install: INSTALL.md
@@ -53,7 +58,6 @@ nav:
       - Master plan: reviews/2026-10-17-master-plan.md
       - Audit and direction: reviews/2026-10-17-audit-and-direction.md
       - Session digest: reviews/2026-10-17-session-digest.md
-      - Competitive comparison: competitive-comparison.md
 
 markdown_extensions:
   - admonition

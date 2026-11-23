@@ -20,7 +20,7 @@
 | 让模型操作 Git | `tools/gitops.py` | status/diff/log/branch/add/commit；push/pull 明确不提供 |
 | 任务即分支（自动提交） | `git_memory.py` | `task_begin` → 绿测后 `task_step_commit` → `task_finish` |
 | 联网查资料 | `tools/web.py` | `web_search` / `web_fetch`，含 SSRF 防护 |
-| 浏览器操作 | `tools/browser.py` | 21 个 `browser_*`：Bing 默认首页/搜索引擎；ref 快照、点击/输入/按键/悬停/下拉/滚动/历史/标签页/等待/截图/PDF/下载/视口/JS/文件上传/控制台/网络/对话框；支持 iframe frame_index；Playwright 后台线程持有页面；只允许公网 http(s) 或工作目录内 `file://`；页面文本进 untrusted 围栏；截图落 `.spark/browser/` |
+| 浏览器操作 | `tools/browser.py` | 21 个 `browser_*`：Bing 默认首页/搜索引擎；ref 快照、点击/输入/按键/悬停/下拉/滚动/历史/标签页/等待/截图/PDF/下载/视口/JS/文件上传/控制台/网络/对话框；支持 iframe frame_index；Playwright 后台线程持有页面；只允许公网 http(s) 或工作目录内 `file://`；页面文本进 untrusted 围栏；截图落 `.spark/browser/`。**当前只跑 Playwright Chromium**；多引擎、已登录会话扩展桥与远程浏览器见 `docs/CORE_CAPABILITY_GAPS.md` 的 P0 项，尚未完成 |
 | PR 审查上下文 | `pr.py` + `tools/pr_tools.py` | `pr_context` / `pr_view` / `pr_diff` / `pr_checks` / `pr_review`；GitHub / GitCode / Gitee REST，origin 自动解析，平台 token 可选；CLI `spark pr view/diff/checks/review`，`spark pr publish --confirm` 才写评论；review brief 给风险、测试缺口与 CI 清单；PR 文本进 untrusted 围栏 |
 | 接第三方能力 | `tools/mcp_bridge.py` | stdio / sse / streamable_http 三种传输；也可从内置 registry 一键添加，工具以 `mcp__<server>__<tool>` 出现 |
 | 多 Agent 工作流 | `workflow.py` + `spark workflow` | YAML roles/steps/DAG 校验、拓扑顺序、`workflow graph`；`WorkspaceLocks` 跨进程路径锁；`run_workflow` 有界并发、重试、失败阻断与取消；`AgentWorkflowRunner` + `spark workflow run` 已接 AgentLoop 子代理；状态 JSON、暂停续跑、单节点重跑、Web 执行图读取最近运行；子代理 usage/cost 回传、`--max-cost-usd` 成本上限；`--isolate-worktree` 整次运行隔离到任务分支 |

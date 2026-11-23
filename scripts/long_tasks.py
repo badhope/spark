@@ -645,7 +645,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--words", type=int, default=1_000_000)
     parser.add_argument("--chapter-words", type=int, default=1200)
     parser.add_argument("--chars", type=int, default=3000)
-    parser.add_argument("--topic", default="本地优先 AI 编程智能体的权限模型设计")
+    parser.add_argument("--topic", default="浏览器原生 AI 编程智能体的权限模型设计")
     args = parser.parse_args(argv)
 
     cfg = load_config(workdir=Path.cwd())

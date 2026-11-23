@@ -52,6 +52,9 @@
 
 ### Changed
 
+- 产品定位修正：废止“本地优先 / local-first”产品口径，统一为“浏览器原生、跨平台、开源可扩展的 AI 编程与办公工作台”；README、架构、包元数据、桌面标题、A2A Agent Card、移动端副标题、分发元数据同步更新；新增 `docs/PRODUCT_POSITIONING.md` 作为唯一口径，历史评审加废止说明。
+- 核心能力与外部生态盘点：新增 `docs/CORE_CAPABILITY_GAPS.md`（10 个核心模块、P0/P1/P2、差异化与验收标准）与 `docs/INTEGRATION_MAP.md`（可直接接的 10 个开源/MCP 资源、分层与落地顺序）。
+- 内置 MCP 精选从 3 个扩到 7 个：新增 Playwright、Chrome DevTools、Repomix（`--mcp --sandbox`）、MarkItDown；浏览器与文档转换默认不自动批准，写入类动作仍走审批。
 - `docs/FEATURES.md`、`docs/CONFIG.md` 同步知识库混合检索与 `embedding_enabled` 共用边界；`knowledge.py` 模块 docstring 与类注释统一为“BM25 + 可选向量，不建第二套库”。
 - `docs/FEATURES.md`、`docs/REMAINING.md` 登记长上下文压缩增强：摘要 5 段校验、工具输出分层、压缩前历史召回。
 - `docs/FEATURES.md`、`docs/REMAINING.md` 登记小模型工具调用护栏：schema 子集校验、审批前降级、一次修正与按任务裁剪。
@@ -65,6 +68,7 @@
 
 ### Tests
 
+- 新增 `tests/test_product_positioning.py`：公开文案/元数据不得再出现旧定位正表述，canonical 定位必须保留三大主张，内置 MCP 必须覆盖浏览器/仓库/文档并保持 ≥7 个；3 项通过。
 - `tests/test_knowledge.py` 新增跨语言向量召回、无向量 BM25 兜底、旧索引回填、删除清理、embedding 失败降级、同名重导替换、embedder 配置解析，共 36 项通过。
 - `tests/test_compaction.py`、`tests/test_context.py` 新增摘要缺段补齐、工具输出三档裁剪、压缩前历史召回与 AgentLoop 注入断言；压缩/上下文 29 项、压缩+存储+知识库+记忆+上下文定向回归 116 项通过，全量 pytest 未跑。
 - 新增 `tests/test_tool_validation.py`：18 条非法参数、12 条合法参数、未知/禁用/白名单外工具、2 MiB 上限、不调用 handler、一次修正与第二次 `retry_exhausted`、AgentLoop invalid 路径、23 条小模型工具选择、按任务裁剪；该文件 61 项、工具链 10 文件定向回归 158 项通过，`ruff`/`mypy` 通过。

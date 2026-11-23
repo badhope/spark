@@ -6,11 +6,11 @@
 
 状态：✅ 已交付 ｜ 🟡 部分交付 ｜ 🚧 进行中 ｜ 📋 已排期 ｜ ⏸ 需产品决策 ｜ ❌ 明确不做
 
-> **2026-11-23 路线切换**：本文是旧能力对账视图，保留作历史清单；产品定位已改为
-> **本地优先、可审计、模型自由的 AI 编程工作台**，并进入 18 周四次过门路线
-> （`docs/reviews/2026-11-23-competitive-strategy.md`）。下文“明确不做”的
-> API-first / 本地不是卖点 / NES 结论已被新路线取代：Phase 3 已落地内联编辑与
-> NES 入口，完整 Tab 补全仍按门禁后置；不再以“没有编辑器本体”为由否定编辑器桥接。
+> **2026-11-23 定位修订**：本文是能力对账视图，保留历史清单。现行定位是
+> **浏览器原生、跨平台、开源可扩展的 AI 编程与办公工作台**（唯一口径见
+> `docs/PRODUCT_POSITIONING.md`）。核心模块差距见 `docs/CORE_CAPABILITY_GAPS.md`，
+> 外部开源/MCP 接入见 `docs/INTEGRATION_MAP.md`。下文“明确不做”的旧结论中，
+> 与“本地优先”绑定的部分不再有效；仍有效的门禁（如完整 Tab 补全、强隔离边界）保留。
 
 ## 已关闭（本轮及之前）
 
@@ -106,7 +106,7 @@
 | EX-03 | P2 | **✅ 2026-11-22 已完成**。原差距：词典和组件接入已铺开，但缺漏词门禁；矩阵里“仅少量组件接入”已过时 | `web/src/i18n.ts`、`web/scripts/check-i18n.mjs`、组件、构建脚本 | zh/en key 对齐、en 词典无中文、`t()` key 必存在、JSX/字符串硬编码中文失败，全部进 `npm run build`；补齐 provider/MCP/本地模型英文展示；`tests/test_ui_i18n.py` 断言英文主界面与模型设置无中文 | S |
 | EX-04 | P2 | **✅ 2026-11-23 已完成**。原差距：Claude Code 兼容只到声明式 agents | `skills` 加载器、`slash` 命令发现 | 只读导入 `.claude/skills` / `.claude/commands` / `~/.claude/{skills,commands}`；同名 `.spark` 原生优先；`tests/test_skills.py` / `test_profiles_and_commands.py` 通过 | S–M |
 
-| EX-05 | P2 | **✅ 2026-11-23 交付**（边界明确）。空闲队列现有：本地日任务配额 `queue_daily_limit`、本地日估算成本配额 `queue_daily_cost_usd`（`agent_queue.cost_usd` 含失败重试成本）、单任务墙钟超时回 `queued`、1–4 个 worker 并行（`queue_workers`，重启生效）；队列会话标 `origin=queue`，不把彼此当用户回合阻塞。**边界**：成本按公开价目估算，不是账单；多 worker 仅限进程内，不是分布式队列；worker 数修改需重启 | `task_queue.py`、`store.py`、设置/成本台账 | 本地节流闭环；剩余是分布式/多机调度，不在本地优先定位内 | M |
+| EX-05 | P2 | **✅ 2026-11-23 交付**（边界明确）。空闲队列现有：本地日任务配额 `queue_daily_limit`、本地日估算成本配额 `queue_daily_cost_usd`（`agent_queue.cost_usd` 含失败重试成本）、单任务墙钟超时回 `queued`、1–4 个 worker 并行（`queue_workers`，重启生效）；队列会话标 `origin=queue`，不把彼此当用户回合阻塞。**边界**：成本按公开价目估算，不是账单；多 worker 仅限进程内，不是分布式队列；worker 数修改需重启 | `task_queue.py`、`store.py`、设置/成本台账 | 本地节流闭环；剩余是分布式/多机调度，不在当前进程内队列范围 | M |
 
 ### E. 文档真实性与门禁（DOC）
 
@@ -179,7 +179,7 @@
 
 | 能力 | 理由 |
 | --- | --- |
-| 云端沙箱 / 账号体系 / 移动 App | 与本地优先、可审计的工作台定位不符；远程控制是 Web 内能力，不新起第二套移动端 |
+| 云端沙箱 / 托管账号体系 / 第二套原生移动 App | 当前不做托管账号与多租户；移动端走 Web 响应式与远程接管，不新起第二套原生 App。浏览器能力层与远程浏览器另行推进 |
 | 完整 Tab 补全 | Phase 3 先做 NES 与内联编辑；完整 Tab 补全要过“真实模型接受率 ≥25%、p95 ≤1.5s”门禁后再决定，不先斩后奏 |
 | 允许 LSP 绕过 Spark 写路径 | 语言服务器只能返回 WorkspaceEdit；实际写入必须走 sandbox/policy/approval |
 

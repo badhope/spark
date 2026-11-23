@@ -1,6 +1,6 @@
 {
     "version": "0.9.6",
-    "description": "Spark — one agent brain, six form factors. Local-first AI coding agent with auditable approval, sandboxing, rollback and provider resilience. No account, no telemetry.",
+    "description": "Spark — browser-native, cross-platform AI coding and office workbench with auditable approval, sandboxing, rollback and provider resilience. One agent loop for Web, CLI/TUI, desktop, IDE, mobile layout and API. No account, no telemetry.",
     "homepage": "https://github.com/badhope/spark",
     "license": "MIT",
     "architecture": {

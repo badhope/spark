@@ -2,9 +2,9 @@
 
 # Spark
 
-**Local-first AI coding agent and office workbench, with guardrails you can audit.**
+**A browser-native, cross-platform, open-source AI coding and office workbench.**
 
-Spark gives you one agent loop across the terminal, browser, desktop, IDE and API. Every write is gated by approval and a sandbox, every turn can be rolled back, and the model layer works with any OpenAI-compatible endpoint.
+Spark gives you one agent loop across the browser, terminal, desktop, IDE, mobile layout and API. Every write is gated by approval and a sandbox, every turn can be rolled back, and models, tools, Skills, MCP servers and UI are replaceable. Code and ledgers live in the workspace you choose by default.
 
 ```bash
 # Linux / macOS — SHA256-verified installer
@@ -23,6 +23,8 @@ No API key? Spark still starts, but reports the real configuration error and ref
 
 ## What it does
 
+- **The browser is an execution surface.** The Web UI, desktop shell, CLI/TUI, IDE, mobile layout and API share one agent loop, so browser actions, approvals, rollback and ledgers do not split into separate stacks. Browser automation currently runs on Playwright Chromium; multi-engine support, a logged-in-session extension bridge and remote browsers are the next core milestone.
+- **Every layer is replaceable.** MIT licensed; providers, tools, MCP servers, Skills, slash commands, plugins, themes and workflows can all be swapped, and the stack can be self-hosted.
 - **Auditable execution.** Approval modes and sandbox levels are enforced before a write or command runs. Wildcard rules are scoped to user, project and local config; `deny` always wins. Protected credential paths and shell token checks stay on.
 - **Recoverable by design.** Each turn snapshots the workspace and can restore files and conversation together, including outside git repositories.
 - **Task-as-branch.** Start a task, commit each verified step, and finish on green tests; a failed run abandons its branch instead of leaking changes.
@@ -92,6 +94,9 @@ OS-level isolation is used where available: bwrap on Linux, Job Objects on Windo
 
 | Doc | 中文 |
 |---|---|
+| [Product positioning](docs/en/PRODUCT_POSITIONING.md) | [产品定位](docs/PRODUCT_POSITIONING.md) |
+| [Core capability gaps](docs/CORE_CAPABILITY_GAPS.md) | [核心能力差距](docs/CORE_CAPABILITY_GAPS.md) |
+| [Integration map](docs/INTEGRATION_MAP.md) | [外部集成地图](docs/INTEGRATION_MAP.md) |
 | [Install & build](docs/en/INSTALL.md) | [安装与打包](docs/INSTALL.md) |
 | [Configuration](docs/en/CONFIG.md) | [配置](docs/CONFIG.md) |
 | [HTTP API](docs/en/API.md) | [API](docs/API.md) |
