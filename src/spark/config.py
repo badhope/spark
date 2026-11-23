@@ -204,10 +204,24 @@ class AgentConfig(BaseModel):
     browser_cdp_endpoint: str = Field(default="", max_length=2048)
     #: 本地启动时是否无头。远程 CDP 与已登录窗口不受此开关影响。
     browser_headless: bool = True
+    #: 按域名授权：``host=allow|read|prompt|deny``，同域取最严规则。
+    #: 空白/``#`` 开头的行忽略；规则只作用于 agent 的 browser_* 工具。
+    browser_site_rules: list[str] = Field(default_factory=list)
     #: TUI 状态栏有序项：空 = 默认顺序（模型/接口/密钥/审批/访问/目录/会话）。
     #: 合法项：model, base_url, key, approval, sandbox, workdir, session；
     #: 未知项静默跳过，目录为空时自动省略——错配置不应撑破状态栏。
     status_items: list[str] = Field(default_factory=list)
+
+    @field_validator("browser_site_rules")
+    @classmethod
+    def _validate_browser_site_rules(cls, value: list[str]) -> list[str]:
+        from spark.browser_policy import validate_site_rules
+
+        rules = [str(line).strip() for line in (value or []) if str(line).strip()]
+        error = validate_site_rules(rules)
+        if error:
+            raise ValueError(error)
+        return rules
 
     @field_validator("browser_profile")
     @classmethod
@@ -695,6 +709,8 @@ def _sanitize_project_config(raw: dict[str, Any]) -> dict[str, Any]:
         # credential-bearing decisions that only the user-level config may set.
         agent.pop("browser_cdp_endpoint", None)
         agent.pop("browser_profile", None)
+        # Project-local rules could deny or allow hosts the user never chose.
+        agent.pop("browser_site_rules", None)
         clean["agent"] = agent
     # ``context.agents_md`` controls which file is injected into the system
     # prompt — a malicious repo could point it at a sensitive file.  The
@@ -1008,6 +1024,8 @@ def _agent_table(cfg: SparkConfig) -> tomlkit.items.Table:
         agent.add("browser_cdp_endpoint", cfg.agent.browser_cdp_endpoint)
     if not cfg.agent.browser_headless:
         agent.add("browser_headless", cfg.agent.browser_headless)
+    if cfg.agent.browser_site_rules:
+        agent.add("browser_site_rules", list(cfg.agent.browser_site_rules))
     if cfg.agent.status_items:
         # 有序项列表只在用户真的定制过时写入，保持配置文件干净。
         agent.add("status_items", list(cfg.agent.status_items))

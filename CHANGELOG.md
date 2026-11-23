@@ -6,6 +6,11 @@
 
 ### Added
 
+- 浏览器能力层 v1.1（CP-01b）：`agent.browser_site_rules` 按域名授权，语法 `host=allow|read|prompt|deny`，同域取最严；精确主机或 `*.paypal.com` 这类具体子域规则可覆盖内置敏感站点兜底（支付/网银/身份提供方/云控制台默认 `prompt`，写动作二次确认），`*=allow` / `*.com=allow` 不会把敏感写动作降级；旧 `allow_always` 与 scoped allow 都不能绕过 `deny`；`.spark.toml` 项目级禁止设置该字段。
+- 浏览器 trace 与性能指标：`browser_trace_start` / `browser_trace_stop` 把截图、DOM 快照与源码引用写入 `.spark/browser/traces/*.zip`；`browser_metrics` 通过 Chromium CDP `Performance.getMetrics` 返回节点、JS 堆、文档与布局计数，非 Chromium 明确报错。浏览器工具从 21 增至 24，总工具 78。
+- 浏览器扩展桥：设置页新增 Playwright `--extension` 一键预设，直接复用已登录的 Chrome/Edge 标签页；新增 `docs/BROWSER_EXTENSION_BRIDGE.md` / `docs/en/BROWSER_EXTENSION_BRIDGE.md`，含安装、站点规则搭配、验收清单与诚实边界。
+- `spark browser-doctor`：真实启动当前引擎、渲染测试页并输出版本与修复命令；Chromium 缺 headless shell 时自动回退完整二进制；WebKit/Firefox 缺系统库时给出 `playwright install-deps`；输出支持 `--json`。
+- 设置页浏览器执行面新增“按域名授权”多行编辑，`/api/config` 与 `/api/settings` 回显、校验、落盘；CLI `config set` 支持逗号分隔规则。
 - 浏览器能力层 v1（CP-01）：`agent.browser_engine` 支持 Chromium / Chrome / Edge / Firefox / WebKit；`agent.browser_profile` 把登录态持久化到 `.spark/browser/profiles/<name>`；`agent.browser_cdp_endpoint` 通过 CDP 接管已运行的 Chromium/Chrome/Edge；`agent.browser_headless` 控制本地窗口。配置变更在下一个浏览器动作时自动重建 worker，侧栏状态回显实际引擎、Profile、是否远程与待重启标记；设置页新增“浏览器执行面”区块，并校验引擎、Profile 名与 CDP 协议/引擎组合。
 - 会话归档/恢复：`sessions.archived_at`（v6）+ `SessionStore.archive_session()`；`POST /api/sessions/archive` 仅本机或设备写权限；归档保留消息与检查点、默认列表隐藏；归档当前会话自动切到下一个活跃会话，切到归档会话隐式恢复；Web 侧栏“已归档”分组与恢复按钮。
 - 插件代码包签名：`package_digest(root)` 对 manifest 外每个文件按“相对路径 + SHA-256”计算总摘要；`PluginManifest.artifact_sha256`；`verify_manifest(root=...)` 必须同时校验签名与包摘要，缺摘要或包变更均 invalid；`spark plugins sign` 先算摘要再签，`install_local()` 在 staging 校验并拒绝篡改/撤销包。
@@ -43,6 +48,11 @@
 
 ### Fixed
 
+- 站点规则被旧授权绕过：`decide()` 的 `browser_guard` 现在先于 `allow_always`、scoped allow 和 `READONLY_TOOLS` 判定；拒绝站点即使曾被永久允许也不会执行。
+- 浏览器动作被持久放行：全部 24 个 `browser_*` 纳入 `NEVER_PERSIST_ALLOW`，不再给未来站点留永久通行证。
+- 未知浏览器工具默认按写动作处理，避免新工具静默继承只读站点权限；`browser_eval` / 文件上传 / 表单写入均受 `read` 与 `prompt` 约束。
+- 显式 `deny` 仍高于浏览器站点守卫：`browser_guard=prompt` 不会把用户写的 `deny` 规则降级；仅 `browser_guard=deny` 与显式拒绝会阻断。
+- `browser_tabs select` 按目标标签页 host 守卫，修复 `index=0` 被当成缺省值的问题，避免切到被 `deny` 的标签页。
 - 交付账本持久化丢字段：`deliveries` 增 `diff_json/metrics_json/privacy_json`（v5 迁移），`save_delivery()` 写入、读回映射，导出恢复 Diff/成本与真实 privacy；`list_tool_events()` 改取最新 500 条再反转，修复长会话账本窗口读到最早事件。
 - 自动账本幽灵工具：触发集合去掉不存在的 `multi_edit`/`replace_in_file`，补入真正改文件的 `apply_patch`/`notebook_edit`；不再把整个 worktree 的变更和 `run_shell("ls")` 算成任务证据。
 - 插件“只签 manifest”：替换 `entry.py`/hook 脚本后仍显示 signed；现以代码包摘要绑定签名，篡改包在安装期被拒绝；旧版仅签 manifest 的插件显示 invalid（有意收紧）。

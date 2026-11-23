@@ -125,7 +125,7 @@ def _agent_validation_error(approval: str, sandbox_mode: str, effort: str) -> st
 
 
 def _browser_validation_error(
-    engine: str, profile: str, cdp_endpoint: str
+    engine: str, profile: str, cdp_endpoint: str, site_rules: list[str]
 ) -> str | None:
     if engine not in {"chromium", "chrome", "msedge", "firefox", "webkit"}:
         return "browser_engine must be chromium, chrome, msedge, firefox or webkit"
@@ -142,6 +142,11 @@ def _browser_validation_error(
         ("http://", "https://", "ws://", "wss://")
     ):
         return "browser_cdp_endpoint must start with http://, https://, ws:// or wss://"
+    from spark.browser_policy import validate_site_rules
+
+    site_error = validate_site_rules(site_rules)
+    if site_error:
+        return site_error
     return None
 
 
@@ -431,6 +436,16 @@ def _extract_request_fields(state, body: dict) -> dict[str, Any]:
     memory_raw = body.get("memory")
     agent_raw = body.get("agent")
     agent_in: dict = agent_raw if isinstance(agent_raw, dict) else {}
+    raw_site_rules = agent_in.get(
+        "browser_site_rules", state.cfg.agent.browser_site_rules
+    )
+    if isinstance(raw_site_rules, str):
+        raw_site_rules = raw_site_rules.splitlines()
+    site_rules = (
+        [str(line).strip() for line in raw_site_rules if str(line).strip()]
+        if isinstance(raw_site_rules, list)
+        else list(state.cfg.agent.browser_site_rules)
+    )
     replay_in = body.get("replay")
     updater_in = body.get("updater")
     return {
@@ -482,6 +497,7 @@ def _extract_request_fields(state, body: dict) -> dict[str, Any]:
         "browser_headless": bool(
             agent_in.get("browser_headless", state.cfg.agent.browser_headless)
         ),
+        "browser_site_rules": site_rules,
         "provider_resilience": (
             {
                 "api_keys": provider_in.get("api_keys"),
@@ -573,6 +589,7 @@ def _apply_validated_settings(
     cfg.agent.browser_profile = fields["browser_profile"]
     cfg.agent.browser_cdp_endpoint = fields["browser_cdp_endpoint"]
     cfg.agent.browser_headless = fields["browser_headless"]
+    cfg.agent.browser_site_rules = fields["browser_site_rules"]
     cfg.agent.workdir_only = numbers["workdir_only"]
     cfg.agent.shell_timeout_sec = numbers["shell_timeout_sec"]
     cfg.agent.max_tool_rounds = numbers["max_tool_rounds"]
@@ -674,6 +691,7 @@ def _handle_settings_locked(handler: HandlerBase, body: dict) -> None:
         fields["browser_engine"],
         fields["browser_profile"],
         fields["browser_cdp_endpoint"],
+        fields["browser_site_rules"],
     )
     if browser_error:
         handler._json(400, {"error": browser_error})

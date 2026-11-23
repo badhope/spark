@@ -273,9 +273,7 @@ def test_stdlib_logging_bridge_exports(monkeypatch) -> None:
     import logging
 
     monkeypatch.setenv("SPARK_OTEL_BRIDGE_LOGGING", "1")
-    from spark.otel import flush, reset_for_tests
-
-    from spark.otel import init_telemetry
+    from spark.otel import flush, init_telemetry, reset_for_tests
 
     reset_for_tests()
     init_telemetry()

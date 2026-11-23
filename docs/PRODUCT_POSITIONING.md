@@ -14,7 +14,7 @@
 
 - Web 界面是主入口，面向 Chrome / Edge / Firefox / Safari 等现代浏览器设计；当前 UI 回归以 Chromium/Edge 为主，Firefox/Safari 仍需补跨浏览器门禁。桌面壳、CLI/TUI、VS Code、JetBrains、Neovim、移动端布局与 A2A API 共用同一套后端能力。
 - 不是“某个编辑器里的插件”，也不是“只能装在 Windows 的桌面软件”。入口在浏览器里，能力在服务端，前端只是壳。
-- 当前真实边界：Web UI 已经浏览器原生化；Agent 浏览器执行面已支持 Chromium / Chrome / Edge / Firefox / WebKit、持久化 Profile 与 CDP 接管已运行浏览器，但浏览器扩展桥、按域名授权与性能 trace 仍在后续清单，不把目标写成既成事实。
+- 当前真实边界：Web UI 已经浏览器原生化；Agent 浏览器执行面已支持 Chromium / Chrome / Edge / Firefox / WebKit、持久化 Profile、CDP 接管已运行浏览器、按域名授权、敏感站点确认与性能 trace。扩展桥以官方 Playwright MCP `--extension` 预设落地，仍需用户安装浏览器扩展后手动启用；不把目标写成既成事实。
 
 ### 2. 全浏览器能力接入层，而不是只有一个 `browser_*` 工具
 
@@ -23,9 +23,9 @@
 - 引擎：Chromium / Chrome / Edge / Firefox / WebKit，本地与远程浏览器会话。
 - 接入方式：CDP、WebDriver、浏览器扩展桥、Playwright、MCP 远程浏览器。
 - 能力：标签页与窗口管理、已登录会话复用、Cookie/Storage、下载/上传、截图/PDF、控制台/网络、性能 trace、权限与对话框、文件选择、跨域 iframe。
-- 安全：按域名/动作分级授权，敏感站点与凭据页面默认阻断，页面文本一律按不可信内容处理。
+- 安全：原生 `browser_*` 按域名/动作分级授权，敏感站点与凭据页面默认二次确认（一行 `deny` 可升级为阻断）；扩展桥走 MCP 只读白名单与人工审批。页面文本一律按不可信内容处理。
 
-当前已落地的是 Playwright 五引擎（Chromium / Chrome / Edge / Firefox / WebKit）的 21 个 `browser_*` 工具、持久化 Profile 与 CDP 接管，以及 Web 工作台里的网页/阅读模式入口；这是“浏览器执行面 v1”，还不是完整的“浏览器能力层”。扩展桥、按域名/动作分级授权、性能 trace 与更深的多会话管理仍待补齐。
+当前已落地的是 Playwright 五引擎（Chromium / Chrome / Edge / Firefox / WebKit）的 24 个 `browser_*` 工具、持久化 Profile、CDP 接管、按域名授权、敏感站点确认、trace 与 Chromium 性能指标，以及 Web 工作台里的网页/阅读模式入口。扩展桥是官方 Playwright MCP 的 `--extension` 预设加独立验收手册；更深的跨会话管理仍是后续项，不把“全浏览器能力”写成已完成。
 
 ### 3. 高度开源、自定义属性强
 

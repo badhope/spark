@@ -29,6 +29,15 @@ from urllib.parse import quote_plus, unquote, urljoin, urlparse
 
 from pydantic import BaseModel
 
+from spark.browser_policy import (
+    DEFAULT_SENSITIVE_RULES,
+    SiteRule,
+    host_of_url,
+    parse_site_rules,
+)
+from spark.browser_policy import (
+    guard as site_guard,
+)
 from spark.models import ToolResult
 from spark.tools.untrusted import wrap
 
@@ -173,6 +182,14 @@ class BrowserEvalArgs(BaseModel):
     frame_index: int = -1
 
 
+class BrowserTraceArgs(BaseModel):
+    name: str = "trace"
+
+
+class BrowserMetricsArgs(BaseModel):
+    pass
+
+
 class BrowserFileUploadArgs(BaseModel):
     selector: str = ""
     ref: str = ""
@@ -241,6 +258,7 @@ class BrowserOptions:
     profile: str = ""
     cdp_endpoint: str = ""
     headless: bool = True
+    site_rules: tuple[SiteRule, ...] = ()
 
 
 def browser_options(cfg: Any | None) -> BrowserOptions:
@@ -249,8 +267,16 @@ def browser_options(cfg: Any | None) -> BrowserOptions:
     profile = str(getattr(agent, "browser_profile", "") or "").strip()
     endpoint = str(getattr(agent, "browser_cdp_endpoint", "") or "").strip()
     headless = bool(getattr(agent, "browser_headless", True))
+    try:
+        rules = tuple(parse_site_rules(list(getattr(agent, "browser_site_rules", []) or [])))
+    except ValueError as exc:
+        raise BrowserError(f"browser_site_rules 无效: {exc}") from exc
     return BrowserOptions(
-        engine=engine, profile=profile, cdp_endpoint=endpoint, headless=headless
+        engine=engine,
+        profile=profile,
+        cdp_endpoint=endpoint,
+        headless=headless,
+        site_rules=rules,
     )
 
 
@@ -374,6 +400,8 @@ class _Worker:
         self.allow_network = True
         self._owns_browser = True
         self._owns_context = True
+        self._browser: Any = None
+        self._context: Any = None
         self._queue: queue.Queue[Callable[[], Any] | None] = queue.Queue()
         self._thread = threading.Thread(target=self._run, name="spark-browser", daemon=True)
         self._thread.start()
@@ -394,6 +422,11 @@ class _Worker:
         except Exception:
             return ""
 
+    def _site_rule_action(self, host: str) -> str | None:
+        from spark.browser_policy import strongest_action
+
+        return strongest_action(list(self.options.site_rules), host)
+
     def _guard_request(self, route: Any) -> None:
         """Re-check every request so a redirect/JS fetch cannot reach private hosts."""
         url = route.request.url
@@ -403,6 +436,9 @@ class _Worker:
                 route.abort()
                 return
             host = (parsed.hostname or "").lower()
+            if self._site_rule_action(host) == "deny":
+                route.abort()
+                return
             now = time.monotonic()
             if self._host_cache.get(host, 0) < now:
                 try:
@@ -793,6 +829,170 @@ def has_worker(workdir: Path) -> bool:
     key = str(workdir.resolve())
     with _lock:
         return key in _workers
+
+
+def tab_host(workdir: Path, index: int) -> str:
+    """Return the host of a specific tab without starting an idle browser."""
+    key = str(workdir.resolve())
+    with _lock:
+        worker = _workers.get(key)
+    if worker is None or worker._startup_error is not None:
+        return ""
+    try:
+        return str(
+            worker.call(
+                lambda _page: host_of_url(worker._pages[index].url)
+                if 0 <= index < len(worker._pages)
+                else ""
+            )
+        )
+    except Exception:
+        return ""
+
+
+def current_host(workdir: Path) -> str:
+    """Return the active page host without starting an idle browser."""
+    key = str(workdir.resolve())
+    with _lock:
+        worker = _workers.get(key)
+    if worker is None or worker._startup_error is not None:
+        return ""
+    try:
+        return host_of_url(str(worker.call(lambda page: page.url)))
+    except Exception:
+        return ""
+
+
+def evaluate_call_guard(
+    cfg: Any,
+    tool_name: str,
+    args: dict[str, Any],
+    workdir: Path,
+    *,
+    host: str | None = None,
+) -> tuple[str, str]:
+    """Compute the per-domain guard for one browser call.
+
+    Called by the approval layer before execution. Navigation tools use their
+    target URL; page actions use the current tab's host. When there is no host
+    (file:// or no worker), rules do not apply.
+    """
+    options = browser_options(cfg)
+    host = host or ""
+    if tool_name == "browser_open":
+        target = normalize_navigation_target(str(args.get("url") or ""))
+        host = host_of_url(target)
+    elif tool_name == "browser_search":
+        host = host_of_url(DEFAULT_BROWSER_SEARCH)
+    elif tool_name == "browser_tabs":
+        action = str(args.get("action") or "list")
+        if action == "select":
+            raw_index = args.get("index", -1)
+            index = int(raw_index) if raw_index is not None else -1
+            host = tab_host(workdir, index)
+        elif action == "new":
+            target = normalize_navigation_target(str(args.get("url") or ""))
+            host = host_of_url(target)
+        elif not host:
+            host = current_host(workdir)
+    elif not host:
+        host = current_host(workdir)
+    return site_guard(
+        list(options.site_rules),
+        tool_name,
+        host,
+        args,
+        fallback_rules=DEFAULT_SENSITIVE_RULES,
+    )
+
+
+def browser_install_hint(engine: str, error: str) -> str:
+    """Turn a Playwright launch error into the shortest actionable fix."""
+    family = _engine_family(engine)
+    lowered = error.lower()
+    if any(
+        token in lowered
+        for token in (
+            "missing dependencies",
+            "host system is missing",
+            "libnss",
+            "libgbm",
+            "libwoff",
+            "libharfbuzz",
+            "libvpx",
+            "error while loading shared libraries",
+            "shared libraries",
+        )
+    ):
+        return (
+            'sudo -n env PATH="$PATH" "$(which python)" -m playwright install-deps '
+            + family
+        )
+    if any(
+        token in lowered
+        for token in ("executable doesn't exist", "executable not found", "no such file")
+    ):
+        return f"python -m playwright install {family}"
+    return "检查 PLAYWRIGHT_BROWSERS_PATH、浏览器引擎名称，或运行 spark doctor"
+
+
+def diagnose_browser(cfg: Any, workdir: Path | None = None) -> dict[str, Any]:
+    """Launch the configured engine and prove it can render a page.
+
+    This is deliberately independent of the shared worker: doctor must not
+    inherit a broken worker, and it must not leave a browser behind.
+    """
+    options = browser_options(cfg)
+    family = _engine_family(options.engine)
+    channel = _engine_channel(options.engine)
+    result: dict[str, Any] = {
+        "engine": options.engine,
+        "family": family,
+        "headless": True,
+        "browsers_path": os.environ.get("PLAYWRIGHT_BROWSERS_PATH", ""),
+        "ok": False,
+    }
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception as exc:  # noqa: BLE001
+        result["error"] = f"Playwright 未安装: {exc}"
+        result["hint"] = "pip install 'spark-agent[browser]'"
+        return result
+    try:
+        with sync_playwright() as playwright:
+            launcher = getattr(playwright, family)
+            kwargs: dict[str, Any] = {"headless": True}
+            if channel:
+                kwargs["channel"] = channel
+            try:
+                browser = launcher.launch(**kwargs)
+            except Exception as first:
+                if channel or family != "chromium":
+                    raise first
+                last: Exception = first
+                for exe in _Worker._chromium_candidates():
+                    try:
+                        browser = launcher.launch(
+                            **kwargs, executable_path=str(exe)
+                        )
+                        break
+                    except Exception as exc:  # noqa: BLE001
+                        last = exc
+                else:
+                    raise last
+            try:
+                result["version"] = getattr(browser, "version", "")
+                page = browser.new_page()
+                page.set_content("<title>spark browser doctor</title><p>ok</p>")
+                result["title"] = page.title()
+                result["ok"] = result["title"] == "spark browser doctor"
+                page.close()
+            finally:
+                browser.close()
+    except Exception as exc:  # noqa: BLE001
+        result["error"] = str(exc)
+        result["hint"] = browser_install_hint(options.engine, str(exc))
+    return result
 
 
 def live_state(workdir: Path, cfg: Any | None = None) -> dict[str, Any]:
@@ -1669,6 +1869,84 @@ def browser_eval(ctx: Any, args: BrowserEvalArgs) -> ToolResult:
     except Exception as exc:  # noqa: BLE001
         return ToolResult(ok=False, payload={"error": f"执行 JS 失败: {exc}"})
     _touch()
+    return ToolResult(ok=True, payload=result)
+
+
+def browser_trace_start(ctx: Any, args: BrowserTraceArgs) -> ToolResult:
+    """Start a Playwright trace (screenshots, DOM snapshots, sources)."""
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
+
+    def action(page: Any) -> dict[str, Any]:
+        page.context.tracing.start(
+            screenshots=True, snapshots=True, sources=True
+        )
+        return {"started": True, "engine": worker.options.engine}
+
+    try:
+        result = worker.call(action)
+    except Exception as exc:  # noqa: BLE001
+        return ToolResult(ok=False, payload={"error": f"启动 trace 失败: {exc}"})
+    return ToolResult(ok=True, payload=result)
+
+
+def browser_trace_stop(ctx: Any, args: BrowserTraceArgs) -> ToolResult:
+    """Stop the active trace and save a zip under .spark/browser/traces."""
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
+    name = _safe_filename(args.name, "trace")
+    rel = BROWSER_DIR / "traces" / f"{name}-{int(time.time())}.zip"
+    out = ctx.sandbox.root / rel
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    def action(page: Any) -> dict[str, Any]:
+        page.context.tracing.stop(path=str(out))
+        return {
+            "path": str(rel).replace("\\", "/"),
+            "bytes": out.stat().st_size if out.is_file() else 0,
+            "engine": worker.options.engine,
+        }
+
+    try:
+        result = worker.call(action)
+    except Exception as exc:  # noqa: BLE001
+        return ToolResult(ok=False, payload={"error": f"停止 trace 失败: {exc}"})
+    if not out.is_file() or out.stat().st_size == 0:
+        return ToolResult(ok=False, payload={"error": "trace 文件为空或未生成"})
+    return ToolResult(ok=True, payload=result)
+
+
+def browser_metrics(ctx: Any, args: BrowserMetricsArgs | None = None) -> ToolResult:
+    """Read Chromium DevTools performance metrics for the current page."""
+    worker = _get_worker(ctx.sandbox.root, ctx.config)
+    if _engine_family(worker.options.engine) != "chromium":
+        return ToolResult(
+            ok=False,
+            payload={
+                "error": "performance metrics 仅 Chromium / Chrome / Edge 支持",
+                "engine": worker.options.engine,
+            },
+        )
+
+    def action(page: Any) -> dict[str, Any]:
+        session = page.context.new_cdp_session(page)
+        try:
+            session.send("Performance.enable")
+            rows = session.send("Performance.getMetrics") or {}
+        finally:
+            try:
+                session.detach()
+            except Exception:
+                pass
+        metrics = {
+            str(item.get("name")): item.get("value")
+            for item in (rows.get("metrics") or [])
+            if item.get("name")
+        }
+        return {"metrics": metrics, "url": page.url}
+
+    try:
+        result = worker.call(action)
+    except Exception as exc:  # noqa: BLE001
+        return ToolResult(ok=False, payload={"error": f"读取性能指标失败: {exc}"})
     return ToolResult(ok=True, payload=result)
 
 

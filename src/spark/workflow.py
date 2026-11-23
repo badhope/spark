@@ -462,7 +462,7 @@ async def run_workflow(
     from spark.otel import end_step_span, end_workflow_span, start_step_span, start_workflow_span
 
     wf_span = start_workflow_span(
-        name=spec.name, version=spec.version, steps=len(spec.steps), max_parallel=workers
+        name=spec.name, version=str(spec.version), steps=len(spec.steps), max_parallel=workers
     )
     initial = dict(initial_statuses or {})
     run = WorkflowRun(

@@ -82,7 +82,40 @@ def test_browser_tools_registered(tmp_path: Path) -> None:
         "browser_console",
         "browser_network",
         "browser_dialog",
+        "browser_trace_start",
+        "browser_trace_stop",
+        "browser_metrics",
     } <= names
+
+
+def test_project_config_cannot_set_browser_rules(tmp_path: Path) -> None:
+    from spark.config import load_config
+
+    project = tmp_path / ".spark.toml"
+    project.write_text(
+        "[agent]\n"
+        'browser_site_rules = ["*.bank.example=allow"]\n'
+        'browser_profile = "stolen"\n'
+        'browser_cdp_endpoint = "http://127.0.0.1:9222"\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(workdir=tmp_path)
+    assert cfg.agent.browser_site_rules == []
+    assert cfg.agent.browser_profile == ""
+    assert cfg.agent.browser_cdp_endpoint == ""
+
+
+def test_browser_doctor_reports_engine_health() -> None:
+    cfg = SparkConfig()
+    cfg.agent.browser_engine = "webkit"
+    hint = browser.browser_install_hint(
+        "webkit",
+        "error while loading shared libraries: libgstcodecparsers-1.0.so.0",
+    )
+    assert "install-deps webkit" in hint
+    assert "install webkit" in browser.browser_install_hint(
+        "webkit", "Executable doesn't exist at /tmp/webkit"
+    )
 
 
 def test_navigation_target_defaults_to_bing(tmp_path: Path) -> None:
@@ -395,3 +428,182 @@ def test_browser_persistent_profile_keeps_login_state(tmp_path: Path) -> None:
     assert state["engine"] == "chromium"
     assert state["profile"] == "persistent"
     browser._close_all()
+
+
+def test_cli_browser_site_rules_list_parsing() -> None:
+    from spark.config import SparkConfig
+    from spark.onboard import parse_value, set_value
+
+    assert parse_value(
+        "agent.browser_site_rules",
+        "*.bank.example=deny, docs.example=read",
+    ) == ["*.bank.example=deny", "docs.example=read"]
+    assert parse_value(
+        "agent.browser_site_rules",
+        "*.bank.example=deny\n docs.example=read",
+    ) == ["*.bank.example=deny", "docs.example=read"]
+    cfg = SparkConfig()
+    set_value(cfg, "agent.browser_site_rules", "*.bank.example=deny,docs.example=read")
+    assert cfg.agent.browser_site_rules == [
+        "*.bank.example=deny",
+        "docs.example=read",
+    ]
+
+
+def test_browser_site_rules_strongest_match_and_actions() -> None:
+    from spark.browser_policy import (
+        action_kind,
+        guard,
+        parse_site_rules,
+        strongest_action,
+    )
+
+    rules = parse_site_rules(
+        [
+            "*.bank.example=deny",
+            "*.bank.example=allow",  # weaker duplicate must not win
+            "docs.example=read",
+            "mail.example=prompt",
+            "allow.example=allow",
+            "# comment",
+        ]
+    )
+    assert strongest_action(rules, "www.bank.example") == "deny"
+    assert strongest_action(rules, "docs.example") == "read"
+    assert strongest_action(rules, "allow.example") == "allow"
+    assert strongest_action(rules, "unknown.example") is None
+    assert guard(rules, "browser_snapshot", "docs.example")[0] == "allow"
+    assert guard(rules, "browser_click", "docs.example")[0] == "deny"
+    assert guard(rules, "browser_click", "mail.example")[0] == "prompt"
+    assert guard(rules, "browser_snapshot", "www.bank.example")[0] == "deny"
+    assert action_kind("browser_click", {}) == "write"
+    assert action_kind("browser_snapshot", {}) == "read"
+    assert action_kind("browser_dialog", {"action": "status"}) == "read"
+    assert action_kind("browser_dialog", {"action": "accept"}) == "write"
+    assert action_kind("browser_tabs", {"action": "list"}) == "read"
+    assert action_kind("browser_tabs", {"action": "select"}) == "read"
+    assert action_kind("browser_tabs", {"action": "close"}) == "read"
+    assert action_kind("browser_future_tool", {}) == "write"
+    from spark.browser_policy import DEFAULT_SENSITIVE_RULES, SiteRule
+
+    assert guard(
+        [], "browser_click", "accounts.google.com", fallback_rules=DEFAULT_SENSITIVE_RULES
+    )[0] == "prompt"
+    assert guard(
+        [], "browser_snapshot", "accounts.google.com", fallback_rules=DEFAULT_SENSITIVE_RULES
+    )[0] == "allow"
+    assert guard(
+        [SiteRule(pattern="accounts.google.com", action="allow")],
+        "browser_click",
+        "accounts.google.com",
+        fallback_rules=DEFAULT_SENSITIVE_RULES,
+    )[0] == "allow"
+    # Broad wildcards must not unlock sensitive writes; concrete subdomains may.
+    assert guard(
+        [SiteRule(pattern="*", action="allow")],
+        "browser_click",
+        "paypal.com",
+        fallback_rules=DEFAULT_SENSITIVE_RULES,
+    )[0] == "prompt"
+    assert guard(
+        [SiteRule(pattern="*.paypal.com", action="allow")],
+        "browser_click",
+        "www.paypal.com",
+        fallback_rules=DEFAULT_SENSITIVE_RULES,
+    )[0] == "allow"
+    assert guard(
+        [SiteRule(pattern="*.com", action="allow")],
+        "browser_click",
+        "paypal.com",
+        fallback_rules=DEFAULT_SENSITIVE_RULES,
+    )[0] == "prompt"
+    with pytest.raises(ValueError):
+        parse_site_rules(["https://bad host=allow"])
+
+
+def test_policy_honours_browser_site_guard() -> None:
+    from spark.config import PermissionRule
+    from spark.models import ToolCall
+    from spark.policy import BROWSER_TOOLS, call_signature, decide
+
+    call = ToolCall(id="b", name="browser_click", arguments={"ref": "r1"})
+    assert "browser_click" in BROWSER_TOOLS
+    assert (
+        decide("full-auto", call, allow_always=set(), readonly_mcp=set(), browser_guard="deny")
+        == "deny"
+    )
+    assert (
+        decide("full-auto", call, allow_always=set(), readonly_mcp=set(), browser_guard="prompt")
+        == "prompt"
+    )
+    assert (
+        decide("suggest", call, allow_always=set(), readonly_mcp=set(), browser_guard="allow")
+        == "prompt"
+    )
+    assert (
+        decide(
+            "full-auto",
+            call,
+            allow_always={call_signature(call)},
+            readonly_mcp=set(),
+            browser_guard="deny",
+        )
+        == "deny"
+    )
+    # A browser prompt must not downgrade an explicit deny rule.
+    deny_rule = PermissionRule(action="deny", resource="**", tool="browser_*")
+    assert (
+        decide(
+            "full-auto",
+            call,
+            allow_always=set(),
+            readonly_mcp=set(),
+            rules=[deny_rule],
+            browser_guard="prompt",
+        )
+        == "deny"
+    )
+    assert (
+        decide(
+            "full-auto",
+            call,
+            allow_always=set(),
+            readonly_mcp=set(),
+            scopes={"local": [deny_rule]},
+            browser_guard="prompt",
+        )
+        == "deny"
+    )
+    # A sensitive-site prompt still beats a legacy permanent allow.
+    assert (
+        decide(
+            "full-auto",
+            call,
+            allow_always={call_signature(call)},
+            readonly_mcp=set(),
+            browser_guard="prompt",
+        )
+        == "prompt"
+    )
+
+
+def test_browser_trace_and_metrics(tmp_path: Path) -> None:
+    page = tmp_path / "trace.html"
+    page.write_text("<html><body><button id='b'>Go</button><script>console.log('trace')</script></body></html>")
+    ctx = _ctx(tmp_path)
+    opened = browser.browser_open(ctx, browser.BrowserArgs(url=page.as_uri()))
+    assert opened.ok, opened.payload
+    started = browser.browser_trace_start(ctx, browser.BrowserTraceArgs(name="check"))
+    assert started.ok, started.payload
+    clicked = browser.browser_click(
+        ctx, browser.BrowserClickArgs(ref={x["id"]: x for x in opened.payload["interactive"] if x.get("id")}["b"]["ref"])
+    )
+    assert clicked.ok, clicked.payload
+    stopped = browser.browser_trace_stop(ctx, browser.BrowserTraceArgs(name="check"))
+    assert stopped.ok, stopped.payload
+    trace = tmp_path / stopped.payload["path"]
+    assert trace.is_file() and trace.stat().st_size > 0
+    assert trace.read_bytes()[:2] == b"PK"
+    metrics = browser.browser_metrics(ctx, browser.BrowserMetricsArgs())
+    assert metrics.ok, metrics.payload
+    assert {"Documents", "LayoutCount"} <= set(metrics.payload["metrics"])

@@ -37,6 +37,8 @@ nav:
       - Built-in dev kit: builtin-dev-kit.md
   - Reference:
       - Architecture: ARCHITECTURE.md
+      - Browser surface: BROWSER.md
+      - Extension bridge: BROWSER_EXTENSION_BRIDGE.md
       - API: API.md
       - Observability: OBSERVABILITY.md
       - Model routing: model-routing.md

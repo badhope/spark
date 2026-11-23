@@ -23,7 +23,7 @@ spark web     # 打开浏览器界面
 
 ## 核心能力
 
-- **浏览器是执行面。** Web、桌面、CLI/TUI、IDE、移动端与 API 共用同一条 Agent 循环；浏览器操作、审批、回滚和账本不分裂成多套。浏览器自动化基于 Playwright，可切 Chromium / Chrome / Edge / Firefox / WebKit，可用持久化 Profile 复用登录态，也可通过 CDP 接管已运行的浏览器。
+- **浏览器是执行面。** Web、桌面、CLI/TUI、IDE、移动端与 API 共用同一条 Agent 循环；浏览器操作、审批、回滚和账本不分裂成多套。浏览器自动化基于 Playwright，可切 Chromium / Chrome / Edge / Firefox / WebKit，可用持久化 Profile 复用登录态，也可通过 CDP 接管已运行的浏览器。24 个 `browser_*` 工具覆盖 snapshot、交互、标签页、下载、PDF、控制台、网络、trace 与 Chromium 性能指标；按域名 `allow/read/prompt/deny` 授权，敏感站点写操作默认二次确认。需要复用已登录标签页时走官方 Playwright MCP `--extension` 预设，见 `docs/BROWSER_EXTENSION_BRIDGE.md`。
 - **每一层都可替换。** MIT 开源；Provider、工具、MCP、Skills、命令、插件、主题与工作流都可换，也可自托管。
 - **执行可审计。** 写入和命令执行前先过审批与沙箱；通配规则覆盖 user / project / local 三个作用域，`deny` 始终优先。凭据路径保护与 shell token 检查保持开启。
 - **失败可回滚。** 每个回合快照工作区，文件与对话可一起恢复，非 git 目录同样有效。
@@ -42,6 +42,7 @@ spark desktop                 # 原生窗口，仅回环
 spark exec "任务" --json       # NDJSON 事件流，适合脚本与 CI
 spark review                  # 审查未提交的 diff
 spark doctor                  # 体检配置、凭据与运行时
+spark browser-doctor          # 真实启动当前浏览器引擎并渲染测试页
 ```
 
 办公工作台由企业控制面提供：

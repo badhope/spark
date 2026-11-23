@@ -1207,6 +1207,7 @@ class SparkWebState:
                 "browser_profile": self.cfg.agent.browser_profile,
                 "browser_cdp_endpoint": self.cfg.agent.browser_cdp_endpoint,
                 "browser_headless": self.cfg.agent.browser_headless,
+                "browser_site_rules": list(self.cfg.agent.browser_site_rules),
                 "system_prompt": self.cfg.agent.system_prompt,
                 # 安全相关开关：只回显，写入仍走 /api/settings 的 agent 节。
                 "auto_review": self.cfg.agent.auto_review,

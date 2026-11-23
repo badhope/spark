@@ -86,7 +86,7 @@
 ## 落地顺序
 
 1. **内置 MCP 精选从 7 扩到 10**：已接 Playwright、Chrome DevTools、Repomix、MarkItDown；下一批补 Serena、GitHub、Semgrep/OSV、Fetch。先只读、后写入。
-2. **浏览器扩展桥**：接 Playwright MCP 的 extension 模式，复用用户已登录的 Chrome/Edge 标签页；默认隔离 profile，敏感域名二次确认。
+2. **浏览器扩展桥**：已交付 Playwright MCP `--extension` 一键预设与[安装/验收手册](BROWSER_EXTENSION_BRIDGE.md)，复用用户已登录的 Chrome/Edge 标签页；扩展桥默认只放行四个只读工具，写工具需显式加白名单；站点规则只作用于原生 `browser_*`，因为 Spark 看不到扩展当前标签页 URL。
 3. **工具网关**：统一 MCP 健康检查、工具级 allowlist、OAuth/Token 注入、失败降级、审计事件。
 4. **按需加载**：所有外部 server 默认不拉起，用户点“一键加入”后才启动；冷启动与内存占用写进设置页。
 5. **许可证与供应链清单**：每个内置资源记录来源、许可证、维护状态、最后验证日期；升级前跑回归。

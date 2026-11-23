@@ -56,6 +56,12 @@ def test_canonical_positioning_exists_and_names_the_three_pillars() -> None:
 
 def test_builtin_mcp_presets_cover_browser_code_and_docs() -> None:
     text = (ROOT / "web/src/components/SettingsModal.tsx").read_text(encoding="utf-8")
-    for name in ("playwright", "chrome-devtools", "repomix", "markitdown"):
+    for name in (
+        "playwright",
+        "playwright-extension",
+        "chrome-devtools",
+        "repomix",
+        "markitdown",
+    ):
         assert f'name: "{name}"' in text
     assert text.count("name: \"") >= 7

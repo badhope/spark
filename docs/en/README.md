@@ -10,6 +10,8 @@ Browser-native, cross-platform, open-source AI coding and office workbench. Star
 | HTTP API and SSE | [API.md](API.md) | [API](../API.md) |
 | Architecture | [ARCHITECTURE.md](ARCHITECTURE.md) | [架构](../ARCHITECTURE.md) |
 | Feature map | [FEATURES.md](../FEATURES.md) | [功能总览](../FEATURES.md) |
+| Browser surface | [BROWSER_EXTENSION_BRIDGE.md](BROWSER_EXTENSION_BRIDGE.md) | [内置浏览器](../BROWSER.md) |
+| Extension bridge | [BROWSER_EXTENSION_BRIDGE.md](BROWSER_EXTENSION_BRIDGE.md) | [浏览器扩展桥](../BROWSER_EXTENSION_BRIDGE.md) |
 | Enterprise / office | [ENTERPRISE.md](../ENTERPRISE.md) | [企业控制面](../ENTERPRISE.md) |
 | Remote control | [REMOTE.md](REMOTE.md) | [远程控制](../REMOTE.md) |
 | A2A protocol | [A2A.md](../A2A.md) | [A2A](../A2A.md) |

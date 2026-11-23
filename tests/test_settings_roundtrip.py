@@ -12,9 +12,11 @@ covered automatically instead of silently escaping the suite.
 from __future__ import annotations
 
 import contextlib
+import json
 import socket
 import threading
 import time
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -133,6 +135,25 @@ def live(tmp_path: Path):
         finally:
             ctx.close()
             browser.close()
+
+
+def _get_json(base: str, path: str) -> dict:
+    with urllib.request.urlopen(base + path, timeout=15) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def test_browser_site_rules_roundtrip(live) -> None:
+    """The per-domain textarea is a real control, not decoration."""
+    page, base, _state = live
+    dialog = _open_settings(page)
+    dialog.locator('[data-settings-page="model"]').first.click()
+    dialog.locator('[data-settings-tab="agent"]').first.click()
+    field = dialog.locator('textarea[placeholder*="bank.com"]')
+    field.wait_for(state="visible")
+    field.fill("*.bank.example=deny\ndocs.example=read")
+    assert _save(page, dialog), dialog.inner_text()[:400]
+    agent = _get_json(base, "/api/config")["agent"]
+    assert agent["browser_site_rules"] == ["*.bank.example=deny", "docs.example=read"]
 
 
 def test_every_text_and_number_field_persists(live) -> None:

@@ -8,6 +8,8 @@ The English README is the primary entry point; a [Chinese translation](../README
 | Core capability gaps | [CORE_CAPABILITY_GAPS.md](CORE_CAPABILITY_GAPS.md) | [核心能力差距](CORE_CAPABILITY_GAPS.md) |
 | Integration map | [INTEGRATION_MAP.md](INTEGRATION_MAP.md) | [外部集成地图](INTEGRATION_MAP.md) |
 | Feature map | [FEATURES.md](FEATURES.md) | [功能总览](FEATURES.md) |
+| Browser surface | [BROWSER.md](BROWSER.md) | [内置浏览器](BROWSER.md) |
+| Extension bridge | [en/BROWSER_EXTENSION_BRIDGE.md](en/BROWSER_EXTENSION_BRIDGE.md) | [浏览器扩展桥](BROWSER_EXTENSION_BRIDGE.md) |
 | Install and packaging | [en/INSTALL.md](en/INSTALL.md) | [INSTALL.md](INSTALL.md) |
 | Configuration reference | [en/CONFIG.md](en/CONFIG.md) | [CONFIG.md](CONFIG.md) |
 | HTTP API and SSE | [en/API.md](en/API.md) | [API.md](API.md) |

@@ -77,6 +77,27 @@ const BUILTIN_MCP_PRESETS: { item: McpRegistryItem; desc: { zh: string; en: stri
   },
   {
     item: {
+      name: "playwright-extension",
+      title: "Playwright 扩展桥",
+      title_en: "Playwright extension bridge",
+      description: "复用你已登录的 Chrome / Edge 标签页：通过 Playwright MCP 扩展模式接管当前窗口，不再另起隔离浏览器",
+      description_en: "Reuse your logged-in Chrome / Edge tabs through Playwright MCP extension mode instead of launching an isolated browser",
+      version: "builtin",
+      repository_url: "https://github.com/microsoft/playwright-mcp",
+      transport: "stdio",
+      remote_url: null,
+      suggested_command: "npx",
+      suggested_args: ["-y", "@playwright/mcp@latest", "--extension"],
+      suggested_readonly_tools: ["browser_snapshot", "browser_take_screenshot", "browser_console_messages", "browser_network_requests"],
+      suggested_allowed_tools: ["browser_snapshot", "browser_take_screenshot", "browser_console_messages", "browser_network_requests"],
+      required_env: [],
+      glama: null,
+      china: { verdict: "available", reasons: ["npm package; the Chrome/Edge bridge extension is installed once from the browser web store"] },
+    },
+    desc: { zh: "已登录标签页复用；默认只放行只读工具，点击/输入需在 MCP 设置里显式加白名单。先装 Playwright MCP Bridge 扩展，见 docs/BROWSER_EXTENSION_BRIDGE.md", en: "Reuse logged-in tabs; read-only tools only by default. Add click/type to the MCP allowlist explicitly. Install the Playwright MCP Bridge extension first, see docs/BROWSER_EXTENSION_BRIDGE.md" },
+  },
+  {
+    item: {
       name: "chrome-devtools",
       title: "Chrome DevTools",
       title_en: "Chrome DevTools",
@@ -726,6 +747,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
           ...(cfg.agent.browser_profile !== undefined ? { browser_profile: cfg.agent.browser_profile } : {}),
           ...(cfg.agent.browser_cdp_endpoint !== undefined ? { browser_cdp_endpoint: cfg.agent.browser_cdp_endpoint } : {}),
           ...(cfg.agent.browser_headless !== undefined ? { browser_headless: cfg.agent.browser_headless } : {}),
+          ...(cfg.agent.browser_site_rules !== undefined ? { browser_site_rules: cfg.agent.browser_site_rules } : {}),
         },
         // Project tab edits land here; without this field every context change
         // was silently discarded on save. Optional keys are omitted when the
@@ -1619,6 +1641,20 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                     onChange={(v) => patchAgent({ browser_headless: v })}
                   />
                 </label>
+                <Field label={t("agent.browserSiteRules", lang)} hint={t("agent.browserSiteRulesHint", lang)}>
+                  <TextArea
+                    value={(cfg.agent.browser_site_rules ?? []).join("\n")}
+                    placeholder={"*.bank.com=deny\nmail.example.com=prompt\ndocs.example.com=read"}
+                    onChange={(e) =>
+                      patchAgent({
+                        browser_site_rules: e.target.value
+                          .split("\n")
+                          .map((line) => line.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                  />
+                </Field>
               </section>
 
               <section className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-4">

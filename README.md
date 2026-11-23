@@ -23,7 +23,7 @@ No API key? Spark still starts, but reports the real configuration error and ref
 
 ## What it does
 
-- **The browser is an execution surface.** The Web UI, desktop shell, CLI/TUI, IDE, mobile layout and API share one agent loop, so browser actions, approvals, rollback and ledgers do not split into separate stacks. Browser automation runs on Playwright with Chromium / Chrome / Edge / Firefox / WebKit engines, persistent profiles for logged-in sessions, and CDP attachment to an already-running browser.
+- **The browser is an execution surface.** The Web UI, desktop shell, CLI/TUI, IDE, mobile layout and API share one agent loop, so browser actions, approvals, rollback and ledgers do not split into separate stacks. Browser automation runs on Playwright with Chromium / Chrome / Edge / Firefox / WebKit engines, persistent profiles for logged-in sessions, and CDP attachment to an already-running browser. Its 24 `browser_*` tools cover snapshots, interaction, tabs, downloads, PDF, console, network, traces and Chromium metrics; per-domain `allow/read/prompt/deny` rules gate writes, with a second confirmation on sensitive sites. Reusing a signed-in tab goes through the official Playwright MCP `--extension` preset; see `docs/BROWSER_EXTENSION_BRIDGE.md`.
 - **Every layer is replaceable.** MIT licensed; providers, tools, MCP servers, Skills, slash commands, plugins, themes and workflows can all be swapped, and the stack can be self-hosted.
 - **Auditable execution.** Approval modes and sandbox levels are enforced before a write or command runs. Wildcard rules are scoped to user, project and local config; `deny` always wins. Protected credential paths and shell token checks stay on.
 - **Recoverable by design.** Each turn snapshots the workspace and can restore files and conversation together, including outside git repositories.
@@ -42,6 +42,7 @@ spark desktop                 # native window, loopback only
 spark exec "task" --json      # NDJSON events for scripts and CI
 spark review                  # inspect the uncommitted diff
 spark doctor                  # check config, credentials and runtime
+spark browser-doctor          # launch the configured engine and render a test page
 ```
 
 The office workbench runs through the enterprise control plane:

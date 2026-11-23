@@ -110,10 +110,13 @@ BROWSER_TOOLS = {
     "browser_console",
     "browser_network",
     "browser_dialog",
+    "browser_trace_start",
+    "browser_trace_stop",
+    "browser_metrics",
 }
 # Shell and worktree-mutating tools can have unbounded blast radius, so they may
 # never be granted a permanent "always allow".
-NEVER_PERSIST_ALLOW = SHELL_TOOLS | {
+NEVER_PERSIST_ALLOW = SHELL_TOOLS | BROWSER_TOOLS | {
     "worktree_create",
     "worktree_remove",
     "task_begin",
@@ -311,7 +314,36 @@ def decide(
     rules: list[PermissionRule] | None = None,
     plan_approved: bool = False,
     scopes: dict[str, list[PermissionRule]] | None = None,
+    browser_guard: Literal["allow", "prompt", "deny"] | None = None,
 ) -> DecisionKind:
+    # Explicit deny rules stay the highest priority. A browser guard may add
+    # a prompt, but it must never downgrade a user's scoped or wildcard deny.
+    if scopes:
+        resource = _extract_resource(tool)
+        if resource:
+            for layer in ("user", "project", "local"):
+                for rule in scopes.get(layer) or []:
+                    if rule.tool and not _wildcard_match(rule.tool, tool.name):
+                        continue
+                    if rule.action == "deny" and _wildcard_match(
+                        rule.resource, resource
+                    ):
+                        return "deny"
+    if rules:
+        resource = _extract_resource(tool)
+        if resource and evaluate_permission(rules, tool.name, resource) == "deny":
+            return "deny"
+
+    # Per-domain browser rules are a hard safety layer. They run before every
+    # remaining allow path, including a legacy ``allow_always`` signature, a
+    # scoped allow rule, or full-auto. A page can navigate after approval; the
+    # host checked now is the host the action will run on.
+    if tool.name in BROWSER_TOOLS:
+        if browser_guard == "deny":
+            return "deny"
+        if browser_guard == "prompt":
+            return "prompt"
+
     # H3 多作用域（deny 跨层优先）：任何一层（user/project/local）的 deny
     # 规则都拒绝——包括压过 allow_always（防过期授权被仓库层 deny 打穿）；
     # 无 deny 时任何一层的 allow 都放行。空 resource 不参与规则匹配
@@ -353,8 +385,8 @@ def decide(
     if tool.name in readonly_mcp:
         return "allow"
     if tool.name in BROWSER_TOOLS:
-        # 浏览器动作保留审批门；full-auto 明确表示用户已授权自动执行。
-        # 不能落到最后的 "prompt"，因为 full-auto 的 runtime 没有 approver。
+        # Generic browser approval: suggest/manual ask, full-auto runs. The
+        # per-domain decision was already applied above.
         return "allow" if mode == "full-auto" else "prompt"
     if tool.name in WRITE_TOOLS:
         # 写工具：suggest/manual/plan-only 提示；approve-plan 需计划已批准；

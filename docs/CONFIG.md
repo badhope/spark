@@ -42,6 +42,7 @@
 | `browser_profile` | `""` | 持久化 Profile 名；空 = 一次性上下文，填写后登录态保存到 `.spark/browser/profiles/<name>`。Profile 内含 Cookie/登录态，请按凭据保护 |
 | `browser_cdp_endpoint` | `""` | 接管已运行的 Chromium/Chrome/Edge：`http://host:9222` 或 `ws://...`；仅 Chromium 系引擎可用 |
 | `browser_headless` | `true` | 本地启动是否无头；远程 CDP 与已登录窗口不受影响 |
+| `browser_site_rules` | `[]` | 按域名授权：`host=allow\|read\|prompt\|deny`，同域取最严；项目级 `.spark.toml` 不得设置。支付/网银/身份提供方/云控制台默认 `prompt` 兜底 |
 | `show_thinking` / `show_tools` / `show_plan` / `show_context` / `show_keywords` / `show_notices` | `true` | 前端显示开关 |
 | `status_items` | `[]` | TUI 状态栏有序项；空 = 默认（模型/接口/密钥/审批/访问/目录/会话）。合法项：`model` `base_url` `key` `approval` `sandbox` `workdir` `session`；未知项静默跳过 |
 

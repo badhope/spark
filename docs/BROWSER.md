@@ -1,6 +1,6 @@
 # 内置浏览器
 
-Spark 的浏览器是侧栏里的 Playwright 页面，不是外部 Chrome/Edge。模型和用户看到的是同一个实时页面；模型动作不会另开桌面浏览器窗口。
+Spark 内置浏览器是侧栏里的 Playwright 页面。模型和用户看到的是同一个实时页面，模型动作不会另开桌面浏览器窗口。需要复用已登录的 Chrome / Edge 标签页时走[扩展桥](BROWSER_EXTENSION_BRIDGE.md)，二者互不影响。
 
 默认入口和搜索引擎都是 Bing：
 
@@ -33,6 +33,9 @@ Spark 的浏览器是侧栏里的 Playwright 页面，不是外部 Chrome/Edge�
 | `browser_console` | 读控制台日志与页面错误，可按级别/文本过滤并清空 |
 | `browser_network` | 读最近的响应和失败请求；URL 会去掉 query，避免令牌泄露 |
 | `browser_dialog` | 查看 alert/confirm/prompt，或预先武装 accept/dismiss |
+| `browser_trace_start` | 开始 Playwright trace：截图、DOM 快照与源码引用 |
+| `browser_trace_stop` | 停止 trace 并保存到 `.spark/browser/traces/*.zip` |
+| `browser_metrics` | 读 Chromium DevTools 性能指标；Firefox / WebKit 明确报错 |
 
 ## ref 生命周期
 
@@ -46,7 +49,8 @@ snapshot/click/type/eval/screenshot 等工具带 `frame_index`：`-1` 是主页�
 
 ## 权限与边界
 
-- `browser_*` 全部纳入 `BROWSER_TOOLS`。`full-auto` 下自动放行；其他模式默认逐条确认。
+- 24 个 `browser_*` 全部纳入 `BROWSER_TOOLS`。`full-auto` 下普通动作自动放行，但站点规则与内置敏感站点兜底仍有否决权；其他模式默认逐条确认。
+- 浏览器工具不能持久 `allow_always`。页面会跳转、登录态会变化，永久放行等于把未来所有站点都交出去。
 - 如果希望浏览器自动化不打断，可在配置中只给浏览器开白名单：
 
 ```toml
@@ -57,8 +61,12 @@ tool = "browser_*"
 ```
 
 - 页面只允许公网 `http/https` 和工作目录内 `file://`；每次请求还会再过一次 SSRF 防护，重定向和页面内 fetch 也拦截私网。
+- 按域名授权写在 `agent.browser_site_rules`，语法是 `host=allow|read|prompt|deny`；同域取最严。`read` 只拦写动作，`prompt` 让写动作逐条确认，`deny` 连请求都 abort。
+- 支付、网银、身份提供方、云控制台默认是 `prompt` 兜底；精确主机或 `*.paypal.com` 这类具体子域规则可以覆盖它，`*=allow`、`*.com` 这类泛化规则不能把敏感站点的写动作降级。
+- `prompt` 在 `full-auto` 下仍会要求审批。`spark exec`、队列任务等没有审批器的路径会 fail closed（拒绝执行），不会静默放行；需要无人值守时请把该域名写成 `allow`，或不要访问敏感站点。
 - 页面文本进入 untrusted 围栏，不当作系统指令。
-- `browser_eval` 能执行任意页面 JS，`browser_file_upload` 能读取工作目录内文件，`browser_download` 会写入工作目录；给它们开永久 allow 前要确认这个边界。
+- `browser_eval` 能执行任意页面 JS，`browser_file_upload` 能读取工作目录内文件，`browser_download` 会写入工作目录；它们按写动作处理，不能被 `read` 规则放行。
+- trace 会记录截图和 DOM，可能包含页面上的个人信息；`.spark/browser/traces/` 按敏感产物管理。
 - 截图默认写入工作目录 `.spark/browser/`。
 
 ## Web API
@@ -71,3 +79,18 @@ tool = "browser_*"
 - `POST /api/browser/action`：`{"action":"back|forward|reload|click|type|key", ...}`
 
 打开侧栏“浏览器”tab 且没有活动页时，前端会自动调用空 URL 导航进入 Bing。
+
+## 浏览器体检与 WebKit 部署
+
+```bash
+spark browser-doctor
+spark browser-doctor --json
+```
+
+它会按当前配置真实启动一次浏览器、渲染测试页并返回版本；失败时给出最短修复命令。Chromium 缺 headless shell 时会自动回退到完整 Chromium 二进制；WebKit / Firefox 缺系统库时提示：
+
+```bash
+sudo -n env PATH="$PATH" "$(which python)" -m playwright install-deps webkit
+```
+
+Firefox 与 WebKit 的浏览器文件默认在 `~/.cache/ms-playwright`；如果部署把 `PLAYWRIGHT_BROWSERS_PATH` 指到只装了 Chromium 的目录，`browser-doctor` 会如实报缺，不会假装已支持。验收时至少在 Chromium、Firefox、WebKit 各打开一个真实本地页面并完成一次点击。

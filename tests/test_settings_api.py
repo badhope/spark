@@ -199,6 +199,7 @@ def test_agent_config_defaults_match_ui_contract() -> None:
     assert agent.browser_profile == ""
     assert agent.browser_cdp_endpoint == ""
     assert agent.browser_headless is True
+    assert agent.browser_site_rules == []
 
 
 def test_settings_accepts_browser_surface(live) -> None:
@@ -225,6 +226,42 @@ def test_settings_accepts_browser_surface(live) -> None:
     assert reloaded.agent.browser_profile == "work"
     assert reloaded.agent.browser_cdp_endpoint == "http://127.0.0.1:9222"
     assert reloaded.agent.browser_headless is False
+
+
+def test_settings_accepts_browser_site_rules(live) -> None:
+    base, _, _, saved_paths = live
+    post_json(
+        base,
+        "/api/settings",
+        {
+            "agent": {
+                "browser_site_rules": [
+                    "*.bank.example=deny",
+                    "docs.example=read",
+                    "mail.example=prompt",
+                ]
+            }
+        },
+    )
+    agent = get_json(base, "/api/config")["agent"]
+    assert agent["browser_site_rules"] == [
+        "*.bank.example=deny",
+        "docs.example=read",
+        "mail.example=prompt",
+    ]
+    reloaded = load_config(config_path=saved_paths[-1], workdir=saved_paths[-1].parent)
+    assert reloaded.agent.browser_site_rules == agent["browser_site_rules"]
+
+
+def test_settings_rejects_bad_browser_site_rule(live) -> None:
+    base, _, _, _ = live
+    with pytest.raises(urllib.error.HTTPError) as excinfo:
+        post_json(
+            base,
+            "/api/settings",
+            {"agent": {"browser_site_rules": ["https://bad host=allow"]}},
+        )
+    assert excinfo.value.code == 400
 
 
 def test_settings_rejects_bad_browser_profile(live) -> None:

@@ -18,7 +18,7 @@ def test_coding_preset_removes_large_tool_surfaces() -> None:
     cfg = SparkConfig()
     registry = _registry(cfg)
     full = registry.schemas()
-    assert len(full) == 75
+    assert len(full) == 78
     registry.apply_tool_preset("coding")
     coding = registry.schemas()
     assert {s["function"]["name"] for s in coding} == set(CODING_TOOL_ALLOWLIST)
@@ -34,7 +34,7 @@ def test_coding_preset_removes_large_tool_surfaces() -> None:
 
     # Switching back must restore the full surface, not leave a stale allowlist.
     registry.apply_tool_preset("full")
-    assert len(registry.schemas()) == 75
+    assert len(registry.schemas()) == 78
 
 
 def test_explicit_allowlist_is_never_overwritten() -> None:

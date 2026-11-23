@@ -7,7 +7,8 @@ from typing import Any, cast
 
 from spark.config import ApprovalMode, SparkConfig
 from spark.models import ApprovalRequest, ChatMessage, ToolCall, TurnEvent
-from spark.policy import READONLY_TOOLS, decide
+from spark.policy import BROWSER_TOOLS, READONLY_TOOLS, decide
+from spark.tools import browser
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,13 @@ class TurnControlMixin:
         ``interrupt``（_decide_calls），直调路径走 approver 回调
         （_run_tool_body）——两者随后的执行分派完全一致。
         """
-        key = self._classification_key(call)
+        browser_host = ""
+        if call.name in BROWSER_TOOLS:
+            try:
+                browser_host = browser.current_host(self.registry.ctx.sandbox.root)
+            except Exception:
+                browser_host = ""
+        key = self._classification_key(call, browser_host=browser_host)
         cached = self._classification_cache.get(key)
         if cached is not None:
             # The approve node re-runs from the top when an interrupt resumes
@@ -87,6 +94,21 @@ class TurnControlMixin:
                 verdict = {"action": "plan_only", "reason": ""}
                 self._classification_cache[key] = verdict
                 return verdict
+        browser_guard: str | None = None
+        browser_guard_reason = ""
+        if call.name in BROWSER_TOOLS:
+            try:
+                browser_guard, browser_guard_reason = browser.evaluate_call_guard(
+                    self.cfg,
+                    call.name,
+                    dict(call.arguments or {}),
+                    self.registry.ctx.sandbox.root,
+                    host=browser_host,
+                )
+            except Exception:
+                # A broken rule or browser config must fail closed, not
+                # silently grant full browse.
+                browser_guard = "deny"
         decision = decide(
             self._approval_mode(),
             call,
@@ -95,15 +117,26 @@ class TurnControlMixin:
             rules=self.cfg.permission_rules or None,
             plan_approved=self._plan_approved is True,
             scopes=getattr(self.cfg, "permission_scopes", None) or None,
+            browser_guard=browser_guard,  # type: ignore[arg-type]
         )
         if decision == "deny":
-            verdict = {"action": "deny", "reason": "denied by permission rule"}
+            # A prompt-level site guard must not be reported as the reason a
+            # separate explicit deny rule fired.
+            reason = (
+                browser_guard_reason
+                if browser_guard == "deny"
+                else "denied by permission rule"
+            )
+            verdict = {"action": "deny", "reason": reason}
         else:
-            verdict = {"action": decision, "reason": ""}
+            verdict = {
+                "action": decision,
+                "reason": browser_guard_reason if browser_guard == "prompt" else "",
+            }
         self._classification_cache[key] = verdict
         return dict(verdict)
 
-    def _classification_key(self: Any, call: ToolCall) -> str:
+    def _classification_key(self: Any, call: ToolCall, *, browser_host: str = "") -> str:
         """Cache key for an approve-node verdict.
 
         ``call.id`` alone is unsafe: ``openai_compat`` emits ``"call_0"`` for
@@ -114,7 +147,12 @@ class TurnControlMixin:
         """
         return hashlib.sha1(
             json.dumps(
-                {"id": call.id, "name": call.name, "arguments": call.arguments},
+                {
+                    "id": call.id,
+                    "name": call.name,
+                    "arguments": call.arguments,
+                    "browser_host": browser_host,
+                },
                 sort_keys=True,
                 ensure_ascii=False,
                 default=str,

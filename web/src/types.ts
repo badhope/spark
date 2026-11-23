@@ -151,6 +151,7 @@ export interface FullConfig {
     browser_profile?: string
     browser_cdp_endpoint?: string
     browser_headless?: boolean
+    browser_site_rules?: string[]
     effort: "low" | "medium" | "high"
     show_thinking: boolean
     show_tools: boolean
@@ -259,6 +260,7 @@ export interface SettingsPayload {
     browser_profile?: string
     browser_cdp_endpoint?: string
     browser_headless?: boolean
+    browser_site_rules?: string[]
     show_thinking?: boolean
     show_tools?: boolean
     show_plan?: boolean

@@ -1164,7 +1164,6 @@ def inline_cmd(
     """Non-native editors (JetBrains External Tools / Neovim :!) use this bridge."""
     import hashlib
     import json as _json
-    import os
 
     try:
         wd = workdir.resolve()
@@ -1810,6 +1809,37 @@ def _perm_ok() -> bool:
         return stat.S_IMODE(f.stat().st_mode) == 0o600
     except OSError:
         return False
+
+
+@app.command("browser-doctor")
+def browser_doctor_cmd(
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    config: Path | None = typer.Option(None, "--config"),
+    as_json: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
+) -> None:
+    """检查当前浏览器引擎能否真实启动并渲染页面。"""
+    import json as _json
+
+    from spark.tools.browser import diagnose_browser
+
+    resolved = workdir.resolve()
+    cfg = read_config(config, resolved)
+    result = diagnose_browser(cfg)
+    if as_json:
+        typer.echo(_json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        typer.echo(banner("浏览器体检"))
+        typer.echo(f"  引擎：{result['engine']}（{result['family']}）")
+        typer.echo(f"  Playwright 浏览器目录：{result.get('browsers_path') or '(默认)'}")
+        if result.get("version"):
+            typer.echo(f"  浏览器版本：{result['version']}")
+        if result.get("ok"):
+            typer.echo(f"  [ok] 已渲染测试页：{result.get('title')}")
+        else:
+            typer.echo(f"  [bad] {result.get('error') or '启动失败'}", err=True)
+            typer.echo(f"  修复：{result.get('hint') or '运行 spark doctor'}", err=True)
+    if not result.get("ok"):
+        raise typer.Exit(1)
 
 
 @app.command("doctor")

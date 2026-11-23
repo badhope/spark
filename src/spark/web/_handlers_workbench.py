@@ -1,6 +1,7 @@
 """HTTP surface for the task workbench and delivery ledger."""
 from __future__ import annotations
 
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from spark.asyncutil import run_coroutine_sync
@@ -167,7 +168,6 @@ def handle_inline_edit_apply(handler: HandlerBase, body: dict) -> None:
     guessing an offset.
     """
     import difflib
-    from pathlib import Path
 
     from spark.web.device_admin import is_device_admin
 

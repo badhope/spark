@@ -729,6 +729,25 @@ class ToolRegistry:
                 browser.BrowserDialogArgs,
                 descriptions={"action": "status, accept (arm next), dismiss (arm next)", "prompt_text": "text for prompt() when accepting"},
             ),
+            _schema_from_model(
+                "browser_trace_start",
+                "Start a Playwright trace for the current tab: screenshots, DOM snapshots and source references. "
+                "Use it before multi-step interactions, then browser_trace_stop to save a .zip for inspection.",
+                browser.BrowserTraceArgs,
+                descriptions={"name": "filename prefix, default trace"},
+            ),
+            _schema_from_model(
+                "browser_trace_stop",
+                "Stop the active Playwright trace and save it under .spark/browser/traces; returns the relative zip path and size.",
+                browser.BrowserTraceArgs,
+                descriptions={"name": "filename prefix, default trace"},
+            ),
+            _schema_from_model(
+                "browser_metrics",
+                "Read DevTools performance metrics (nodes, JS heap, documents, layout counts) for the current page. "
+                "Chromium / Chrome / Edge only; other engines return a clear error.",
+                browser.BrowserMetricsArgs,
+            ),
             _schema("task",
                 "Spawn one or more sub-agents, each with its own context window, to handle self-contained "
                 "research or exploration work. Pass 'prompt' for a single sub-agent, or 'tasks' (array of "
@@ -1150,6 +1169,9 @@ class ToolRegistry:
             "browser_console": lambda a: browser.browser_console(ctx, browser.BrowserConsoleArgs.model_validate(a)),
             "browser_network": lambda a: browser.browser_network(ctx, browser.BrowserNetworkArgs.model_validate(a)),
             "browser_dialog": lambda a: browser.browser_dialog(ctx, browser.BrowserDialogArgs.model_validate(a)),
+            "browser_trace_start": lambda a: browser.browser_trace_start(ctx, browser.BrowserTraceArgs.model_validate(a)),
+            "browser_trace_stop": lambda a: browser.browser_trace_stop(ctx, browser.BrowserTraceArgs.model_validate(a)),
+            "browser_metrics": lambda a: browser.browser_metrics(ctx, browser.BrowserMetricsArgs.model_validate(a)),
             # --- notebook ---
             "read_notebook": lambda a: notebook.read_notebook(ctx.sandbox, notebook.ReadNotebookArgs.model_validate(a)),
             "notebook_edit": lambda a: notebook.notebook_edit(ctx.sandbox, notebook.NotebookEditArgs.model_validate(a)),

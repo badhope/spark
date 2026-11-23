@@ -330,7 +330,7 @@ def workbench_snapshot(
         by_session.setdefault(str(delivery.get("session_id") or ""), delivery)
     cards = []
     for task in tasks:
-        delivery = by_session.get(str(task.get("session_id") or ""))
+        card_delivery = by_session.get(str(task.get("session_id") or ""))
         cards.append(
             {
                 "id": task.get("id"),
@@ -344,8 +344,8 @@ def workbench_snapshot(
                 "result": task.get("result"),
                 "created_at": task.get("created_at"),
                 "finished_at": task.get("finished_at"),
-                "delivery_id": delivery.get("id") if delivery else None,
-                "delivery_status": delivery.get("status") if delivery else None,
+                "delivery_id": card_delivery.get("id") if card_delivery else None,
+                "delivery_status": card_delivery.get("status") if card_delivery else None,
             }
         )
     try:

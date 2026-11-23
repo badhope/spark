@@ -104,7 +104,7 @@
 | **LSP 集成** | ✅ 9 个代码智能工具：definition/references/hover/symbols/diagnostics/rename/code action/affected_tests；LSP 优先，无服务器显式降级；编辑走沙箱+审批 | opencode 内建 40+ 语言 LSP（definition/references/hover/…） |
 | 代码格式化 | ✅ `agent.format_on_write`（ruff/prettier，默认关） | opencode 30+ formatter（写后自动，默认关） |
 | web 搜索/抓取 | ✅ Bing 搜索 + HTML→text（`tools/web.py` / `tests/test_search_web.py`） | codex 原生 web_search + browser_use/computer_use 配置 |
-| 内置浏览器（agent 可驱动） | ✅ 21 个 `browser_*`：Bing 默认首页/搜索、ref 快照、点击/填表/按键/悬停/下拉/滚动/历史/多标签/等待/截图/PDF/下载/视口/JS/文件上传/控制台/网络/对话框；iframe frame_index；侧栏实时画面 | ZCode built-in browser；Qoder Browser Agent |
+| 内置浏览器（agent 可驱动） | ✅ 24 个 `browser_*`：Bing 默认首页/搜索、ref 快照、点击/填表/按键/悬停/下拉/滚动/历史/多标签/等待/截图/PDF/下载/视口/JS/文件上传/控制台/网络/对话框、trace、Chromium 性能指标；iframe frame_index；按域名授权与敏感站点确认；侧栏实时画面 | ZCode built-in browser；Qoder Browser Agent |
 | Notebook | ✅ read + edit（cell 级）（`tools/notebook.py` / `tests/test_task_notebook.py`） | — |
 | Git 工具 | ✅ status/diff/log/branch/add/commit/worktree + run_tests（测试回灌闭环） | 多数靠 bash；codex `/diff` + `codex apply`；`--worktree` |
 | 任务即分支（绿测提交门控） | ✅ 已注册 `task_begin/task_step_commit/task_finish` | 无同类（独特能力） |
@@ -206,7 +206,7 @@
 - 插件市场公共治理（已做 manifest+代码包摘要签名、篡改拒装、trust/revoke；仍缺公共索引、上架审核、撤销列表）
 - 多 agent 专业编排（Experts/Workflows 级）
 
-**当前不做**：托管账号体系/多租户云沙箱/第二套原生移动 App（移动端走 Web 响应式与远程接管）；完整 Tab 补全先过 Phase 3 接受率/延迟门禁，当前只交付内联编辑与 NES 入口。浏览器能力层的五引擎、持久化 Profile 与 CDP 接管已落地；扩展桥、按域名授权与远程多会话仍是核心路线，不因旧“本地优先”结论而放弃。
+**当前不做**：托管账号体系/多租户云沙箱/第二套原生移动 App（移动端走 Web 响应式与远程接管）；完整 Tab 补全先过 Phase 3 接受率/延迟门禁，当前只交付内联编辑与 NES 入口。浏览器能力层的五引擎、持久化 Profile、CDP 接管、按域名授权、敏感站点确认、trace 与扩展桥预设已落地；远程多会话与 DevTools 网络深度仍是核心路线，不因旧“本地优先”结论而放弃。
 
 ## 13. 来源
 

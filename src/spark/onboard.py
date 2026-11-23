@@ -41,6 +41,7 @@ SETTABLE: dict[str, tuple[str, type]] = {
     "agent.browser_profile": ("agent.browser_profile", str),
     "agent.browser_cdp_endpoint": ("agent.browser_cdp_endpoint", str),
     "agent.browser_headless": ("agent.browser_headless", bool),
+    "agent.browser_site_rules": ("agent.browser_site_rules", list),
     "context.agents_md": ("context.agents_md", str),
     "context.max_context_tokens": ("context.max_context_tokens", int),
     "context.compact_threshold": ("context.compact_threshold", float),
@@ -236,6 +237,15 @@ def parse_value(key: str, raw: str) -> Any:
             return float(text)
         except ValueError as exc:
             raise SetupError(f"{key} 需要数字，收到 {raw!r}") from exc
+    if kind is list:
+        # Accept both one-per-line and comma-separated input so the same
+        # value works from a shell and from the settings textarea.
+        return [
+            part.strip()
+            for line in text.splitlines()
+            for part in line.split(",")
+            if part.strip()
+        ]
     return text
 
 
