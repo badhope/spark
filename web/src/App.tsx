@@ -237,7 +237,7 @@ export default function App() {
   if (mobile) {
     return (
       <div
-        className="w-full overflow-hidden bg-canvas text-ink"
+        className="app-frame w-full overflow-hidden text-ink"
         style={{
           height: "100dvh",
           paddingTop: "env(safe-area-inset-top)",
@@ -253,7 +253,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-full overflow-hidden bg-canvas text-ink">
+    <div className="app-frame flex h-full overflow-hidden text-ink">
       {overlays}
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">

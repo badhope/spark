@@ -45,8 +45,8 @@ interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 export function Button({ variant = "ghost", size = "md", full, className, children, ...rest }: BtnProps) {
   const v =
     variant === "primary"
-      ? // 主按钮带一层同色光晕，在深色底上才"立"得起来
-        "bg-accent text-on-accent glow-accent hover:brightness-110 active:brightness-95"
+      ? // 主按钮：渐变底 + 一层同色光晕，扫光只在 hover 触发（见 index.css）
+        "btn-primary text-on-accent glow-accent hover:brightness-110 active:brightness-95"
       : variant === "soft"
         ? "bg-accent-soft text-accent hover:bg-accent/25"
         : variant === "danger"
@@ -81,7 +81,7 @@ export function IconButton({ className, children, ...rest }: ButtonHTMLAttribute
     <button
       type="button"
       className={cls(
-        "ring-focus inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] text-ink2",
+        "ring-focus icon-btn inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] text-ink2",
         "transition-colors duration-150 hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-45",
         className,
       )}

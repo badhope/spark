@@ -10,7 +10,7 @@ export function BrandMark({ size = 28, className }: { size?: number; className?:
   const id = `spark-bg-${size}`
   return (
     <span
-      className={cls("inline-flex shrink-0 items-center justify-center", className)}
+      className={cls("brand-halo inline-flex shrink-0 items-center justify-center", className)}
       style={{
         width: size,
         height: size,

@@ -23,7 +23,7 @@ export const Header = memo(function Header() {
   const title = (status && status.session_id && sessionTitle(lang, sessions, status.session_id)) || t("common.newChat", lang)
 
   return (
-    <header className="glass flex h-12 shrink-0 items-center gap-1 border-b border-line px-2 sm:px-3">
+    <header className="app-header glass flex h-12 shrink-0 items-center gap-1 border-b border-line px-2 sm:px-3">
       <IconButton title={t("header.toggleSidebar", lang)} onClick={toggleSidebar} className="lg:hidden">
         <IconMenu size={17} />
       </IconButton>

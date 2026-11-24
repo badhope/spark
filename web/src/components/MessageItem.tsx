@@ -118,7 +118,7 @@ const UserMessage = memo(function UserMessage({ msg, actions }: { msg: ChatMsg; 
             ))}
           </div>
         )}
-        <div className="anim-msg rounded-[16px] rounded-br-[6px] border border-line bg-[var(--user-bubble)] px-4 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap break-words text-[var(--user-bubble-text)] shadow-[var(--shadow-sm)]">
+        <div className="bubble-user anim-msg rounded-[16px] rounded-br-[6px] border px-4 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap break-words text-[var(--user-bubble-text)]">
           {msg.text}
         </div>
         <div className="mt-1 flex justify-end gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
@@ -243,7 +243,7 @@ const AssistantMessage = memo(function AssistantMessage({ msg, actions }: { msg:
 
   return (
     <div className="group flex gap-3 py-3.5">
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-accent-soft ring-1 ring-accent/20">
+      <div className="assistant-avatar mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-accent-soft ring-1 ring-accent/20">
         <IconSpark size={14} />
       </div>
       <div className="min-w-0 flex-1">

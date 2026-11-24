@@ -271,7 +271,7 @@ export const Sidebar = memo(function Sidebar() {
           // lg:w-[var(--sidebar-w)] at base level kept it winning over
           // lg:w-0 in the closed branch (same media block, later source order),
           // so collapsing left a 270px dead strip on desktop.
-          "fixed inset-y-0 left-0 z-40 flex w-[270px] shrink-0 flex-col border-r border-line bg-sidebar transition-transform duration-200 lg:static lg:translate-x-0 lg:z-auto",
+          "fixed inset-y-0 left-0 z-40 flex w-[270px] shrink-0 flex-col border-r border-line bg-sidebar sidebar-shell transition-transform duration-200 lg:static lg:translate-x-0 lg:z-auto",
           sidebarOpen
             ? "translate-x-0 lg:w-[var(--sidebar-w)]"
             : "-translate-x-full lg:w-0 lg:border-r-0 lg:overflow-hidden",
@@ -405,17 +405,12 @@ export const Sidebar = memo(function Sidebar() {
                         className={cls(
                           "group/item relative w-full rounded-[9px] px-2.5 py-2 pr-14 text-left transition-colors duration-150",
                           active
-                            ? "bg-selected text-ink"
+                            ? "session-active bg-selected text-ink"
                             : "text-ink2 hover:bg-hover hover:text-ink",
                         )}
                       >
-                        {/* 激活态左侧强调条：比整块反色更克制，也更容易扫读 */}
-                        {active && (
-                          <span
-                            aria-hidden
-                            className="absolute top-1/2 left-0 h-4 w-[2px] -translate-y-1/2 rounded-r bg-accent"
-                          />
-                        )}
+                        {/* 激活态左侧强调条由 .session-active::after 统一绘制，
+                            避免 JSX 与 CSS 各画一条。 */}
                         <span className="block truncate text-[12.5px] font-medium">
                           {s.title && s.title !== "untitled" ? s.title : t("common.newChat", lang)}
                         </span>

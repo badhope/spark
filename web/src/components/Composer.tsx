@@ -626,7 +626,7 @@ export const Composer = memo(function Composer() {
           className={cls(
             // 输入区是全屏最常聚焦的元素：给它更明确的"可输入"信号——
             // 更大的圆角、聚焦时一圈柔光，而不是只换边框色。
-            "relative rounded-[18px] border bg-panel shadow-[var(--shadow-sm)] transition-[border-color,box-shadow] duration-200",
+            "composer-shell relative rounded-[18px] border bg-panel shadow-[var(--shadow-sm)] transition-[border-color,box-shadow] duration-200",
             dragging
               ? "border-accent shadow-[0_0_0_3px_var(--accent-soft)]"
               : "border-line focus-within:border-accent/60 focus-within:shadow-[0_0_0_3px_var(--accent-soft),var(--shadow)]",

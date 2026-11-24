@@ -40,13 +40,13 @@ export const EmptyState = memo(function EmptyState({ onPick }: { onPick: (prompt
 
       <div className="anim-fade-up relative mx-auto w-full max-w-[560px] px-6 py-10">
         <div className="flex flex-col items-center text-center">
-          <div className="relative mb-6">
+          <div className="empty-orbit relative mb-8">
             <div
               aria-hidden
               className="absolute inset-0 -z-10 rounded-full blur-2xl"
-              style={{ background: "var(--accent-glow)", transform: "scale(0.9)" }}
+              style={{ background: "var(--accent-glow)", transform: "scale(1.15)" }}
             />
-            <BrandMark size={56} />
+            <BrandMark size={58} />
           </div>
 
           <h1
@@ -72,7 +72,7 @@ export const EmptyState = memo(function EmptyState({ onPick }: { onPick: (prompt
               type="button"
               onClick={() => onPick(t(s.prompt, lang))}
               style={{ animationDelay: `${60 + i * 45}ms` }}
-              className="anim-fade-up ring-focus group surface flex items-center gap-3 px-3.5 py-3 text-left transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-px hover:border-line2 hover:shadow-[var(--shadow)]"
+              className="anim-fade-up ring-focus group surface surface-lift flex items-center gap-3 px-3.5 py-3 text-left"
             >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-accent-soft text-accent transition-colors group-hover:bg-accent group-hover:text-on-accent">
                 <IconSpark size={15} />

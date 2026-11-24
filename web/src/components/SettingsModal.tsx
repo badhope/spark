@@ -17,6 +17,7 @@ import { McpRegistryModal } from "./McpRegistryModal"
 import type { McpRegistryItem } from "../api"
 import { PALETTES, type Palette, type Theme } from "../theme"
 import { Badge, Button, Field, IconButton, Select, Spinner, TextArea, TextInput, Toggle, cls } from "./ui"
+import { RingGauge, StatCard } from "./Visuals"
 import { IconBrain, IconBug, IconCheck, IconClock, IconCommand, IconFile, IconFolder, IconGlobe, IconKey, IconLayers, IconMoon, IconPlus, IconRefresh, IconSearch, IconSettings, IconSpark, IconStethoscope, IconSun, IconTerminal, IconTrash, IconWrench, IconX } from "./icons"
 import { useSessionStore } from "../store/sessionStore"
 import { useUiStore } from "../store/uiStore"
@@ -1025,7 +1026,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
   if (!cfg) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]" onClick={onClose}>
-        <div className="flex h-[min(92vh,680px)] w-[min(96vw,920px)] items-center justify-center rounded-2xl border border-line bg-canvas shadow-[var(--shadow)]">
+        <div className="settings-shell flex h-[min(92vh,680px)] w-[min(96vw,920px)] items-center justify-center rounded-2xl border border-line bg-canvas shadow-[var(--shadow)]">
           <Spinner size={20} className="text-accent" />
         </div>
       </div>
@@ -1044,7 +1045,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]" onClick={onClose}>
       <aside
-        className="anim-fade flex h-[min(92vh,680px)] w-[min(96vw,920px)] flex-col overflow-hidden rounded-2xl border border-line bg-canvas shadow-[var(--shadow)]"
+        className="settings-shell anim-fade flex h-[min(92vh,680px)] w-[min(96vw,920px)] flex-col overflow-hidden rounded-2xl border border-line bg-canvas shadow-[var(--shadow)]"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -1052,7 +1053,7 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
       >
         <div className="flex h-full min-h-0">
           {/* 左导航（桌面） */}
-          <nav className="hidden w-[200px] shrink-0 flex-col border-r border-line bg-sidebar sm:flex">
+          <nav className="settings-nav hidden w-[200px] shrink-0 flex-col border-r border-line bg-sidebar sm:flex">
             <div className="flex items-center gap-2 px-4 py-3.5">
               <IconSettings size={16} className="text-accent" />
               <span className="text-[14px] font-semibold text-ink">{t("settings.title", lang)}</span>
@@ -1330,31 +1331,38 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
                 </div>
                 {costReport?.session ? (
                   <>
-                    <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                      <div className="rounded-lg border border-line bg-panel2 px-2.5 py-2">
-                        <div className="text-ink3">{lang === "zh" ? "总 token" : "Total tokens"}</div>
-                        <div className="mt-0.5 font-mono text-sm text-ink">{costReport.session.total_tokens.toLocaleString()}</div>
-                      </div>
-                      <div className="rounded-lg border border-line bg-panel2 px-2.5 py-2">
-                        <div className="text-ink3">{lang === "zh" ? "缓存命中" : "Cache hit"}</div>
-                        <div className="mt-0.5 font-mono text-sm text-ink">{((costReport.session.cache_hit_rate ?? 0) * 100).toFixed(1)}%</div>
-                        <div className="text-[10px] text-ink3">{costReport.session.cache_read_tokens ?? 0} cached</div>
-                      </div>
-                      <div className="rounded-lg border border-line bg-panel2 px-2.5 py-2">
-                        <div className="text-ink3">{lang === "zh" ? "调用次数" : "Calls"}</div>
-                        <div className="mt-0.5 font-mono text-sm text-ink">{costReport.session.calls}</div>
-                      </div>
-                      <div className="rounded-lg border border-line bg-panel2 px-2.5 py-2">
-                        <div className="text-ink3">{lang === "zh" ? "本会话成本" : "Session cost"}</div>
-                        <div className="mt-0.5 font-mono text-sm text-ink">
-                          {costReport.session.cost_usd == null ? "—" : `$${costReport.session.cost_usd.toFixed(4)}`}
-                        </div>
-                        {costReport.budget_usd ? (
-                          <div className="text-[10px] text-ink3">
-                            {lang === "zh" ? "预算" : "Budget"} ${costReport.budget_usd.toFixed(2)}
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <StatCard
+                        label={lang === "zh" ? "总 token" : "Total tokens"}
+                        value={costReport.session.total_tokens.toLocaleString()}
+                        hint={`${costReport.session.calls} ${lang === "zh" ? "次调用" : "calls"}`}
+                        tone="accent"
+                      />
+                      <div className="stat-card">
+                        <div className="stat-label">{lang === "zh" ? "缓存命中" : "Cache hit"}</div>
+                        <div className="mt-1 flex items-center justify-between gap-2">
+                          <div>
+                            <div className="stat-value text-ok">{((costReport.session.cache_hit_rate ?? 0) * 100).toFixed(1)}%</div>
+                            <div className="stat-hint mt-1.5">{costReport.session.cache_read_tokens ?? 0} cached</div>
                           </div>
-                        ) : null}
+                          <RingGauge value={(costReport.session.cache_hit_rate ?? 0) * 100} size={42} tone="ok" />
+                        </div>
+                        <div className="meter-track mt-2">
+                          <div className="meter-fill ok" style={{ width: `${Math.min(100, (costReport.session.cache_hit_rate ?? 0) * 100)}%` }} />
+                        </div>
                       </div>
+                      <StatCard
+                        label={lang === "zh" ? "调用次数" : "Calls"}
+                        value={costReport.session.calls}
+                        hint={lang === "zh" ? "本会话" : "this session"}
+                      />
+                      <StatCard
+                        label={lang === "zh" ? "本会话成本" : "Session cost"}
+                        value={costReport.session.cost_usd == null ? "—" : `$${costReport.session.cost_usd.toFixed(4)}`}
+                        hint={costReport.budget_usd ? `${lang === "zh" ? "预算" : "Budget"} $${costReport.budget_usd.toFixed(2)}` : undefined}
+                        tone={costReport.budget_usd && (costReport.session.cost_usd ?? 0) >= costReport.budget_usd ? "err" : "neutral"}
+                        progress={costReport.budget_usd ? ((costReport.session.cost_usd ?? 0) / costReport.budget_usd) * 100 : undefined}
+                      />
                     </div>
                     <Field label={lang === "zh" ? "会话成本上限（USD，0 = 不限）" : "Session cost cap (USD, 0 = off)"}>
                       <TextInput

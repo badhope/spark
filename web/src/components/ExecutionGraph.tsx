@@ -483,19 +483,21 @@ export const ExecutionGraph = memo(function ExecutionGraph({ embedded = false }:
             </div>
           ) : (
             <>
-              <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                fitView
-                fitViewOptions={{ padding: 0.16 }}
-                proOptions={{ hideAttribution: true }}
-                onNodeClick={(_, node) => setSelectedId(node.id)}
-                onPaneClick={() => setSelectedId(null)}
-              >
-                <AutoFitView signature={graphSignature} />
-                <Background gap={20} color="var(--line)" />
-                <Controls showInteractive={false} />
-              </ReactFlow>
+              <div className="graph-canvas h-full w-full">
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  fitView
+                  fitViewOptions={{ padding: 0.16 }}
+                  proOptions={{ hideAttribution: true }}
+                  onNodeClick={(_, node) => setSelectedId(node.id)}
+                  onPaneClick={() => setSelectedId(null)}
+                >
+                  <AutoFitView signature={graphSignature} />
+                  <Background gap={20} color="var(--line)" />
+                  <Controls showInteractive={false} />
+                </ReactFlow>
+              </div>
               <GraphLegend lang={lang} />
               {selectedNode && (
                 <GraphNodeDetails
@@ -556,19 +558,21 @@ export const ExecutionGraph = memo(function ExecutionGraph({ embedded = false }:
             </div>
           ) : (
             <>
-              <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                fitView
-                fitViewOptions={{ padding: 0.16 }}
-                proOptions={{ hideAttribution: true }}
-                onNodeClick={(_, node) => setSelectedId(node.id)}
-                onPaneClick={() => setSelectedId(null)}
-              >
-                <AutoFitView signature={graphSignature} />
-                <Background gap={20} color="var(--line)" />
-                <Controls showInteractive={false} />
-              </ReactFlow>
+              <div className="graph-canvas h-full w-full">
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  fitView
+                  fitViewOptions={{ padding: 0.16 }}
+                  proOptions={{ hideAttribution: true }}
+                  onNodeClick={(_, node) => setSelectedId(node.id)}
+                  onPaneClick={() => setSelectedId(null)}
+                >
+                  <AutoFitView signature={graphSignature} />
+                  <Background gap={20} color="var(--line)" />
+                  <Controls showInteractive={false} />
+                </ReactFlow>
+              </div>
               <GraphLegend lang={lang} />
               {selectedNode && (
                 <GraphNodeDetails

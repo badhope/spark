@@ -168,8 +168,8 @@ export const ToolBlock = memo(function ToolBlock({ tool }: { tool: ToolCallState
   return (
     <div
       className={cls(
-        "my-1.5 overflow-hidden rounded-lg border bg-panel transition-colors",
-        running ? "border-line2" : status === "ok" ? "border-line" : "border-err/40",
+        "my-1.5 overflow-hidden rounded-lg border bg-panel transition-[border-color,box-shadow]",
+        running ? "tool-running border-line2" : status === "ok" ? "border-line" : "border-err/40",
       )}
     >
       <button
