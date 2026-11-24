@@ -113,9 +113,23 @@ class TaskQueue:
         """Update the per-task wall-clock timeout for future tasks."""
         self._task_timeout_sec = max(0, int(seconds))
 
-    def enqueue(self, prompt: str, *, title: str = "", workdir: str = "", priority: int = 0) -> dict:
+    def enqueue(
+        self,
+        prompt: str,
+        *,
+        title: str = "",
+        workdir: str = "",
+        priority: int = 0,
+        kind: str = "agent",
+        options: dict | None = None,
+    ) -> dict:
         task = self._store.enqueue_agent_task(
-            prompt, title=title, workdir=workdir, priority=priority
+            prompt,
+            title=title,
+            workdir=workdir,
+            priority=priority,
+            kind=kind,
+            options=options,
         )
         self._wake.set()
         return task

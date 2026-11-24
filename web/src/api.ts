@@ -219,6 +219,8 @@ export type QueueTask = {
   id: string
   title: string
   prompt: string
+  kind?: string
+  options?: Record<string, unknown>
   status: string
   priority: number
   attempts: number

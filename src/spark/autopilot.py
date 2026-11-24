@@ -643,7 +643,13 @@ class AutopilotRunner:
                 )
                 self._save()
                 return False
-            if self.limits.require_change and not snapshot.diff.changed:
+            # Compare against the *persisted* baseline, not the probe's
+            # in-process initial digest.  On --resume a fresh probe would
+            # otherwise treat the already-modified tree as its baseline and
+            # wrongly report "no code change" after a real edit.
+            if self.limits.require_change and (
+                snapshot.diff.digest == self.state.baseline_digest
+            ):
                 self._finish(
                     "failed",
                     "独立测试通过但工作区没有代码变更；需求未被实际实现",

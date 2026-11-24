@@ -32,6 +32,8 @@ _EXT_LANG = {
     ".tsx": "tsx",
     ".js": "javascript",
     ".jsx": "javascript",
+    ".go": "go",
+    ".rs": "rust",
 }
 
 #: 每种语言的「定义」查询：capture 名统一为 @def，取节点文本即符号名。
@@ -54,6 +56,17 @@ _DEF_QUERIES: dict[str, list[str]] = {
         "(class_declaration name: (identifier) @def)",
         "(method_definition name: (property_identifier) @def)",
         "(variable_declarator name: (identifier) @def)",
+    ],
+    "go": [
+        "(function_declaration name: (identifier) @def)",
+        "(method_declaration name: (field_identifier) @def)",
+        "(type_declaration (type_spec name: (type_identifier) @def))",
+    ],
+    "rust": [
+        "(function_item name: (identifier) @def)",
+        "(struct_item name: (type_identifier) @def)",
+        "(enum_item name: (type_identifier) @def)",
+        "(trait_item name: (type_identifier) @def)",
     ],
 }
 _DEF_QUERIES["tsx"] = _DEF_QUERIES["typescript"]
@@ -81,6 +94,16 @@ def _load_language(name: str):
             from tree_sitter import Language
 
             return Language(tree_sitter_javascript.language())
+        if name == "go":
+            import tree_sitter_go
+            from tree_sitter import Language
+
+            return Language(tree_sitter_go.language())
+        if name == "rust":
+            import tree_sitter_rust
+            from tree_sitter import Language
+
+            return Language(tree_sitter_rust.language())
     except Exception as exc:  # pragma: no cover - 环境差异
         logger.debug("tree-sitter %s unavailable: %s", name, exc)
     return None
@@ -172,7 +195,13 @@ def _references_in(path: Path, symbol: str) -> list[dict[str, Any]]:
             continue
         stripped = line.strip()
         # 定义行不算"引用"，避免把定义自己报成使用点。
-        if stripped.startswith(("def ", "class ", "function ", "const ", "let ", "var ")):
+        if stripped.startswith(
+            (
+                "def ", "class ", "function ", "const ", "let ", "var ",
+                "func ", "fn ", "pub fn ", "struct ", "enum ", "impl ",
+                "trait ", "interface ", "type ", "export ",
+            )
+        ):
             if f"{symbol}(" in stripped or f"{symbol} =" in stripped or f"{symbol}:" in stripped:
                 continue
         out.append(
@@ -192,13 +221,36 @@ def find_symbol(
     symbol: str,
     *,
     mode: str = "definition",
+    depth: int = 2,
 ) -> dict[str, Any]:
-    """在 *root* 下定位 *symbol*；mode 为 ``definition`` 或 ``reference``。"""
+    """在 *root* 下定位 *symbol*；mode 定义/引用/调用链。"""
     symbol = (symbol or "").strip()
     if not symbol:
         return {"error": "symbol is required"}
     if len(symbol) > 200:
         return {"error": "symbol is too long"}
+    if mode in {"callers", "callees", "impact"}:
+        from spark.symbol_graph import build_symbol_graph
+
+        graph = build_symbol_graph(root)
+        depth = max(1, min(int(depth or 2), 4))
+        payload: list[dict[str, Any]] | dict[str, Any]
+        if mode == "callers":
+            payload = graph.callers(symbol, depth=depth)
+        elif mode == "callees":
+            payload = graph.callees(symbol, depth=depth)
+        else:
+            payload = graph.impact(symbol, depth=depth)
+        return {
+            "symbol": symbol,
+            "mode": mode,
+            "depth": depth,
+            "scanned_files": graph.scanned_files,
+            "symbols": len(graph.symbols),
+            "calls": len(graph.calls),
+            "result": payload,
+            "note": "syntax-level call graph; ambiguous/unresolved names are not proof of absence",
+        }
 
     definitions: list[dict[str, Any]] = []
     references: list[dict[str, Any]] = []

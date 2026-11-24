@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spark-agent"
-version = "0.15.4"
+version = "0.15.5"
 description = "Browser-native, cross-platform, open-source AI coding application with auditable guardrails"
 readme = "README.md"
 license = { text = "MIT" }
@@ -49,6 +49,8 @@ dependencies = [
     "tree-sitter-python>=0.23,<0.26",
     "tree-sitter-typescript>=0.23,<0.24",
     "typer>=0.29.1,<1.0",
+    "tree-sitter-go>=0.23,<0.26",
+    "tree-sitter-rust>=0.23,<0.26",
 ]
 
 [project.optional-dependencies]

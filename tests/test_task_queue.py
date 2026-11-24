@@ -62,6 +62,25 @@ def test_queue_cancel_only_queued_and_recover_running(tmp_path: Path) -> None:
     assert store.list_agent_tasks()[0]["status"] == "queued"
 
 
+def test_queue_autopilot_row_roundtrips_kind_and_options(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path / "queue.db")
+    try:
+        task = store.enqueue_agent_task(
+            "add calc.double",
+            title="autopilot",
+            kind="autopilot",
+            options={"max_turns": 3, "max_cost_usd": 0.5},
+        )
+        row = store.list_agent_tasks()[0]
+        assert task["kind"] == "autopilot"
+        assert row["kind"] == "autopilot"
+        assert row["options"] == {"max_turns": 3, "max_cost_usd": 0.5}
+        with pytest.raises(ValueError):
+            store.enqueue_agent_task("x", kind="shell")
+    finally:
+        store.close()
+
+
 def test_queue_rejects_empty_prompt(tmp_path: Path) -> None:
     _, q = _queue(tmp_path)
     with pytest.raises(ValueError):

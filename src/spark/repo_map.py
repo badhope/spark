@@ -60,6 +60,16 @@ def _try_language(name: str):
             from tree_sitter import Language
 
             return Language(tree_sitter_javascript.language())
+        if name == "go":
+            import tree_sitter_go
+            from tree_sitter import Language
+
+            return Language(tree_sitter_go.language())
+        if name == "rust":
+            import tree_sitter_rust
+            from tree_sitter import Language
+
+            return Language(tree_sitter_rust.language())
     except Exception as exc:  # pragma: no cover - 环境差异
         logger.debug("tree-sitter %s unavailable: %s", name, exc)
     return None
@@ -89,6 +99,17 @@ def _symbol_query(name: str) -> list[str] | None:
             "(function_declaration name: (identifier) @name)",
             "(class_declaration name: (identifier) @name)",
         ],
+        "go": [
+            "(function_declaration name: (identifier) @name)",
+            "(method_declaration name: (field_identifier) @name)",
+            "(type_declaration (type_spec name: (type_identifier) @name))",
+        ],
+        "rust": [
+            "(function_item name: (identifier) @name)",
+            "(struct_item name: (type_identifier) @name)",
+            "(enum_item name: (type_identifier) @name)",
+            "(trait_item name: (type_identifier) @name)",
+        ],
     }
     return queries.get(name)
 
@@ -99,6 +120,8 @@ _EXT_LANG = {
     ".tsx": "tsx",
     ".js": "javascript",
     ".jsx": "javascript",
+    ".go": "go",
+    ".rs": "rust",
 }
 
 

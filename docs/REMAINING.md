@@ -11,7 +11,9 @@
 | 能力 | 状态 | 落点 |
 |---|---|---|
 | Autopilot 无人值守闭环（AUT-01/02/03） | ✅ | `src/spark/autopilot.py` + `prompts/autopilot_*.md`：build→repair→audit→done、独立测试、失败回灌、`--resume`、轮次/超时/成本/无进展熔断；`tests/test_autopilot.py` 22 项、`test_cli_autopilot.py` 4 项、`test_autopilot_e2e.py` 1 项真实 AgentLoop 链路；120 例合成矩阵 120/120。**边界**：真实模型外部仓库 20+ 回合未验收 |
-| Autopilot 崩溃恢复与三路指纹（AUT-04 前置） | 🟡 | `turn_in_progress`/`active_prompt`/`pid` 每轮开始前落盘；`--resume` 识别中断轮并重试，审计轮中断强制重审；`--heartbeat-interval` 更新状态文件 mtime；diff + 测试输出 + 工具调用指纹三路无进展；runner 级 POSIX `SIGKILL` 已验证；真实 CLI+AgentLoop 外部杀进程未跑 |
+| Autopilot 崩溃恢复与三路指纹 | ✅ | `turn_in_progress`/`active_prompt`/`pid` 每轮开始前落盘；`--resume` 识别中断轮并重试，审计轮中断强制重审；`--heartbeat-interval` 更新状态文件 mtime；diff + 测试输出 + 工具调用指纹三路无进展；`tests/test_cli_autopilot_kill9.py` 真实 CLI 子进程 `kill -9` 后 `--resume` passed，并修复了恢复时基线 diff 误判 |
+| Autopilot 队列接入（AUT-04） | ✅ 第一版 | 队列表新增 `kind` / `options_json`（v8）；`spark queue add --kind autopilot` 与 Web 队列类型选择；`SparkWebState._run_queued_autopilot` 复用真实 `AutopilotRunner`；失败重试归档旧账本、日配额/成本上限/暂停恢复沿用队列；`tests/test_queue_autopilot.py` 2 项、`tests/test_task_queue.py` 1 项 |
+| 跨语言符号图（IDX-02） | ✅ 第一版 | `src/spark/symbol_graph.py`；Python/TS/TSX/JS/Go/Rust 定义与调用边；`spark symbols` 的 callers/callees/impact；`find_symbol` 三种新模式；`repo_map` 同步支持 Go/Rust；`tests/test_symbol_graph.py` 4 项 |
 | 符号感知代码索引 + 增量更新（IDX-01） | ✅ | `semantic_index.py`：`INDEX_VERSION=2`、顶层符号分块、文件 SHA256 复用、向量 key `path:start_line`、BM25+向量+符号重排；`tests/test_semantic_index.py` 5 项 |
 | OpenCode 静态资产兼容（OSS-01） | ✅ | `opencode_compat.py`：`opencode.json(c)`、`.opencode/agents/**/*.md`、`.opencode/commands/*.md`、permission/tools denylist；`agents.py`/`slash.py`/`subagent_runner.py` 接线；`spark opencode` 只读查看；`tests/test_opencode_compat.py` 8 项。**边界**：插件运行时/provider 注册表/MCP 自动导入不支持 |
 

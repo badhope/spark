@@ -511,7 +511,15 @@ def test_workbench_five_tabs_and_file_actions(ui, tmp_path: Path) -> None:
     page.wait_for_timeout(500)
     url = wb.locator('input[placeholder*="输入网址"]')
     url.fill("https://example.com")
-    wb.get_by_role("button", name=re.compile("打开")).first.click()
+    open_button = wb.get_by_role("button", name=re.compile("打开")).first
+    # Entering the browser tab starts the built-in session asynchronously;
+    # the button is intentionally disabled until that handshake finishes.
+    for _ in range(40):
+        if open_button.is_enabled():
+            break
+        page.wait_for_timeout(250)
+    assert open_button.is_enabled()
+    open_button.click()
     page.wait_for_timeout(1200)
     assert wb.is_visible()
 

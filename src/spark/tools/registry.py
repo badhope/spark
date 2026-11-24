@@ -407,13 +407,14 @@ class ToolRegistry:
                 },
             ),
             _schema("find_symbol",
-                "Locate where a symbol is defined or referenced across the project. "
-                "Syntax-level (tree-sitter + text scan), not a full LSP: good for "
-                "jumping to a definition and estimating the blast radius of a change. "
-                "Use mode=reference before renaming or changing a signature.",
+                "Locate where a symbol is defined or referenced across Python, TS/JS, Go and Rust. "
+                "Syntax-level (tree-sitter + text scan), not a full LSP. Use mode=reference before "
+                "renaming or changing a signature; use mode=impact for a bounded call-chain blast radius.",
                 {"symbol": {"type": "string", "description": "symbol name to locate"},
-                 "mode": {"type": "string", "enum": ["definition", "reference", "both"],
-                          "description": "default definition"}},
+                 "mode": {"type": "string", "enum": ["definition", "reference", "both", "callers", "callees", "impact"],
+                          "description": "default definition; callers/callees/impact use the syntax-level call graph"},
+                 "depth": {"type": "integer", "minimum": 1, "maximum": 4,
+                           "description": "call-chain depth for callers/callees/impact (default 2)"}},
                 ["symbol"]),
             _schema_from_model(
                 "lsp_definition",
@@ -1320,10 +1321,15 @@ def _find_symbol_tool(ctx: ToolContext, arguments: dict[str, Any]) -> Any:
 
     symbol = str(arguments.get("symbol") or "").strip()
     mode = str(arguments.get("mode") or "definition").strip()
-    if mode not in {"definition", "reference", "both"}:
-        return ToolResult(ok=False, payload={"error": "mode must be definition, reference or both"})
+    if mode not in {"definition", "reference", "both", "callers", "callees", "impact"}:
+        return ToolResult(ok=False, payload={"error": "mode must be definition, reference, both, callers, callees or impact"})
     try:
-        result = find_symbol(ctx.sandbox.root, symbol, mode=mode)
+        result = find_symbol(
+            ctx.sandbox.root,
+            symbol,
+            mode=mode,
+            depth=int(arguments.get("depth") or 2),
+        )
     except Exception as exc:  # aqg: top-level boundary
         return ToolResult(ok=False, payload={"error": f"symbol scan failed: {exc}"})
     if result.get("error"):

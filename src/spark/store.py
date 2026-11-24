@@ -184,6 +184,8 @@ class SessionStore:
                     title TEXT NOT NULL DEFAULT '',
                     prompt TEXT NOT NULL,
                     workdir TEXT NOT NULL DEFAULT '',
+                    kind TEXT NOT NULL DEFAULT 'agent',
+                    options_json TEXT NOT NULL DEFAULT '{}',
                     status TEXT NOT NULL DEFAULT 'queued',
                     priority INTEGER NOT NULL DEFAULT 0,
                     attempts INTEGER NOT NULL DEFAULT 0,
@@ -285,7 +287,7 @@ class SessionStore:
             self._conn.commit()
 
     #: Bump when a step in :meth:`_migrate_schema` is added.
-    SCHEMA_VERSION = 7
+    SCHEMA_VERSION = 8
 
     def _migrate_schema(self) -> None:
         """Record/upgrade the schema version on *this* database.
@@ -304,6 +306,7 @@ class SessionStore:
             (5, self._migrate_v5),
             (6, self._migrate_v6),
             (7, self._migrate_v7),
+            (8, self._migrate_v8),
         ):
             if current < version:
                 step()
@@ -322,6 +325,21 @@ class SessionStore:
         """v3: per-message up/down feedback (created in _init for fresh DBs)."""
         # The table is declared in _init(); this hook records the version for
         # existing databases and gives future feedback columns a migration home.
+
+    def _migrate_v8(self) -> None:
+        """v8: queue rows distinguish plain agent prompts from Autopilot runs."""
+        for column, ddl in (
+            ("kind", "ALTER TABLE agent_queue ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent'"),
+            (
+                "options_json",
+                "ALTER TABLE agent_queue ADD COLUMN options_json TEXT NOT NULL DEFAULT '{}'",
+            ),
+        ):
+            try:
+                self._conn.execute(ddl)
+            except sqlite3.OperationalError:
+                # Fresh databases already create the column in _init().
+                pass
 
     def _migrate_v4(self) -> None:
         """v4: persist the last model failure so a reload still explains it."""
@@ -1632,26 +1650,65 @@ class SessionStore:
 
     # ---- agent queue（空闲任务队列） ---------------------------------------
 
+    @staticmethod
+    def _queue_task(row: sqlite3.Row | dict | None) -> dict:
+        """Decode one queue row; keep the raw JSON for older callers.
+
+        ``options`` is the parsed dict; ``options_json`` stays so an external
+        migration/debug tool can still see exactly what was stored.
+        """
+        if row is None:
+            return {}
+        payload = dict(row)
+        raw = payload.get("options_json") or "{}"
+        try:
+            parsed = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except (TypeError, ValueError):
+            parsed = {}
+        payload["options"] = parsed if isinstance(parsed, dict) else {}
+        payload["kind"] = str(payload.get("kind") or "agent")
+        return payload
+
     def enqueue_agent_task(
-        self, prompt: str, *, title: str = "", workdir: str = "", priority: int = 0
+        self,
+        prompt: str,
+        *,
+        title: str = "",
+        workdir: str = "",
+        priority: int = 0,
+        kind: str = "agent",
+        options: dict | None = None,
     ) -> dict:
         prompt = str(prompt or "").strip()
         if not prompt:
             raise ValueError("prompt is required")
+        kind = str(kind or "agent").strip().lower()
+        if kind not in {"agent", "autopilot"}:
+            raise ValueError("kind must be agent or autopilot")
         task_id = uuid.uuid4().hex
         now = time.time()
+        options_json = json.dumps(options or {}, ensure_ascii=False, separators=(",", ":"))
         with self._lock:
             self._conn.execute(
                 """INSERT INTO agent_queue
-                   (id, title, prompt, workdir, status, priority, attempts, created_at)
-                   VALUES (?, ?, ?, ?, 'queued', ?, 0, ?)""",
-                (task_id, str(title or "").strip()[:120], prompt, str(workdir or ""), int(priority), now),
+                   (id, title, prompt, workdir, kind, options_json, status, priority, attempts, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, 0, ?)""",
+                (
+                    task_id,
+                    str(title or "").strip()[:120],
+                    prompt,
+                    str(workdir or ""),
+                    kind,
+                    options_json,
+                    int(priority),
+                    now,
+                ),
             )
             self._conn.commit()
             row = self._conn.execute(
                 "SELECT * FROM agent_queue WHERE id = ?", (task_id,)
             ).fetchone()
-        return dict(row) if row else {"id": task_id}
+        return self._queue_task(row) if row else {"id": task_id, "kind": kind}
 
     def list_agent_tasks(self, limit: int = 50) -> list[dict]:
         with self._lock:
@@ -1659,7 +1716,7 @@ class SessionStore:
                 "SELECT * FROM agent_queue ORDER BY created_at DESC LIMIT ?",
                 (max(1, int(limit)),),
             ).fetchall()
-            return [dict(row) for row in rows]
+            return [self._queue_task(row) for row in rows]
 
     def claim_next_agent_task(self) -> dict | None:
         """Atomically move the highest-priority queued task to ``running``."""
@@ -1683,7 +1740,7 @@ class SessionStore:
             updated = self._conn.execute(
                 "SELECT * FROM agent_queue WHERE id = ?", (row["id"],)
             ).fetchone()
-            return dict(updated) if updated else dict(row)
+            return self._queue_task(updated) if updated else self._queue_task(row)
 
     def finish_agent_task(
         self,

@@ -11,7 +11,7 @@ import uuid
 import weakref
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from spark.asyncutil import run_coroutine_sync
 from spark.config import (
@@ -895,6 +895,8 @@ class SparkWebState:
 
     def _run_queued_task(self, task: dict) -> QueueOutcome:
         """Execute one queue row in its own session, never the user's current one."""
+        if str(task.get("kind") or "agent") == "autopilot":
+            return self._run_queued_autopilot(task)
         prompt = str(task.get("prompt") or "").strip()
         if not prompt:
             return QueueOutcome(status="failed", error="empty prompt")
@@ -968,6 +970,193 @@ class SparkWebState:
             )
         return QueueOutcome(
             status="ok", summary=text, session_id=session_id, cost_usd=cost_usd
+        )
+
+    def _run_queued_autopilot(self, task: dict) -> QueueOutcome:
+        """Run one queued Autopilot job, resuming a crashed attempt in place.
+
+        The queue row carries the requirement and limits; the run ledger lives
+        under ``.spark/autopilot`` so a process crash can be resumed by the next
+        queue worker.  A terminal failure is retried by starting a fresh ledger
+        only after the queue's own attempt counter advances; a normal first
+        attempt keeps its ledger for diagnosis.
+        """
+        import json as _json
+
+        from spark.autopilot import (
+            AutopilotLimits,
+            AutopilotRunner,
+            AutopilotState,
+            make_agent_turn_runner,
+            make_git_diff_probe,
+            make_test_verifier,
+            new_state,
+        )
+
+        task_id = str(task.get("id") or "")
+        prompt = str(task.get("prompt") or "").strip()
+        if not prompt:
+            return QueueOutcome(status="failed", error="empty requirement")
+        workdir = Path(str(task.get("workdir") or self.workdir))
+        if workdir.resolve() != Path(self.workdir).resolve():
+            return QueueOutcome(
+                status="blocked",
+                error=f"queue task workdir {workdir} != server workdir {self.workdir}",
+            )
+        raw_options = task.get("options")
+        options: dict[str, Any] = (
+            cast(dict[str, Any], raw_options)
+            if isinstance(raw_options, dict)
+            else {}
+        )
+        try:
+            max_turns = int(options.get("max_turns") or 8)
+            turn_timeout = int(options.get("turn_timeout_sec") or 900)
+            task_timeout = int(options.get("task_timeout_sec") or 3600)
+            test_timeout = int(options.get("test_timeout_sec") or 1800)
+            max_cost = float(options.get("max_cost_usd") or 0.0)
+        except (TypeError, ValueError):
+            return QueueOutcome(status="blocked", error="invalid autopilot limits")
+        limits = AutopilotLimits(
+            max_turns=max_turns,
+            turn_timeout_sec=turn_timeout,
+            task_timeout_sec=task_timeout,
+            max_cost_usd=max_cost,
+        )
+        state_path = Path(
+            str(options.get("state_path") or f".spark/autopilot/queue-{task_id}.json")
+        )
+        if not state_path.is_absolute():
+            state_path = workdir / state_path
+
+        state: AutopilotState | None = None
+        if state_path.exists():
+            try:
+                state = AutopilotState.from_dict(
+                    _json.loads(state_path.read_text(encoding="utf-8"))
+                )
+            except (OSError, ValueError, TypeError) as exc:
+                return QueueOutcome(
+                    status="blocked", error=f"cannot read autopilot state: {exc}"
+                )
+            if state.status == "passed":
+                return QueueOutcome(
+                    status="ok",
+                    summary=f"autopilot already passed ({state.turn} turns)",
+                    session_id=state.session_id,
+                    cost_usd=round(float(state.total_cost_usd or 0.0), 6),
+                )
+            if state.status in {"failed", "blocked"}:
+                attempts = int(task.get("attempts") or 1)
+                if attempts <= 1:
+                    return QueueOutcome(
+                        status="failed",
+                        error=state.last_error or f"autopilot {state.status}",
+                        session_id=state.session_id,
+                        cost_usd=round(float(state.total_cost_usd or 0.0), 6),
+                    )
+                # The queue is retrying this row. Preserve the failed ledger
+                # for diagnosis and start a fresh attempt.
+                archive = state_path.with_name(
+                    f"{state_path.stem}.attempt{attempts - 1}{state_path.suffix}"
+                )
+                try:
+                    if not archive.exists():
+                        state_path.replace(archive)
+                    else:
+                        state_path.unlink()
+                except OSError as exc:
+                    return QueueOutcome(
+                        status="blocked",
+                        error=f"cannot archive failed autopilot state: {exc}",
+                    )
+                state = None
+
+        if state is None:
+            session_id = self.store.create_session(
+                workdir, self.cfg.provider.model, title=f"autopilot: {prompt[:60]}"
+            )
+            state = new_state(
+                run_id=task_id or session_id,
+                session_id=session_id,
+                workdir=workdir,
+                requirement=prompt,
+            )
+        else:
+            if not state.session_id or not self.store.get_session(state.session_id):
+                return QueueOutcome(
+                    status="blocked",
+                    error="autopilot state points to a missing session",
+                )
+            state.prepare_resume()
+            state.started_at = time.time()
+
+        session_id = state.session_id
+        runtime = self.get_runtime(session_id)
+        if runtime is None:
+            return QueueOutcome(status="failed", error="runtime unavailable", session_id=session_id)
+        runtime.origin = "queue"
+        runtime.approver = None  # Autopilot is always full-auto.
+        runtime.loop = self._build_loop(runtime)
+        if not runtime.turn_lock.acquire(blocking=False):
+            return QueueOutcome(status="requeue", error="agent busy", session_id=session_id)
+        try:
+            runner = AutopilotRunner(
+                state,
+                turn_runner=make_agent_turn_runner(runtime.loop, timeout_sec=turn_timeout),
+                verifier=make_test_verifier(self.sandbox, timeout_sec=test_timeout),
+                diff_probe=make_git_diff_probe(workdir),
+                limits=limits,
+                state_path=state_path,
+            )
+            result = runner.run()
+        except Exception as exc:  # aqg: top-level boundary
+            logger.warning("queued autopilot %s crashed", task_id, exc_info=True)
+            return QueueOutcome(
+                status="failed",
+                error=f"{type(exc).__name__}: {exc}",
+                session_id=session_id,
+                cost_usd=round(float(state.total_cost_usd or 0.0), 6),
+            )
+        finally:
+            runtime.turn_lock.release()
+
+        cost = round(float(result.total_cost_usd or 0.0), 6)
+        summary = (
+            f"autopilot {result.status}: {result.last_error or 'done'}; "
+            f"turns={result.turn}, tests={'PASS' if result.last_test_ok else 'FAIL'}"
+        )[:500]
+        try:
+            from spark.workbench import build_delivery
+
+            build_delivery(
+                self.store,
+                session_id,
+                self.cfg,
+                task_id=task_id,
+                title=str(task.get("title") or prompt or "Autopilot task")[:120],
+                status="review" if result.status == "passed" else "rejected",
+                summary=summary,
+                workdir=str(workdir),
+            )
+        except Exception:
+            logger.debug("queue autopilot delivery write failed", exc_info=True)
+        if result.status == "passed":
+            return QueueOutcome(
+                status="ok", summary=summary, session_id=session_id, cost_usd=cost
+            )
+        if result.status == "blocked":
+            return QueueOutcome(
+                status="blocked",
+                error=result.last_error or summary,
+                session_id=session_id,
+                cost_usd=cost,
+            )
+        return QueueOutcome(
+            status="failed",
+            error=result.last_error or summary,
+            session_id=session_id,
+            cost_usd=cost,
         )
 
     def run_due_automations(self) -> list[dict]:

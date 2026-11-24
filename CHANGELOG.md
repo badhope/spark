@@ -2,11 +2,15 @@
 
 本项目遵循语义化版本。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
-## [Unreleased]
+## [0.15.5] - 2026-11-24
 
 ### Added
 
-- Web 视觉系统 v2（Starlight）：全局星云/星点氛围层，面板顶部受光与悬浮阴影，主按钮渐变扫光，品牌旋转光晕，空态双层轨道，用户气泡渐变，运行中工具卡呼吸条，当前会话强调渐变；新增零依赖 `Sparkline` / `RingGauge` / `MiniBars` / `StatCard`，接入任务队列（排队/运行/成功率/水位/任务进度）与成本面板（token/缓存命中/调用/预算环形图）；执行图节点 hover 提亮、边线主题化。`npm run build` 通过（1115 keys、1064 calls）。
+- Autopilot 队列接入：`agent_queue` v8 增 `kind` / `options_json`；`spark queue add --kind autopilot`、Web 设置→任务队列类型选择；`SparkWebState._run_queued_autopilot` 复用真实 `AutopilotRunner`，暂停/重试/日配额/成本上限/崩溃续跑沿用同一队列；终态失败重试归档旧账本。测试 `test_queue_autopilot.py` 2 项、`test_task_queue.py` kind/options 往返 1 项。
+- 跨语言符号图：新增 `src/spark/symbol_graph.py`，Python/TS/TSX/JS/Go/Rust 定义与调用边；`spark symbols` 支持 `impact/callers/callees/list` 与 `--depth/--json`；`find_symbol` 新增 `callers` / `callees` / `impact`；`repo_map` 同步支持 Go/Rust。tree-sitter query 与 parser 按语言缓存、目录遍历提前剪枝，本仓 400 文件从 2m40s 降到约 3.7s；测试 `tests/test_symbol_graph.py` 4 项。
+- CLI 崩溃恢复验收：`tests/test_cli_autopilot_kill9.py` 启动真实 `spark autopilot` 子进程 + 真实 AgentLoop，在轮次中 `SIGKILL` 后 `--resume` passed；顺带修复恢复时用新 probe 初始值比较基线、把已修改工作区误判为“无变更”的 bug。
+- 发布包版本同步：`0.15.5` 同步到 `pyproject.toml`、`uv.lock`、VS Code 扩展 `package.json` 与 `spark-agent-0.15.5.vsix`；旧 `0.15.4` VSIX 移除。
+- Web 视觉系统 v2（Starlight）：全局星云/星点氛围层，面板顶部受光与悬浮阴影，主按钮渐变扫光，品牌旋转光晕，空态双层轨道，用户气泡渐变，运行中工具卡呼吸条，当前会话强调渐变；新增零依赖 `Sparkline` / `RingGauge` / `MiniBars` / `StatCard`，接入任务队列（排队/运行/成功率/水位/任务进度）与成本面板（token/缓存命中/调用/预算环形图）；执行图节点 hover 提亮、边线主题化。`npm run build` 通过（1119 keys、1068 calls）。
 - 无人值守编程闭环 `spark autopilot`：`build → repair → audit → done` 状态机，复用现有 `AgentLoop` 与审批/沙箱；独立执行仓库测试，失败输出回灌；每轮状态落盘、`--resume` 可续；最大轮次/单轮超时/总时限/成本/连续错误/连续无进展熔断；默认 workspace + 无网络 + `full-auto`，`unrestricted` 需显式确认。新增 `docs/AUTOPILOT.md`；单测 22 项、CLI 4 项、真实 AgentLoop+工具+测试 E2E 1 项、120 例压力矩阵 120/120；真实 MiniCPM5-2B 小仓库 4 轮通过。
 - Autopilot 崩溃恢复与三路无进展：每轮开始前写 `turn_in_progress` / `active_prompt` / `pid`；`--resume` 识别中断轮并重试原提示词，审计轮中断强制重审；长轮次 `--heartbeat-interval` 只更新状态文件 mtime，避免并发重写 JSON；无进展判定升级为 diff + 测试输出 + 工具调用指纹（名称/参数），模型换一句总结不再被当作进展。测试含 POSIX 子进程真实 `SIGKILL` 后恢复并 passed。
 - 工程化 Autopilot 提示词：`autopilot_contract.md` / `autopilot_build.md` / `autopilot_repair.md` / `autopilot_verify.md`，覆盖新功能、Bug、重构、测试、性能、安全、文档配置、环境依赖场景，明确“不跳测试、不放宽断言、不采信模型自述完成”。

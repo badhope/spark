@@ -3551,6 +3551,13 @@ def queue_cmd(
     title: str = typer.Option("", "--title", help="任务标题"),
     workdir: str = typer.Option("", "--workdir", help="任务工作目录（默认当前目录）"),
     priority: int = typer.Option(0, "--priority", help="优先级，越大越先跑"),
+    kind: str = typer.Option("agent", "--kind", help="agent / autopilot"),
+    max_turns: int = typer.Option(8, "--max-turns", min=1, max=50, help="autopilot 最大轮次"),
+    turn_timeout: int = typer.Option(900, "--turn-timeout", min=30, max=7200),
+    task_timeout: int = typer.Option(3600, "--task-timeout", min=60, max=86400),
+    test_timeout: int = typer.Option(1800, "--test-timeout", min=30, max=7200),
+    max_cost_usd: float = typer.Option(0.0, "--max-cost-usd", min=0.0),
+    state_path: str = typer.Option("", "--state-path", help="autopilot 状态文件（默认 .spark/autopilot/queue-<id>.json）"),
     as_json: bool = typer.Option(False, "--json", help="输出 JSON"),
 ) -> None:
     import json as _json
@@ -3563,11 +3570,28 @@ def queue_cmd(
             if not prompt or not prompt.strip():
                 typer.echo("add 需要任务提示词", err=True)
                 raise typer.Exit(1)
+            kind_value = kind.strip().lower()
+            if kind_value not in {"agent", "autopilot"}:
+                typer.echo("--kind 只支持 agent / autopilot", err=True)
+                raise typer.Exit(1)
+            options: dict[str, Any] = {}
+            if kind_value == "autopilot":
+                options = {
+                    "max_turns": max_turns,
+                    "turn_timeout_sec": turn_timeout,
+                    "task_timeout_sec": task_timeout,
+                    "test_timeout_sec": test_timeout,
+                    "max_cost_usd": max_cost_usd,
+                }
+                if state_path.strip():
+                    options["state_path"] = state_path.strip()
             task = store.enqueue_agent_task(
                 prompt,
                 title=title,
                 workdir=workdir or str(_Path.cwd()),
                 priority=priority,
+                kind=kind_value,
+                options=options,
             )
             typer.echo(f"已入队：{task['id']}")
             return
@@ -3605,6 +3629,75 @@ def queue_cmd(
             typer.echo(f"{row['id']}\t{row['status']}\t{row.get('title') or row['prompt'][:40]}")
     finally:
         store.close()
+
+
+@app.command("symbols", help="跨语言符号图：定义、调用者、被调用者、影响面（Python/TS/TSX/JS/Go/Rust）")
+def symbols_cmd(
+    symbol: str = typer.Argument("", help="符号名；留空或 --mode list 时列出符号"),
+    workdir: Path = typer.Option(Path("."), "--workdir", help="仓库根目录"),
+    mode: str = typer.Option(
+        "impact",
+        "--mode",
+        help="impact / callers / callees / list",
+    ),
+    depth: int = typer.Option(2, "--depth", min=1, max=4, help="调用链深度"),
+    max_files: int = typer.Option(400, "--max-files", min=1, max=2000),
+    as_json: bool = typer.Option(False, "--json", help="输出 JSON"),
+) -> None:
+    """Query the syntax-level cross-language call graph.
+
+    The graph is name-based and bounded; an unresolved name is reported as
+    unresolved, never as "no callers".  It is an impact-estimation aid, not a
+    replacement for a language server.
+    """
+    import json as _json
+
+    from spark.symbol_graph import build_symbol_graph, format_graph_report
+
+    act = mode.strip().lower()
+    if act not in {"impact", "callers", "callees", "list"}:
+        typer.echo("mode 只支持 impact / callers / callees / list", err=True)
+        raise typer.Exit(1)
+    graph = build_symbol_graph(workdir, max_files=max_files)
+    if act == "list" or not symbol.strip():
+        symbols = sorted(graph.symbols, key=lambda s: (s.path, s.line, s.name))
+        if as_json:
+            typer.echo(_json.dumps(graph.to_dict(), ensure_ascii=False, indent=2))
+            return
+        typer.echo(
+            f"files={graph.scanned_files} symbols={len(graph.symbols)} calls={len(graph.calls)}"
+        )
+        for item in symbols[:300]:
+            typer.echo(f"{item.path}:{item.line}	{item.kind}	{item.qualname}")
+        if len(symbols) > 300:
+            typer.echo(f"... {len(symbols) - 300} more")
+        return
+    if act == "impact":
+        if as_json:
+            typer.echo(
+                _json.dumps(graph.impact(symbol, depth=depth), ensure_ascii=False, indent=2)
+            )
+        else:
+            typer.echo(format_graph_report(graph, symbol, depth=depth))
+        return
+    data: list[dict[str, Any]] = (
+        graph.callers(symbol, depth=depth)
+        if act == "callers"
+        else graph.callees(symbol, depth=depth)
+    )
+    if as_json:
+        typer.echo(_json.dumps(data, ensure_ascii=False, indent=2))
+        return
+    typer.echo(f"{act}: {symbol}  ({len(data)} results, depth {depth})")
+    for entry in data:
+        if act == "callers":
+            target = f"{entry['callee_path']}:{entry['callee_line']}" if entry.get("callee_path") else "unresolved"
+            typer.echo(
+                f"  {entry['path']}:{entry['line']}  {entry['symbol']} -> {target}  [{entry['confidence']}]"
+            )
+        else:
+            target = f"{entry['path']}:{entry['line']}" if entry.get("path") else "unresolved"
+            typer.echo(f"  {target}  {entry['symbol']}  [{entry['confidence']}]")
 
 
 @app.command("enterprise", help="启动企业控制面 API（/api/v1；默认仅回环 127.0.0.1:18800）")

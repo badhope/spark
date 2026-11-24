@@ -22,12 +22,33 @@ def _handle_queue(handler: HandlerBase, body: dict) -> None:
         if not prompt:
             handler._json(400, {"error": "prompt is required"})
             return
+        kind = str(body.get("kind") or "agent").strip().lower()
+        if kind not in {"agent", "autopilot"}:
+            handler._json(400, {"error": "kind must be agent or autopilot"})
+            return
+        options = body.get("options")
+        if options is None:
+            options = {}
+        if not isinstance(options, dict):
+            handler._json(400, {"error": "options must be an object"})
+            return
+        # Autopilot limits are copied explicitly so the queue row remains
+        # self-contained even if the caller later changes its defaults.
+        if kind == "autopilot":
+            for key in (
+                "max_turns", "turn_timeout_sec", "task_timeout_sec",
+                "test_timeout_sec", "max_cost_usd", "resume",
+            ):
+                if key in body and key not in options:
+                    options[key] = body[key]
         try:
             task = queue.enqueue(
                 prompt,
                 title=str(body.get("title") or ""),
                 workdir=str(body.get("workdir") or state.workdir),
                 priority=int(body.get("priority") or 0),
+                kind=kind,
+                options=options,
             )
         except (ValueError, TypeError) as exc:
             handler._json(400, {"error": str(exc)})

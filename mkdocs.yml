@@ -30,6 +30,7 @@ nav:
       - Positioning: PRODUCT_POSITIONING.md
       - Industry research: INDUSTRY_RESEARCH_2026-11-24.md
       - Autopilot: AUTOPILOT.md
+      - Symbol graph: SYMBOL_GRAPH.md
       - OpenCode compatibility: OPENCODE_COMPAT.md
       - Core capability gaps: CORE_CAPABILITY_GAPS.md
       - Integration map: INTEGRATION_MAP.md

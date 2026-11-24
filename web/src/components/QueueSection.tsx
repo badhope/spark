@@ -53,6 +53,7 @@ export function QueueSection() {
   const [state, setState] = useState<QueueState | null>(null)
   const [prompt, setPrompt] = useState("")
   const [title, setTitle] = useState("")
+  const [kind, setKind] = useState<"agent" | "autopilot">("agent")
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState("")
   const [now, setNow] = useState(() => Date.now())
@@ -87,7 +88,7 @@ export function QueueSection() {
 
   async function enqueue() {
     if (!prompt.trim()) return
-    await act({ action: "create", prompt: prompt.trim(), title: title.trim() })
+    await act({ action: "create", prompt: prompt.trim(), title: title.trim(), kind })
     setPrompt("")
     setTitle("")
   }
@@ -200,6 +201,21 @@ export function QueueSection() {
         </div>
 
         <div className="mt-3.5 flex flex-col gap-2 border-t border-line pt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wide text-ink3">{t("queue.kind", lang)}</span>
+            <select
+              aria-label={t("queue.kind", lang)}
+              value={kind}
+              onChange={(e) => setKind(e.target.value === "autopilot" ? "autopilot" : "agent")}
+              className="h-8 rounded-lg border border-line bg-panel2 px-2 text-[11px] text-ink outline-none focus:border-accent"
+            >
+              <option value="agent">{t("queue.kind.agent", lang)}</option>
+              <option value="autopilot">{t("queue.kind.autopilot", lang)}</option>
+            </select>
+            {kind === "autopilot" && (
+              <span className="text-[10px] leading-relaxed text-ink3">{t("queue.kindHint", lang)}</span>
+            )}
+          </div>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -257,6 +273,7 @@ export function QueueSection() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink2">{task.title || task.prompt.slice(0, 60)}</span>
+                        {task.kind === "autopilot" && <Badge tone="accent">Autopilot</Badge>}
                         <Badge tone={tone}>{queueStatusLabel(task, lang)}</Badge>
                         <span className="font-mono text-[9.5px] text-ink3">{t("queue.attempts", lang, { n: task.attempts })}</span>
                       </div>
