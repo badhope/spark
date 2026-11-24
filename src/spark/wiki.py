@@ -353,72 +353,34 @@ def _cached_doc(entry: dict[str, Any]) -> ModuleDoc | None:
     return doc if doc.path else None
 
 
-def build_wiki(
+def _wiki_module(
     root: Path,
-    cfg: WikiConfig | None = None,
-    summarizer: Any = None,
-    refresh: bool = False,
-) -> dict[str, Any]:
-    """生成 wiki 到 ``<root>/<cfg.out_dir>``，返回统计摘要。
+    doc: ModuleDoc,
+    cache_entry: object,
+    cfg: WikiConfig,
+    summarizer: Any,
+) -> tuple[ModuleDoc, str, bool]:
+    abs_path = root / doc.path
+    digest = _hash_file(abs_path)
+    entry_dict = cache_entry if isinstance(cache_entry, dict) else {}
+    reused = _cached_doc(entry_dict) if entry_dict.get("hash") == digest else None
+    if reused is not None:
+        reused.summary = str(entry_dict.get("summary") or "")
+        return reused, digest, True
+    # 缓存未命中才解析符号——这一步是整条链路里最贵的。
+    if not doc.symbols and abs_path.suffix in _EXT_LANG:
+        doc.symbols = extract_symbols(abs_path)
+    # 摘要在符号解析之后：summarizer 拿到的符号表才是真实的。
+    if cfg.summarize and summarizer is not None and doc.symbols:
+        try:
+            doc.summary = str(summarizer(doc.path, doc.symbols) or "").strip()
+        except Exception:
+            doc.summary = ""
+    return doc, digest, False
 
-    ``summarizer(path, symbols) -> str`` 可选；只有它不为 None 且
-    ``cfg.summarize`` 为真时才调用。异常一律吞掉并回退到无摘要，
-    因为摘要只是锦上添花，不能阻断产物生成。
 
-    ``refresh=True`` 忽略缓存全量重建。命中缓存的文件既不重新解析、
-    也不重新写盘，只有 INDEX.md 与新增/变更的模块被写出。
-    """
-    cfg = cfg or WikiConfig()
-    root = root.resolve()
-    out = (root / cfg.out_dir).resolve()
-    out.mkdir(parents=True, exist_ok=True)
-    (out / MODULE_DIR).mkdir(parents=True, exist_ok=True)
-
-    cache = {} if refresh else _read_cache(out)
-    # 缓存键带 max_files：预算变化会改变入选文件集合，不能沿用旧结果。
-    cache_key = f"budget:{cfg.max_files}"
-    if cache.get(cache_key) != cfg.max_files:
-        cache = {}
-        cache[cache_key] = cfg.max_files
-
-    modules: list[ModuleDoc] = []
-    built = skipped = 0
-    new_cache: dict[str, Any] = {cache_key: cfg.max_files}
-
-    for doc in _candidate_docs(root, cfg):
-        abs_path = root / doc.path
-        digest = _hash_file(abs_path)
-        entry = cache.get(doc.path)
-        entry_dict = entry if isinstance(entry, dict) else {}
-        reused = (
-            _cached_doc(entry_dict) if entry_dict.get("hash") == digest else None
-        )
-        if reused is not None:
-            reused.summary = str(entry_dict.get("summary") or "")
-            modules.append(reused)
-            new_cache[doc.path] = {"hash": digest, "summary": reused.summary, "doc": reused.to_dict()}
-            skipped += 1
-            continue
-
-        # 缓存未命中才解析符号——这一步是整条链路里最贵的，
-        # 放在哈希比较之后，命中缓存的运行就不再付出它。
-        if not doc.symbols and abs_path.suffix in _EXT_LANG:
-            doc.symbols = extract_symbols(abs_path)
-        # 摘要在符号解析之后：summarizer 拿到的符号表是真实的，
-        # 先算摘要会把空列表传进去，模型只能泛泛而谈。
-        if cfg.summarize and summarizer is not None and doc.symbols:
-            try:
-                doc.summary = str(summarizer(doc.path, doc.symbols) or "").strip()
-            except Exception:
-                doc.summary = ""
-        modules.append(doc)
-        new_cache[doc.path] = {"hash": digest, "summary": doc.summary, "doc": doc.to_dict()}
-        built += 1
-
-    modules.sort(key=lambda m: m.path)
-
-    # INDEX.md 每次都写（它含生成时间与统计，必须反映本次结果）；
-    # 模块文档只在内容变化时写，避免无意义的文件 mtime 抖动。
+def _write_module_docs(out: Path, modules: list[ModuleDoc], cache: dict, new_cache: dict) -> None:
+    # INDEX.md 每次都写；模块文档只在内容变化时写，避免无意义 mtime 抖动。
     existing = {p.name for p in (out / MODULE_DIR).glob("*.md")}
     for doc in modules:
         entry = cache.get(doc.path) or {}
@@ -426,19 +388,52 @@ def build_wiki(
             continue
         (out / MODULE_DIR / _slug(doc.path)).write_text(_render_module(doc), encoding="utf-8")
 
-    index = _render_index(root, modules, cfg)
-    (out / INDEX_NAME).write_text(index, encoding="utf-8")
 
-    # 清理已删除文件的陈旧模块文档
+def _cleanup_stale_modules(out: Path, modules: list[ModuleDoc]) -> None:
     live = {_slug(m.path) for m in modules}
     for stale in (out / MODULE_DIR).glob("*.md"):
         if stale.name not in live:
             stale.unlink(missing_ok=True)
 
+
+def build_wiki(
+    root: Path,
+    cfg: WikiConfig | None = None,
+    summarizer: Any = None,
+    refresh: bool = False,
+) -> dict[str, Any]:
+    """生成 wiki 到 ``<root>/<cfg.out_dir>``，返回统计摘要。"""
+    cfg = cfg or WikiConfig()
+    root = root.resolve()
+    out = (root / cfg.out_dir).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    (out / MODULE_DIR).mkdir(parents=True, exist_ok=True)
+    cache = {} if refresh else _read_cache(out)
+    # 缓存键带 max_files：预算变化会改变入选文件集合，不能沿用旧结果。
+    cache_key = f"budget:{cfg.max_files}"
+    if cache.get(cache_key) != cfg.max_files:
+        cache = {cache_key: cfg.max_files}
+    modules: list[ModuleDoc] = []
+    built = skipped = 0
+    new_cache: dict[str, Any] = {cache_key: cfg.max_files}
+    for doc in _candidate_docs(root, cfg):
+        doc_result, digest, reused = _wiki_module(
+            root, doc, cache.get(doc.path), cfg, summarizer
+        )
+        modules.append(doc_result)
+        new_cache[doc.path] = {
+            "hash": digest, "summary": doc_result.summary, "doc": doc_result.to_dict()
+        }
+        if reused:
+            skipped += 1
+        else:
+            built += 1
+    modules.sort(key=lambda m: m.path)
+    _write_module_docs(out, modules, cache, new_cache)
+    index = _render_index(root, modules, cfg)
+    (out / INDEX_NAME).write_text(index, encoding="utf-8")
+    _cleanup_stale_modules(out, modules)
     _write_cache(out, new_cache)
-    # 记录本次实际使用的参数，供 Web 面板回显。
-    # 不能只在 HTTP handler 里写：CLI 生成的 wiki 也要能被面板正确显示
-    # （否则面板会把 20 个文件的手册配上 240 的上限，自相矛盾）。
     _write_meta(out, cfg)
     return {
         "modules": len(modules),
@@ -448,7 +443,6 @@ def build_wiki(
         "out_dir": str(out),
         "index": str(out / INDEX_NAME),
     }
-
 
 def _write_meta(out: Path, cfg: WikiConfig) -> None:
     payload = {

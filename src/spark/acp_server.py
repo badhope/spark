@@ -333,6 +333,74 @@ def map_error_stop_reason(message: str, code: str | None = None) -> str:
 # 事件泵：Spark TurnEvent → ACP session/update 通知
 # ---------------------------------------------------------------------------
 
+async def _emit_tool_start(
+    session: SparkAcpSession, conn: AgentSideConnection, call: Any
+) -> None:
+    acp_id = session.tool_ids.register(call.id)
+    await conn.session_update(
+        session.session_id,
+        ToolCallStart(
+            session_update="tool_call",
+            tool_call_id=acp_id,
+            title=call.name,
+            kind=tool_kind(call.name),  # type: ignore[arg-type]
+            status="pending",
+            raw_input=call.arguments,
+        ),
+    )
+
+
+async def _emit_tool_end(
+    session: SparkAcpSession, conn: AgentSideConnection, event: Any, call: Any
+) -> None:
+    await conn.session_update(
+        session.session_id,
+        tool_call_update(
+            title=call.name,
+            kind=tool_kind(call.name),
+            status="completed" if (event.result and event.result.ok) else "failed",
+            raw_input=call.arguments,
+            result=event.result,
+            acp_id=session.tool_ids.acp_id(call.id),
+        ),
+    )
+
+
+async def _emit_turn_event(
+    session: SparkAcpSession,
+    conn: AgentSideConnection,
+    event: Any,
+) -> str | None:
+    """Forward one TurnEvent; return a stop reason when the turn ends."""
+    sid = session.session_id
+    if event.type == "text_delta" and event.text:
+        await conn.session_update(sid, update_agent_message(text_block(event.text)))
+    elif event.type == "reasoning_delta" and event.text:
+        await conn.session_update(sid, update_agent_thought(text_block(event.text)))
+    elif event.type == "tool_start" and event.tool_call is not None:
+        await _emit_tool_start(session, conn, event.tool_call)
+    elif event.type == "tool_end" and event.tool_call is not None:
+        await _emit_tool_end(session, conn, event, event.tool_call)
+    elif event.type == "plan" and isinstance(event.data, dict):
+        await conn.session_update(
+            sid, update_plan(plan_entries(event.data.get("steps") or []))
+        )
+    elif event.type == "turn_end":
+        return "end_turn"
+    elif event.type == "turn_error":
+        message = event.text or "turn failed"
+        error_payload = (event.data or {}).get("error") if isinstance(event.data, dict) else None
+        code = error_payload.get("code") if isinstance(error_payload, dict) else None
+        stop_reason = map_error_stop_reason(message, code)
+        if stop_reason == "refusal":
+            # 真错误以文本形式透出，客户端可见
+            await conn.session_update(
+                sid, update_agent_message(text_block(f"Error: {message}"))
+            )
+        return stop_reason
+    return None
+
+
 async def stream_turn(
     session: SparkAcpSession,
     conn: AgentSideConnection,
@@ -340,63 +408,16 @@ async def stream_turn(
     images: list[ImageRef] | None,
 ) -> str:
     """运行一轮对话：TurnEvent → session/update；返回 PromptResponse 的 stopReason。"""
-    sid = session.session_id
     stop_reason = "end_turn"
     # ACP owns its own loop and its approver must call back into the connection
     # on *that* loop, so the turn runs here directly instead of being marshalled
     # through the shared runtime loop (which deadlocked request_permission).
     async for event in session.loop.iter_turn(user_text, images=images):
-        if event.type == "text_delta" and event.text:
-            await conn.session_update(sid, update_agent_message(text_block(event.text)))
-        elif event.type == "reasoning_delta" and event.text:
-            await conn.session_update(sid, update_agent_thought(text_block(event.text)))
-        elif event.type == "tool_start" and event.tool_call is not None:
-            call = event.tool_call
-            acp_id = session.tool_ids.register(call.id)
-            await conn.session_update(
-                sid,
-                ToolCallStart(
-                    session_update="tool_call",
-                    tool_call_id=acp_id,
-                    title=call.name,
-                    kind=tool_kind(call.name),  # type: ignore[arg-type]
-                    status="pending",
-                    raw_input=call.arguments,
-                ),
-            )
-        elif event.type == "tool_end" and event.tool_call is not None:
-            call = event.tool_call
-            await conn.session_update(
-                sid,
-                tool_call_update(
-                    title=call.name,
-                    kind=tool_kind(call.name),
-                    status="completed" if (event.result and event.result.ok) else "failed",
-                    raw_input=call.arguments,
-                    result=event.result,
-                    acp_id=session.tool_ids.acp_id(call.id),
-                ),
-            )
-        elif event.type == "plan" and isinstance(event.data, dict):
-            await conn.session_update(
-                sid, update_plan(plan_entries(event.data.get("steps") or []))
-            )
-        elif event.type == "turn_end":
-            stop_reason = "end_turn"
-            break
-        elif event.type == "turn_error":
-            message = event.text or "turn failed"
-            error_payload = (event.data or {}).get("error") if isinstance(event.data, dict) else None
-            code = error_payload.get("code") if isinstance(error_payload, dict) else None
-            stop_reason = map_error_stop_reason(message, code)
-            if stop_reason == "refusal":
-                # 真错误以文本形式透出，客户端可见
-                await conn.session_update(
-                    sid, update_agent_message(text_block(f"Error: {message}"))
-                )
+        new_reason = await _emit_turn_event(session, conn, event)
+        if new_reason is not None:
+            stop_reason = new_reason
             break
     return stop_reason
-
 
 # ---------------------------------------------------------------------------
 # prompt 内容块 → Spark 输入

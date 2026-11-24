@@ -405,6 +405,76 @@ def _turn_error_text(event) -> str:
     hint = error.get("hint") if isinstance(error, dict) else None
     return f"{event.text}\n{hint}" if event.text and hint else (event.text or "")
 
+def _echo_json(payload: dict) -> None:
+    import json as _json
+
+    typer.echo(_json.dumps(payload, ensure_ascii=False))
+
+
+async def _run_test_mode(loop, sandbox, slash, as_json: bool) -> None:
+    """``spark exec /test [目录]``：失败时把 traceback 回灌进 loop。"""
+    from spark.slash import handle_test
+
+    result = await asyncio.to_thread(handle_test, sandbox, slash.args)
+    if as_json:
+        _echo_json({"type": "test", "ok": bool(result.ok), "summary": result.summary})
+    else:
+        typer.echo(result.summary)
+        if result.output:
+            typer.echo(result.output)
+    if result.ok or not result.feedback:
+        raise typer.Exit(0)
+    final = ""
+    async for event in loop.iter_turn(result.feedback):
+        if as_json:
+            _echo_json(event.model_dump(mode="json", exclude_none=True))
+        if event.type == "turn_end" and event.text:
+            final = event.text
+        if event.type == "turn_error" and event.text:
+            if as_json:
+                _echo_json({"type": "turn_error", "text": event.text})
+            else:
+                typer.echo(_turn_error_text(event), err=True)
+            raise typer.Exit(1)
+    if final:
+        if as_json:
+            _echo_json({"type": "final", "text": final})
+        else:
+            typer.echo(final)
+    raise typer.Exit(1)
+
+
+async def _run_json_turn(loop, prompt: str) -> None:
+    final = ""
+    async for event in loop.iter_turn(prompt):
+        _echo_json(event.model_dump(mode="json", exclude_none=True))
+        if event.type == "turn_end" and event.text:
+            final = event.text
+        if event.type == "turn_error" and event.text:
+            _echo_json({"type": "turn_error", "text": event.text})
+            raise typer.Exit(1)
+    _echo_json({"type": "final", "text": final})
+
+
+async def _run_text_turn(loop, prompt: str) -> None:
+    events = await loop.run(prompt)
+    final = ""
+    for event in events:
+        if event.type == "turn_end" and event.text:
+            final = event.text
+        if event.type == "turn_error" and event.text:
+            typer.echo(_turn_error_text(event), err=True)
+            raise typer.Exit(1)
+    typer.echo(final)
+
+
+async def _exc_turn(loop, prompt: str, as_json: bool) -> None:
+    if as_json:
+        await _run_json_turn(loop, prompt)
+    else:
+        await _run_text_turn(loop, prompt)
+
+
 async def _exec_async(
     prompt: str,
     workdir: Path,
@@ -442,80 +512,113 @@ async def _exec_async(
         approver=None,
     )
     try:
-        import json as _json
-
-        from spark.slash import handle_test, parse_slash
-
-        def _emit(payload: dict) -> None:
-            typer.echo(_json.dumps(payload, ensure_ascii=False))
+        from spark.slash import expand_command, parse_slash
 
         slash = parse_slash(prompt)
         if slash is not None and slash.name == "test":
-            # spark exec /test [目录]：脚本化跑测试，失败则把 traceback 回灌进 loop
-            result = await asyncio.to_thread(handle_test, sandbox, slash.args)
-            if as_json:
-                _emit(
-                    {
-                        "type": "test",
-                        "ok": bool(result.ok),
-                        "summary": result.summary,
-                    }
-                )
-            else:
-                typer.echo(result.summary)
-                if result.output:
-                    typer.echo(result.output)
-            if result.ok or not result.feedback:
-                raise typer.Exit(0)
-            final = ""
-            async for event in loop.iter_turn(result.feedback):
-                if as_json:
-                    _emit(event.model_dump(mode="json", exclude_none=True))
-                if event.type == "turn_end" and event.text:
-                    final = event.text
-                if event.type == "turn_error" and event.text:
-                    if as_json:
-                        _emit({"type": "turn_error", "text": event.text})
-                    else:
-                        typer.echo(_turn_error_text(event), err=True)
-                    raise typer.Exit(1)
-            if final:
-                if as_json:
-                    _emit({"type": "final", "text": final})
-                else:
-                    typer.echo(final)
-            raise typer.Exit(1)
-
+            await _run_test_mode(loop, sandbox, slash, as_json)
+            return
         # H5：自定义命令展开（.spark/commands/*.md）
-        from spark.slash import expand_command
-
         try:
             expanded = expand_command(str(workdir), prompt)
         except Exception:
             expanded = None
-        if as_json:
-            final = ""
-            async for event in loop.iter_turn(expanded or prompt):
-                _emit(event.model_dump(mode="json", exclude_none=True))
-                if event.type == "turn_end" and event.text:
-                    final = event.text
-                if event.type == "turn_error" and event.text:
-                    _emit({"type": "turn_error", "text": event.text})
-                    raise typer.Exit(1)
-            _emit({"type": "final", "text": final})
-        else:
-            events = await loop.run(expanded or prompt)
-            final = ""
-            for event in events:
-                if event.type == "turn_end" and event.text:
-                    final = event.text
-                if event.type == "turn_error" and event.text:
-                    typer.echo(_turn_error_text(event), err=True)
-                    raise typer.Exit(1)
-            typer.echo(final)
+        await _exc_turn(loop, expanded or prompt, as_json)
     finally:
         await bridge.close()
         store.close()
+
+def _workflow_emit(as_json: bool):
+    import json as _json
+
+    def emit(payload: dict) -> None:
+        if as_json:
+            typer.echo(_json.dumps(payload, ensure_ascii=False))
+            return
+        step = payload.get("step", "")
+        kind = payload.get("type", "")
+        if kind == "step_started":
+            typer.echo(f"→ {step}", err=True)
+        elif kind in {"step_completed", "step_failed"}:
+            suffix = f": {payload.get('error', '')}" if payload.get("error") else ""
+            typer.echo(f"{'✓' if kind == 'step_completed' else '✗'} {step}{suffix}", err=True)
+
+    return emit
+
+
+def _workflow_isolation(
+    workdir: Path, cfg: SparkConfig, path: Path
+) -> tuple[Path, dict[str, object] | None]:
+    from spark.git_memory import TaskBeginArgs, task_begin
+
+    main_sandbox = WorkdirSandbox(workdir, cfg)
+    branch = "workflow-" + path.stem + "-" + __import__("time").strftime("%Y%m%d-%H%M%S")
+    started = task_begin(main_sandbox, TaskBeginArgs(task=branch, path="."))
+    if not started.ok:
+        raise ConfigError(f"无法创建隔离 worktree: {started.payload}")
+    exec_workdir = Path(str(started.payload["worktree_path"]))
+    branch = str(started.payload.get("branch") or branch)
+    return exec_workdir, {"branch": branch, "worktree": str(exec_workdir)}
+
+
+def _workflow_initial(spec, workdir: Path, resume: Path | None, rerun: set[str] | None):
+    if resume is None:
+        return None
+    import json as _json
+
+    from spark.workflow import WorkflowRun, prepare_resume, rerun_steps
+
+    state_path = resume if resume.is_absolute() else workdir / resume
+    try:
+        state = _json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"无法读取运行状态 {state_path}: {exc}") from exc
+    initial = prepare_resume(WorkflowRun.from_state(spec, state))
+    if rerun:
+        initial = rerun_steps(initial, set(rerun))
+    return initial
+
+
+def _workflow_finish_isolation(
+    workdir: Path, cfg: SparkConfig, isolation: dict[str, object] | None
+) -> None:
+    if isolation is None:
+        return
+    from spark.git_memory import TaskFinishArgs, task_finish
+
+    finished = task_finish(
+        WorkdirSandbox(workdir, cfg),
+        TaskFinishArgs(
+            worktree=str(isolation["worktree"]),
+            branch=str(isolation["branch"]),
+            success=True,
+        ),
+    )
+    isolation["merge_hint"] = finished.payload.get("merge_hint", "")
+
+
+def _print_workflow_result(
+    spec, run, isolation: dict[str, object] | None, *, as_json: bool
+) -> None:
+    import json as _json
+
+    if as_json:
+        typer.echo(_json.dumps({
+            "type": "workflow_end", "ok": run.ok, "paused": run.paused,
+            "statuses": run.statuses, "errors": run.errors,
+            "isolation": isolation,
+        }, ensure_ascii=False))
+        return
+    state = "ok" if run.ok else ("paused" if run.paused else "failed")
+    typer.echo(f"workflow {spec.name}: {state}")
+    if isolation is not None:
+        typer.echo(f"worktree: {isolation['worktree']} (branch {isolation['branch']})")
+        typer.echo(str(isolation.get("merge_hint") or ""))
+    for step in spec.steps:
+        line = f"  {step.id}: {run.statuses.get(step.id, 'pending')}"
+        if step.id in run.errors:
+            line += f" ({run.errors[step.id]})"
+        typer.echo(line)
 
 
 async def _workflow_run_async(
@@ -540,30 +643,13 @@ async def _workflow_run_async(
     from spark.providers.factory import create_provider
     from spark.tools import goal as goal_tools
     from spark.tools.registry import ToolContext, ToolRegistry
-    from spark.workflow import (
-        AgentWorkflowRunner,
-        WorkflowRun,
-        load_workflow,
-        prepare_resume,
-        rerun_steps,
-        run_workflow,
-    )
+    from spark.workflow import AgentWorkflowRunner, load_workflow, run_workflow
 
     prov = create_provider(cfg)
-    exec_workdir = workdir
-    isolation: dict[str, object] | None = None
-    branch = ""
     if isolate_worktree:
-        from spark.git_memory import TaskBeginArgs, task_begin
-
-        main_sandbox = WorkdirSandbox(workdir, cfg)
-        branch = "workflow-" + path.stem + "-" + __import__("time").strftime("%Y%m%d-%H%M%S")
-        started = task_begin(main_sandbox, TaskBeginArgs(task=branch, path="."))
-        if not started.ok:
-            raise ConfigError(f"无法创建隔离 worktree: {started.payload}")
-        exec_workdir = Path(str(started.payload["worktree_path"]))
-        branch = str(started.payload.get("branch") or branch)
-        isolation = {"branch": branch, "worktree": str(exec_workdir)}
+        exec_workdir, isolation = _workflow_isolation(workdir, cfg, path)
+    else:
+        exec_workdir, isolation = workdir, None
     sandbox = WorkdirSandbox(exec_workdir, cfg)
     tool_ctx = ToolContext(sandbox=sandbox, config=cfg)
     registry = ToolRegistry(tool_ctx)
@@ -582,30 +668,10 @@ async def _workflow_run_async(
         approver=None,
     )
     agents = {agent.name: agent for agent in discover_declared_agents(exec_workdir)}
-
-    def emit(payload: dict) -> None:
-        if as_json:
-            typer.echo(_json.dumps(payload, ensure_ascii=False))
-        else:
-            step = payload.get("step", "")
-            kind = payload.get("type", "")
-            if kind == "step_started":
-                typer.echo(f"→ {step}", err=True)
-            elif kind in {"step_completed", "step_failed"}:
-                typer.echo(f"{'✓' if kind == 'step_completed' else '✗'} {step}" + (f": {payload.get('error', '')}" if payload.get("error") else ""), err=True)
-
+    emit = _workflow_emit(as_json)
     try:
         spec = load_workflow(path, workdir=workdir)
-        initial = None
-        if resume is not None:
-            state_path = resume if resume.is_absolute() else workdir / resume
-            try:
-                state = _json.loads(state_path.read_text(encoding="utf-8"))
-            except (OSError, ValueError) as exc:
-                raise ConfigError(f"无法读取运行状态 {state_path}: {exc}") from exc
-            initial = prepare_resume(WorkflowRun.from_state(spec, state))
-            if rerun:
-                initial = rerun_steps(initial, set(rerun))
+        initial = _workflow_initial(spec, workdir, resume, rerun)
         runner = AgentWorkflowRunner(loop, spec, agents=agents, on_event=None)
         run = await run_workflow(
             spec, runner, workdir=exec_workdir, max_parallel=max_parallel,
@@ -626,39 +692,112 @@ async def _workflow_run_async(
                 _json.dumps(run.to_state(), ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-        if isolation is not None:
-            from spark.git_memory import TaskFinishArgs, task_finish
-
-            finished = task_finish(
-                WorkdirSandbox(workdir, cfg),
-                TaskFinishArgs(
-                    worktree=str(isolation["worktree"]),
-                    branch=str(isolation["branch"]),
-                    success=True,
-                ),
-            )
-            isolation["merge_hint"] = finished.payload.get("merge_hint", "")
-        if as_json:
-            typer.echo(_json.dumps({
-                "type": "workflow_end", "ok": run.ok, "paused": run.paused,
-                "statuses": run.statuses, "errors": run.errors,
-                "isolation": isolation,
-            }, ensure_ascii=False))
-        else:
-            state = "ok" if run.ok else ("paused" if run.paused else "failed")
-            typer.echo(f"workflow {spec.name}: {state}")
-            if isolation is not None:
-                typer.echo(f"worktree: {isolation['worktree']} (branch {isolation['branch']})")
-                typer.echo(str(isolation.get("merge_hint") or ""))
-            for step in spec.steps:
-                line = f"  {step.id}: {run.statuses.get(step.id, 'pending')}"
-                if step.id in run.errors:
-                    line += f" ({run.errors[step.id]})"
-                typer.echo(line)
+        _workflow_finish_isolation(workdir, cfg, isolation)
+        _print_workflow_result(spec, run, isolation, as_json=as_json)
         return run.ok or run.paused
     finally:
         await bridge.close()
         store.close()
+
+
+def _autopilot_restore_state(workdir: Path, resume: Path, requirement: str, state_out: Path | None, as_json: bool, store):
+    import json as _json
+
+    from spark.autopilot import AutopilotState
+
+    resume_path = resume if resume.is_absolute() else workdir / resume
+    try:
+        state = AutopilotState.from_dict(
+            _json.loads(resume_path.read_text(encoding="utf-8"))
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"无法读取 autopilot 状态 {resume_path}: {exc}") from exc
+    if requirement.strip() and requirement.strip() != state.requirement.strip():
+        raise ConfigError("--resume 的 requirement 与状态文件不一致；请省略该参数")
+    if not state.session_id or not store.get_session(state.session_id):
+        raise ConfigError("状态文件里的 session 已不存在，无法续跑")
+    interrupted = state.prepare_resume()
+    state.started_at = __import__("time").time()
+    if interrupted and not as_json:
+        typer.echo(
+            f"[autopilot] 检测到中断轮：turn {state.turn} / {state.phase}；"
+            "已标记为恢复，重试该轮而不是跳过",
+            err=True,
+        )
+    return state, state_out or resume_path
+
+
+def _autopilot_new_state(workdir: Path, requirement: str, store, cfg):
+    from spark.autopilot import new_state
+
+    if not requirement.strip():
+        raise ConfigError("首次运行必须提供初始编程需求")
+    session_id = store.create_session(
+        workdir, cfg.provider.model, title=f"autopilot: {requirement[:60]}"
+    )
+    state = new_state(
+        run_id=session_id,
+        session_id=session_id,
+        workdir=workdir,
+        requirement=requirement.strip(),
+    )
+    return state, None
+
+
+def _autopilot_emit(as_json: bool):
+    import json as _json
+
+    def emit(payload: dict) -> None:
+        if as_json:
+            typer.echo(_json.dumps(payload, ensure_ascii=False))
+            return
+        kind = payload.get("type")
+        if kind == "turn_start":
+            typer.echo(
+                f"[autopilot] turn {payload.get('turn')} · {payload.get('phase')}",
+                err=True,
+            )
+        elif kind == "turn_end":
+            test = "PASS" if payload.get("test_ok") else "FAIL"
+            typer.echo(
+                f"[autopilot] turn {payload.get('turn')} done · tests {test} · "
+                f"cost ${float(payload.get('cost_usd') or 0):.4f}",
+                err=True,
+            )
+        elif kind == "run_end":
+            typer.echo(
+                f"[autopilot] {payload.get('status')}: {payload.get('message')}",
+                err=True,
+            )
+
+    return emit
+
+
+def _print_autopilot_result(result, state_path: Path, *, as_json: bool) -> None:
+    import json as _json
+
+    if as_json:
+        typer.echo(
+            _json.dumps(
+                {
+                    "type": "autopilot_result",
+                    "status": result.status,
+                    "turns": result.turn,
+                    "test_ok": result.last_test_ok,
+                    "test_command": result.last_test_command,
+                    "state_path": str(state_path),
+                    "cost_usd": round(result.total_cost_usd, 6),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
+    typer.echo(f"status: {result.status}")
+    typer.echo(f"turns: {result.turn}")
+    typer.echo(f"tests: {'PASS' if result.last_test_ok else 'FAIL'} · {result.last_test_command or 'no command'}")
+    typer.echo(f"state: {state_path}")
+    if result.last_error:
+        typer.echo(f"note: {result.last_error}", err=True)
 
 
 @app.command("autopilot", help="无人值守编程：需求→计划→编码→独立测试→失败回灌→复核")
@@ -715,16 +854,12 @@ def autopilot_cmd(
     as_json: bool = typer.Option(False, "--json", help="输出 NDJSON 运行事件"),
 ) -> None:
     """Run the autonomous coding state machine against a real repository."""
-    import json as _json
-
     from spark.autopilot import (
         AutopilotLimits,
         AutopilotRunner,
-        AutopilotState,
         make_agent_turn_runner,
         make_git_diff_probe,
         make_test_verifier,
-        new_state,
     )
     from spark.providers.factory import create_provider
     from spark.tools import goal as goal_tools
@@ -754,39 +889,11 @@ def autopilot_cmd(
         if state_path is not None:
             state_path = state_path if state_path.is_absolute() else workdir / state_path
         if resume is not None:
-            resume_path = resume if resume.is_absolute() else workdir / resume
-            try:
-                state = AutopilotState.from_dict(
-                    _json.loads(resume_path.read_text(encoding="utf-8"))
-                )
-            except (OSError, ValueError) as exc:
-                raise ConfigError(f"无法读取 autopilot 状态 {resume_path}: {exc}") from exc
-            if requirement.strip() and requirement.strip() != state.requirement.strip():
-                raise ConfigError("--resume 的 requirement 与状态文件不一致；请省略该参数")
-            if not state.session_id or not store.get_session(state.session_id):
-                raise ConfigError("状态文件里的 session 已不存在，无法续跑")
-            interrupted = state.prepare_resume()
-            state.started_at = __import__("time").time()
-            state_path = state_path or resume_path
-            if interrupted and not as_json:
-                typer.echo(
-                    f"[autopilot] 检测到中断轮：turn {state.turn} / {state.phase}；"
-                    "已标记为恢复，重试该轮而不是跳过",
-                    err=True,
-                )
+            state, state_path = _autopilot_restore_state(
+                workdir, resume, requirement, state_path, as_json, store
+            )
         else:
-            if not requirement.strip():
-                raise ConfigError("首次运行必须提供初始编程需求")
-            session_id = store.create_session(
-                workdir, cfg.provider.model, title=f"autopilot: {requirement[:60]}"
-            )
-            state = new_state(
-                run_id=session_id,
-                session_id=session_id,
-                workdir=workdir,
-                requirement=requirement.strip(),
-            )
-
+            state, _ = _autopilot_new_state(workdir, requirement, store, cfg)
         limits = AutopilotLimits(
             max_turns=max_turns,
             turn_timeout_sec=turn_timeout,
@@ -817,29 +924,7 @@ def autopilot_cmd(
             approver=None,
         )
 
-        def emit(payload: dict) -> None:
-            if as_json:
-                typer.echo(_json.dumps(payload, ensure_ascii=False))
-                return
-            kind = payload.get("type")
-            if kind == "turn_start":
-                typer.echo(
-                    f"[autopilot] turn {payload.get('turn')} · {payload.get('phase')}",
-                    err=True,
-                )
-            elif kind == "turn_end":
-                test = "PASS" if payload.get("test_ok") else "FAIL"
-                typer.echo(
-                    f"[autopilot] turn {payload.get('turn')} done · tests {test} · "
-                    f"cost ${float(payload.get('cost_usd') or 0):.4f}",
-                    err=True,
-                )
-            elif kind == "run_end":
-                typer.echo(
-                    f"[autopilot] {payload.get('status')}: {payload.get('message')}",
-                    err=True,
-                )
-
+        emit = _autopilot_emit(as_json)
         runner = AutopilotRunner(
             state,
             turn_runner=make_agent_turn_runner(loop, timeout_sec=turn_timeout),
@@ -858,28 +943,7 @@ def autopilot_cmd(
                 pass
             store.close()
 
-        if as_json:
-            typer.echo(
-                _json.dumps(
-                    {
-                        "type": "autopilot_result",
-                        "status": result.status,
-                        "turns": result.turn,
-                        "test_ok": result.last_test_ok,
-                        "test_command": result.last_test_command,
-                        "state_path": str(state_path),
-                        "cost_usd": round(result.total_cost_usd, 6),
-                    },
-                    ensure_ascii=False,
-                )
-            )
-        else:
-            typer.echo(f"status: {result.status}")
-            typer.echo(f"turns: {result.turn}")
-            typer.echo(f"tests: {'PASS' if result.last_test_ok else 'FAIL'} · {result.last_test_command or 'no command'}")
-            typer.echo(f"state: {state_path}")
-            if result.last_error:
-                typer.echo(f"note: {result.last_error}", err=True)
+        _print_autopilot_result(result, state_path, as_json=as_json)
         if result.status != "passed":
             raise typer.Exit(1)
     except SparkError as exc:
@@ -1798,6 +1862,59 @@ def _probe_configured_endpoint(config: Path | None, workdir: Path) -> None:
     typer.echo(f"{ok_count}/{len(ids)} 个模型可用")
 
 
+def _replay_sessions() -> None:
+    from spark.core.replay import list_replay_sessions
+
+    sessions = list_replay_sessions()
+    if not sessions:
+        typer.echo("（还没有任何重放记录——先对话一轮）")
+        raise typer.Exit(0)
+    typer.echo(f"{'会话':<16} {'更新时间':<12} 大小")
+    for row in sessions[:30]:
+        import datetime as _dt
+
+        stamp = _dt.datetime.fromtimestamp(row["updated_at"]).strftime("%m-%d %H:%M")
+        typer.echo(f"{row['session_id']:<16} {stamp:<12} {row['bytes']}")
+    typer.echo("\n查看明细：spark replay <会话id> [-t N]")
+
+
+def _replay_detail(record: dict) -> None:
+    import json as _json
+
+    t = record["turn"]
+    status = t.get("status", "?")
+    typer.echo(f"◆ turn #{t.get('index')}  status={status}  {t.get('duration_ms')}ms  model={record.get('model')}")
+    usage = t.get("usage") or {}
+    typer.echo(
+        f"  tokens: in={usage.get('input_tokens', 0)} out={usage.get('output_tokens', 0)}"
+        f" reasoning={usage.get('reasoning_tokens', 0)} ({usage.get('source')})"
+    )
+    typer.echo(f"  prompt: {(t.get('prompt') or '')[:120]}")
+    if t.get("compaction"):
+        typer.echo(f"  compaction: {t['compaction']}")
+    for call in t.get("tool_calls") or []:
+        mark = "ok" if call.get("ok") else ("fail" if call.get("ok") is False else "??")
+        typer.echo(f"  [{mark}] {call.get('name')} {_json.dumps(call.get('arguments') or {}, ensure_ascii=False)[:100]}")
+    for ap in t.get("approvals") or []:
+        typer.echo(f"  审批 {ap.get('tool')}: {ap.get('decision')}")
+    text = (t.get("text") or "").strip()
+    if text:
+        typer.echo("  ── 回复 ──")
+        for line in text.splitlines()[:20]:
+            typer.echo(f"  {line}")
+
+
+def _replay_table(records: list[dict]) -> None:
+    typer.echo(f"{'#':<4} {'状态':<10} {'耗时ms':<8} {'工具':<6} {'prompt'}")
+    for i, record in enumerate(records):
+        t = record.get("turn") or {}
+        typer.echo(
+            f"{i:<4} {str(t.get('status', '?')):<10} {str(t.get('duration_ms', 0)):<8} "
+            f"{len(t.get('tool_calls') or []):<6} {(t.get('prompt') or '')[:60]}"
+        )
+    typer.echo("\n查看明细：spark replay <会话id> -t <N>（--json 输出原始记录）")
+
+
 @app.command("replay", help="查看 turn 级重放记录（上下文合同 spark.replay/1）")
 def replay_cmd(
     session: str = typer.Argument("", help="会话 id（留空 = 列出全部有记录的会话）"),
@@ -1806,22 +1923,11 @@ def replay_cmd(
 ) -> None:
     import json as _json
 
-    from spark.core.replay import list_replay_sessions, load_replays
+    from spark.core.replay import load_replays
 
     if not session:
-        sessions = list_replay_sessions()
-        if not sessions:
-            typer.echo("（还没有任何重放记录——先对话一轮）")
-            raise typer.Exit(0)
-        typer.echo(f"{'会话':<16} {'更新时间':<12} 大小")
-        for row in sessions[:30]:
-            import datetime as _dt
-
-            stamp = _dt.datetime.fromtimestamp(row["updated_at"]).strftime("%m-%d %H:%M")
-            typer.echo(f"{row['session_id']:<16} {stamp:<12} {row['bytes']}")
-        typer.echo("\n查看明细：spark replay <会话id> [-t N]")
+        _replay_sessions()
         return
-
     records = load_replays(session)
     if not records:
         typer.echo(f"（会话 {session} 没有重放记录）", err=True)
@@ -1833,38 +1939,10 @@ def replay_cmd(
         record = records[turn]
         if as_json:
             typer.echo(_json.dumps(record, ensure_ascii=False, indent=2))
-            return
-        t = record["turn"]
-        status = t.get("status", "?")
-        typer.echo(f"◆ turn #{t.get('index')}  status={status}  {t.get('duration_ms')}ms  model={record.get('model')}")
-        usage = t.get("usage") or {}
-        typer.echo(
-            f"  tokens: in={usage.get('input_tokens', 0)} out={usage.get('output_tokens', 0)}"
-            f" reasoning={usage.get('reasoning_tokens', 0)} ({usage.get('source')})"
-        )
-        typer.echo(f"  prompt: {(t.get('prompt') or '')[:120]}")
-        if t.get("compaction"):
-            typer.echo(f"  compaction: {t['compaction']}")
-        for call in t.get("tool_calls") or []:
-            mark = "ok" if call.get("ok") else ("fail" if call.get("ok") is False else "??")
-            typer.echo(f"  [{mark}] {call.get('name')} {_json.dumps(call.get('arguments') or {}, ensure_ascii=False)[:100]}")
-        for ap in t.get("approvals") or []:
-            typer.echo(f"  审批 {ap.get('tool')}: {ap.get('decision')}")
-        text = (t.get("text") or "").strip()
-        if text:
-            typer.echo("  ── 回复 ──")
-            for line in text.splitlines()[:20]:
-                typer.echo(f"  {line}")
+        else:
+            _replay_detail(record)
         return
-    typer.echo(f"{'#':<4} {'状态':<10} {'耗时ms':<8} {'工具':<6} {'prompt'}")
-    for i, record in enumerate(records):
-        t = record.get("turn") or {}
-        typer.echo(
-            f"{i:<4} {str(t.get('status', '?')):<10} {str(t.get('duration_ms', 0)):<8} "
-            f"{len(t.get('tool_calls') or []):<6} {(t.get('prompt') or '')[:60]}"
-        )
-    typer.echo("\n查看明细：spark replay <会话id> -t <N>（--json 输出原始记录）")
-
+    _replay_table(records)
 
 @app.command("context-profile", help="上下文火焰图——这轮请求的上下文都被谁吃了")
 def context_profile_cmd(
@@ -2121,6 +2199,93 @@ def browser_doctor_cmd(
         raise typer.Exit(1)
 
 
+def _doctor_fix(config: Path | None, resolved: Path) -> None:
+    from spark import selfheal
+
+    try:
+        repair_cfg = read_config(config, resolved)
+    except SparkError:
+        # The config itself is unreadable — repair still needs a config
+        # object, and rebuilding the file is exactly what it should do.
+        repair_cfg = SparkConfig()
+    report = selfheal.repair(
+        repair_cfg,
+        workdir=resolved,
+        config_path=config or (default_home() / "config.toml"),
+    )
+    for action in report["actions"]:
+        mark = "已修复" if action["applied"] else "未修复"
+        detail = f"（{action['detail']}）" if action.get("detail") else ""
+        error = f"：{action['error']}" if action.get("error") else ""
+        typer.echo(f"  {mark} {action['kind']} {detail}{error}")
+    if not any(a["applied"] for a in report["actions"]):
+        typer.echo("  没有需要自动修复的项")
+
+
+def _doctor_probe(cfg: SparkConfig) -> list[tuple[str, str, str]]:
+    if cfg.provider.name == "mock":
+        return []
+    key = cfg.provider.api_key or env_api_key(cfg)
+    if not key:
+        return []
+    result = asyncio.run(
+        probe_provider(
+            base_url=cfg.provider.base_url,
+            api_key=key,
+            model=cfg.provider.model,
+            rounds=1,
+        )
+    )
+    if result.ok:
+        return [("ok", f"模型连通正常（{result.latency_ms} ms）", "")]
+    return [
+        (
+            "bad",
+            f"模型连通失败：{result.error or '未知错误'}",
+            "核对 base_url / 模型名 / 密钥，或运行 spark init 重新配置",
+        )
+    ]
+
+
+def _doctor_backup() -> None:
+    import time as _time
+
+    from spark.store import SessionStore
+
+    db = default_home() / "sessions.db"
+    if not db.exists():
+        typer.echo("  跳过：还没有会话数据库", err=True)
+        return
+    stamp = _time.strftime("%Y%m%d-%H%M%S")
+    target = default_home() / "backups" / f"sessions-{stamp}.db"
+    store = SessionStore(db)
+    try:
+        out = store.backup_to(target)
+        typer.echo(
+            f"  已备份：{out}（{_human_size(out.stat().st_size)}，schema v{store.schema_version()}）"
+        )
+    finally:
+        store.close()
+
+
+def _doctor_update_rows() -> list[tuple[str, str, str]]:
+    from spark import updater
+
+    try:
+        latest = updater.check_cached(default_home())
+    except Exception:  # aqg: top-level boundary — 更新检查永不影响 doctor 结果
+        latest = None
+    if not latest:
+        return []
+    return [
+        (
+            "warn",
+            f"有新版本可用：{latest}（当前 {_installed_version()}）",
+            "运行 spark update 升级（打包版），或 pip install -U spark-agent",
+        )
+    ]
+
+
 @app.command("doctor")
 def doctor_cmd(
     workdir: Path = typer.Option(Path("."), "--workdir"),
@@ -2143,26 +2308,7 @@ def doctor_cmd(
         typer.echo(f"工作目录无效：{exc}", err=True)
         raise typer.Exit(1) from exc
     if fix:
-        from spark import selfheal
-
-        try:
-            repair_cfg = read_config(config, resolved)
-        except SparkError:
-            # The config itself is unreadable — repair still needs a config
-            # object, and rebuilding the file is exactly what it should do.
-            repair_cfg = SparkConfig()
-        report = selfheal.repair(
-            repair_cfg,
-            workdir=resolved,
-            config_path=config or (default_home() / "config.toml"),
-        )
-        for action in report["actions"]:
-            mark = "已修复" if action["applied"] else "未修复"
-            detail = f"（{action['detail']}）" if action.get("detail") else ""
-            error = f"：{action['error']}" if action.get("error") else ""
-            typer.echo(f"  {mark} {action['kind']} {detail}{error}")
-        if not any(a["applied"] for a in report["actions"]):
-            typer.echo("  没有需要自动修复的项")
+        _doctor_fix(config, resolved)
     try:
         cfg = read_config(config, resolved)
     except SparkError as exc:
@@ -2171,69 +2317,14 @@ def doctor_cmd(
     rows = check_health(
         cfg, workdir=resolved, config_path=config or (default_home() / "config.toml")
     )
-    if (
-        probe
-        and cfg.provider.name != "mock"
-        and (cfg.provider.api_key or env_api_key(cfg))
-    ):
-        key = cfg.provider.api_key or env_api_key(cfg)
-        result = asyncio.run(
-            probe_provider(
-                base_url=cfg.provider.base_url,
-                api_key=key,
-                model=cfg.provider.model,
-                rounds=1,
-            )
-        )
-        if result.ok:
-            rows.append(("ok", f"模型连通正常（{result.latency_ms} ms）", ""))
-        else:
-            rows.append(
-                (
-                    "bad",
-                    f"模型连通失败：{result.error or '未知错误'}",
-                    "核对 base_url / 模型名 / 密钥，或运行 spark init 重新配置",
-                )
-            )
+    if probe:
+        rows.extend(_doctor_probe(cfg))
     if backup:
-        import time as _time
-
-        from spark.store import SessionStore
-
-        db = default_home() / "sessions.db"
-        if not db.exists():
-            typer.echo("  跳过：还没有会话数据库", err=True)
-        else:
-            stamp = _time.strftime("%Y%m%d-%H%M%S")
-            target = default_home() / "backups" / f"sessions-{stamp}.db"
-            store = SessionStore(db)
-            try:
-                out = store.backup_to(target)
-                typer.echo(
-                    f"  已备份：{out}（{_human_size(out.stat().st_size)}，schema v{store.schema_version()}）"
-                )
-            finally:
-                store.close()
-
+        _doctor_backup()
     if check_updates:
-        from spark import updater
-
-        try:
-            latest = updater.check_cached(default_home())
-        except Exception:  # aqg: top-level boundary — 更新检查永不影响 doctor 结果
-            latest = None
-        if latest:
-            rows.append(
-                (
-                    "warn",
-                    f"有新版本可用：{latest}（当前 {_installed_version()}）",
-                    "运行 spark update 升级（打包版），或 pip install -U spark-agent",
-                )
-            )
-
+        rows.extend(_doctor_update_rows())
     typer.echo(render_health(rows, as_json=as_json))
     raise typer.Exit(health_exit_code(rows))
-
 
 def _dir_size(path: Path) -> int:
     """目录/文件的累计字节数；统计失败按 0 处理（不能因为权限卡住卸载）。"""
@@ -2454,6 +2545,37 @@ def mcp_search_cmd(
     typer.echo("添加：spark mcp add <name>（--env KEY=VALUE 补充必需环境变量）")
 
 
+def _mcp_env_map(pairs: list[str] | None) -> dict[str, str]:
+    env_map: dict[str, str] = {}
+    for pair in pairs or []:
+        key, _, value = pair.partition("=")
+        if key.strip():
+            env_map[key.strip()] = value
+    return env_map
+
+
+def _mcp_server_from_hit(name: str, hit: dict, env_map: dict[str, str], readonly: bool):
+    from spark.config import McpServerConfig, McpTransportConfig
+
+    readonly_tools = ["*"] if readonly else []
+    if hit.get("transport") == "stdio" and hit.get("suggested_command"):
+        return McpServerConfig(
+            name=name,
+            command=hit["suggested_command"],
+            args=list(hit.get("suggested_args") or []),
+            env=env_map,
+            readonly_tools=readonly_tools,
+        )
+    if hit.get("remote_url"):
+        return McpServerConfig(
+            name=name,
+            transport="streamable_http",
+            http=McpTransportConfig(url=str(hit["remote_url"])),
+            readonly_tools=readonly_tools,
+        )
+    return None
+
+
 @mcp_app.command("add")
 def mcp_add_cmd(
     name: str = typer.Argument(..., help="注册表里的 server 名（先 search 找到）"),
@@ -2467,7 +2589,6 @@ def mcp_add_cmd(
     config: Path | None = typer.Option(None, "--config"),
 ) -> None:
     """从注册表按名添加一个 MCP server 到配置。"""
-    from spark.config import McpServerConfig, McpTransportConfig
     from spark.mcp_registry import search_servers
 
     cfg = _common_cfg(workdir, config, None, None, None)
@@ -2483,32 +2604,14 @@ def mcp_add_cmd(
             err=True,
         )
         raise typer.Exit(2)
-    env_map: dict[str, str] = {}
-    for pair in env or []:
-        k, _, v = pair.partition("=")
-        if k.strip():
-            env_map[k.strip()] = v
+    env_map = _mcp_env_map(env)
     required = [e["name"] for e in hit.get("required_env") or [] if e.get("required")]
-    missing = [k for k in required if k not in env_map]
+    missing = [key for key in required if key not in env_map]
     if missing:
         typer.echo(f"缺少必需环境变量：{', '.join(missing)}（--env KEY=VALUE 提供）", err=True)
         raise typer.Exit(2)
-    if hit.get("transport") == "stdio" and hit.get("suggested_command"):
-        server = McpServerConfig(
-            name=name,
-            command=hit["suggested_command"],
-            args=list(hit.get("suggested_args") or []),
-            env=env_map,
-            readonly_tools=["*"] if readonly else [],
-        )
-    elif hit.get("remote_url"):
-        server = McpServerConfig(
-            name=name,
-            transport="streamable_http",
-            http=McpTransportConfig(url=str(hit["remote_url"])),
-            readonly_tools=["*"] if readonly else [],
-        )
-    else:
+    server = _mcp_server_from_hit(name, hit, env_map, readonly)
+    if server is None:
         typer.echo(f"{name} 没有可用的启动命令或远程地址，无法自动添加。", err=True)
         raise typer.Exit(2)
     cfg.mcp_servers = [*(cfg.mcp_servers or []), server]
@@ -2516,7 +2619,6 @@ def mcp_add_cmd(
     typer.echo(f"已添加 {name}（{server.transport}）→ {written}")
     if result.get("source") == "offline":
         typer.echo("（注意：本次来自离线策划索引，字段可能略有出入，建议 Web 设置面板核对）")
-
 
 @mcp_app.command("remove")
 def mcp_remove_cmd(
@@ -3543,6 +3645,60 @@ def config_path_cmd() -> None:
     typer.echo(str(default_home() / "config.toml"))
 
 
+def _queue_add(store, prompt, *, title, workdir, priority, kind, max_turns, turn_timeout, task_timeout, test_timeout, max_cost_usd, state_path) -> None:
+    from pathlib import Path as _Path
+
+    if not prompt or not prompt.strip():
+        typer.echo("add 需要任务提示词", err=True)
+        raise typer.Exit(1)
+    kind_value = kind.strip().lower()
+    if kind_value not in {"agent", "autopilot"}:
+        typer.echo("--kind 只支持 agent / autopilot", err=True)
+        raise typer.Exit(1)
+    options: dict[str, Any] = {}
+    if kind_value == "autopilot":
+        options = {
+            "max_turns": max_turns,
+            "turn_timeout_sec": turn_timeout,
+            "task_timeout_sec": task_timeout,
+            "test_timeout_sec": test_timeout,
+            "max_cost_usd": max_cost_usd,
+        }
+        raw_state = state_path.strip()
+        if raw_state:
+            candidate = _Path(raw_state)
+            if candidate.is_absolute() or candidate.name != raw_state or not raw_state.endswith(".json"):
+                typer.echo("--state-path 只能是 .json 文件名，不能带目录或绝对路径", err=True)
+                raise typer.Exit(1)
+            options["state_path"] = raw_state
+    task = store.enqueue_agent_task(
+        prompt,
+        title=title,
+        workdir=workdir or str(_Path.cwd()),
+        priority=priority,
+        kind=kind_value,
+        options=options,
+    )
+    typer.echo(f"已入队：{task['id']}")
+
+
+def _print_queue(store, as_json: bool) -> None:
+    import json as _json
+
+    data: dict[str, Any] = {
+        "paused": store.queue_paused(),
+        "counts": store.queue_counts(),
+        "tasks": store.list_agent_tasks(),
+    }
+    if as_json:
+        typer.echo(_json.dumps(data, ensure_ascii=False, indent=2))
+        return
+    typer.echo("暂停" if data["paused"] else "运行中", nl=False)
+    typer.echo("  " + ", ".join(f"{k}={v}" for k, v in sorted(data["counts"].items())))
+    for row in data["tasks"]:
+        typer.echo(f"{row['id']}\t{row['status']}\t{row.get('title') or row['prompt'][:40]}")
+
+
 @app.command("queue", help="管理空闲任务队列（入队/列出/暂停/恢复/取消）")
 def queue_cmd(
     action: str = typer.Argument("list", help="list / add / pause / resume / cancel"),
@@ -3564,52 +3720,24 @@ def queue_cmd(
     ),
     as_json: bool = typer.Option(False, "--json", help="输出 JSON"),
 ) -> None:
-    import json as _json
-    from pathlib import Path as _Path
-
     store = _store()
     try:
         act = action.strip().lower()
         if act == "add":
-            if not prompt or not prompt.strip():
-                typer.echo("add 需要任务提示词", err=True)
-                raise typer.Exit(1)
-            kind_value = kind.strip().lower()
-            if kind_value not in {"agent", "autopilot"}:
-                typer.echo("--kind 只支持 agent / autopilot", err=True)
-                raise typer.Exit(1)
-            options: dict[str, Any] = {}
-            if kind_value == "autopilot":
-                options = {
-                    "max_turns": max_turns,
-                    "turn_timeout_sec": turn_timeout,
-                    "task_timeout_sec": task_timeout,
-                    "test_timeout_sec": test_timeout,
-                    "max_cost_usd": max_cost_usd,
-                }
-                raw_state = state_path.strip()
-                if raw_state:
-                    candidate = _Path(raw_state)
-                    if (
-                        candidate.is_absolute()
-                        or candidate.name != raw_state
-                        or not raw_state.endswith(".json")
-                    ):
-                        typer.echo(
-                            "--state-path 只能是 .json 文件名，不能带目录或绝对路径",
-                            err=True,
-                        )
-                        raise typer.Exit(1)
-                    options["state_path"] = raw_state
-            task = store.enqueue_agent_task(
+            _queue_add(
+                store,
                 prompt,
                 title=title,
-                workdir=workdir or str(_Path.cwd()),
+                workdir=workdir,
                 priority=priority,
-                kind=kind_value,
-                options=options,
+                kind=kind,
+                max_turns=max_turns,
+                turn_timeout=turn_timeout,
+                task_timeout=task_timeout,
+                test_timeout=test_timeout,
+                max_cost_usd=max_cost_usd,
+                state_path=state_path,
             )
-            typer.echo(f"已入队：{task['id']}")
             return
         if act == "pause":
             store.set_queue_paused(True)
@@ -3631,18 +3759,7 @@ def queue_cmd(
         if act != "list":
             typer.echo("action 只支持 list/add/pause/resume/cancel", err=True)
             raise typer.Exit(1)
-        data: dict[str, Any] = {
-            "paused": store.queue_paused(),
-            "counts": store.queue_counts(),
-            "tasks": store.list_agent_tasks(),
-        }
-        if as_json:
-            typer.echo(_json.dumps(data, ensure_ascii=False, indent=2))
-            return
-        typer.echo("暂停" if data["paused"] else "运行中", nl=False)
-        typer.echo("  " + ", ".join(f"{k}={v}" for k, v in sorted(data["counts"].items())))
-        for row in data["tasks"]:
-            typer.echo(f"{row['id']}\t{row['status']}\t{row.get('title') or row['prompt'][:40]}")
+        _print_queue(store, as_json)
     finally:
         store.close()
 

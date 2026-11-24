@@ -75,6 +75,26 @@ def _finish_reason(payload: dict) -> str:
     return str((choices[0] if choices else {}).get("finish_reason") or "?")
 
 
+def _content_parts(content: list) -> str:
+    parts = []
+    for item in content:
+        if isinstance(item, dict) and item.get("type") in {None, "text"}:
+            parts.append(str(item.get("text") or item.get("content") or ""))
+        elif isinstance(item, str):
+            parts.append(item)
+    return "".join(parts)
+
+
+def _reasoning_text(
+    payload: dict, keys: tuple[str, ...] = ("reasoning_content", "reasoning", "thinking")
+) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+
 def _extract_message_content(payload: dict) -> str:
     choices = payload.get("choices") or []
     if not choices:
@@ -84,32 +104,19 @@ def _extract_message_content(payload: dict) -> str:
     if isinstance(content, str) and content.strip():
         return content
     if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, dict) and item.get("type") in {None, "text"}:
-                parts.append(str(item.get("text") or item.get("content") or ""))
-            elif isinstance(item, str):
-                parts.append(item)
-        joined = "".join(parts)
+        joined = _content_parts(content)
         if joined.strip():
             return joined
     # Reasoning models (DeepSeek-R1 family, Step, many domestic endpoints) put
-    # the answer in `reasoning_content` and leave `content` null. Reading only
-    # `content` made a perfectly healthy endpoint look broken.
-    for key in ("reasoning_content", "reasoning", "thinking"):
-        value = message.get(key)
-        if isinstance(value, str) and value.strip():
-            return value
+    # the answer in `reasoning_content` and leave `content` null.
+    reasoning = _reasoning_text(message)
+    if reasoning:
+        return reasoning
     delta = choices[0].get("delta") or {}
     delta_content = delta.get("content")
     if isinstance(delta_content, str) and delta_content.strip():
         return delta_content
-    for key in ("reasoning_content", "reasoning"):
-        value = delta.get(key)
-        if isinstance(value, str) and value.strip():
-            return value
-    return ""
-
+    return _reasoning_text(delta, ("reasoning_content", "reasoning"))
 
 def _chat_url(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/chat/completions"

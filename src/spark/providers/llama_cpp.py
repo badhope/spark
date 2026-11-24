@@ -352,77 +352,75 @@ class LlamaCppProvider:
             self._llm = _LLM_CACHE[key]
         return self._llm
 
-    def _generate(self, messages: list[ChatMessage], tools: list[dict], effort: str | None) -> dict:
-        llm = self._ensure()
-        tools = _active_tools(messages, tools)
-        max_tokens = {"low": 256, "medium": 768, "high": 1280}.get(effort or "medium", 768)
+    def _generate_jinja(self, llm, messages: list[ChatMessage], tools: list[dict], max_tokens: int) -> dict:
         template = str(llm.metadata.get("tokenizer.chat_template") or "")
-        if template:
-            from llama_cpp.llama_chat_format import Jinja2ChatFormatter
+        from llama_cpp.llama_chat_format import Jinja2ChatFormatter
 
-            from spark.providers.openai_compat import _to_openai
+        from spark.providers.openai_compat import _to_openai
 
-            formatter = Jinja2ChatFormatter(
-                template=template,
-                eos_token="</s>",
-                bos_token="<s>",
-                add_generation_prompt=True,
-            )
-            converted = _to_openai(messages)
-            for item in converted:
-                for call in item.get("tool_calls") or []:
-                    fn = call.get("function") if isinstance(call, dict) else None
-                    if isinstance(fn, dict) and isinstance(fn.get("arguments"), str):
-                        try:
-                            fn["arguments"] = json.loads(fn["arguments"])
-                        except ValueError:
-                            fn["arguments"] = {"value": fn["arguments"]}
-            converted = _localize_tool_results(converted)
-            rendered = formatter(
-                messages=cast(Any, converted),
-                tools=cast(Any, tools or None),
-                tool_choice="auto" if tools else None,
-                enable_thinking=False,
-            )
-            tokens = llm.tokenize(rendered.prompt.encode("utf-8"), add_bos=False, special=True)
-            stop_ids = {llm.token_eos(), llm.token_bos()}
-            from llama_cpp import StoppingCriteriaList
+        formatter = Jinja2ChatFormatter(
+            template=template,
+            eos_token="</s>",
+            bos_token="<s>",
+            add_generation_prompt=True,
+        )
+        converted = _to_openai(messages)
+        for item in converted:
+            for call in item.get("tool_calls") or []:
+                fn = call.get("function") if isinstance(call, dict) else None
+                if isinstance(fn, dict) and isinstance(fn.get("arguments"), str):
+                    try:
+                        fn["arguments"] = json.loads(fn["arguments"])
+                    except ValueError:
+                        fn["arguments"] = {"value": fn["arguments"]}
+        converted = _localize_tool_results(converted)
+        rendered = formatter(
+            messages=cast(Any, converted),
+            tools=cast(Any, tools or None),
+            tool_choice="auto" if tools else None,
+            enable_thinking=False,
+        )
+        tokens = llm.tokenize(rendered.prompt.encode("utf-8"), add_bos=False, special=True)
+        stop_ids = {llm.token_eos(), llm.token_bos()}
+        from llama_cpp import StoppingCriteriaList
 
-            im_end_ids = llm.tokenize(b"<|im_end|>", add_bos=False, special=True)
+        im_end_ids = llm.tokenize(b"<|im_end|>", add_bos=False, special=True)
 
-            def _hit_end(ids, _logits):
-                tail = list(ids[-len(im_end_ids):])
-                return len(tail) == len(im_end_ids) and tail == im_end_ids
+        def _hit_end(ids, _logits):
+            tail = list(ids[-len(im_end_ids):])
+            return len(tail) == len(im_end_ids) and tail == im_end_ids
 
-            criteria = StoppingCriteriaList([_hit_end])
-            generated: list[int] = []
-            for token in llm.generate(
-                tokens,
-                temp=0.2,
-                top_p=0.9,
-                min_p=0.0,
-                top_k=20,
-                repeat_penalty=1.1,
-                reset=True,
-                stopping_criteria=criteria,
-            ):
-                if token in stop_ids:
-                    break
-                generated.append(token)
-                if len(generated) >= max_tokens:
-                    break
-            text = llm.detokenize(generated, special=True).decode("utf-8", "replace")
-            text = text.split("<|im_end|>")[0]
-            for stop in rendered.stop or []:
-                if isinstance(stop, str) and stop:
-                    text = text.split(stop)[0]
-            return {
-                "choices": [{"message": {"role": "assistant", "content": text}}],
-                "usage": {
-                    "prompt_tokens": len(tokens),
-                    "completion_tokens": len(generated),
-                },
-            }
+        criteria = StoppingCriteriaList([_hit_end])
+        generated: list[int] = []
+        for token in llm.generate(
+            tokens,
+            temp=0.2,
+            top_p=0.9,
+            min_p=0.0,
+            top_k=20,
+            repeat_penalty=1.1,
+            reset=True,
+            stopping_criteria=criteria,
+        ):
+            if token in stop_ids:
+                break
+            generated.append(token)
+            if len(generated) >= max_tokens:
+                break
+        text = llm.detokenize(generated, special=True).decode("utf-8", "replace")
+        text = text.split("<|im_end|>")[0]
+        for stop in rendered.stop or []:
+            if isinstance(stop, str) and stop:
+                text = text.split(stop)[0]
+        return {
+            "choices": [{"message": {"role": "assistant", "content": text}}],
+            "usage": {
+                "prompt_tokens": len(tokens),
+                "completion_tokens": len(generated),
+            },
+        }
+
+    def _generate_chat(self, llm, messages: list[ChatMessage], tools: list[dict], max_tokens: int) -> dict:
         try:
             return llm.create_chat_completion(
                 messages=_to_local_messages(messages, tools),
@@ -444,6 +442,45 @@ class LlamaCppProvider:
                 stream=False,
             )
 
+    def _generate(self, messages: list[ChatMessage], tools: list[dict], effort: str | None) -> dict:
+        llm = self._ensure()
+        tools = _active_tools(messages, tools)
+        max_tokens = {"low": 256, "medium": 768, "high": 1280}.get(effort or "medium", 768)
+        template = str(llm.metadata.get("tokenizer.chat_template") or "")
+        if template:
+            return self._generate_jinja(llm, messages, tools, max_tokens)
+        return self._generate_chat(llm, messages, tools, max_tokens)
+    def _thinking_deltas(self, content: str) -> tuple[list[ChatDelta], str]:
+        think_open = _LT + "think" + _GT
+        think_close = _LT + "/think" + _GT
+        deltas: list[ChatDelta] = []
+        if think_open in content and think_close in content:
+            before, rest = content.split(think_open, 1)
+            reasoning, after = rest.split(think_close, 1)
+            if before.strip():
+                deltas.append(ChatDelta(type="text", text=before))
+            if reasoning.strip():
+                deltas.append(ChatDelta(type="reasoning", text=reasoning.strip()))
+            return deltas, after
+        if think_close in content:
+            # Some chat templates open the thinking block implicitly at the
+            # assistant prefix; only the closing tag reaches detokenized text.
+            reasoning, content = content.split(think_close, 1)
+            reasoning = reasoning.replace(think_open, "").strip()
+            if reasoning:
+                deltas.append(ChatDelta(type="reasoning", text=reasoning))
+        return deltas, content
+
+    def _usage_delta(self, result: dict) -> ChatDelta:
+        usage_raw = result.get("usage") if isinstance(result.get("usage"), dict) else None
+        usage = None
+        if usage_raw:
+            usage = {
+                "prompt_tokens": int(usage_raw.get("prompt_tokens") or 0),
+                "completion_tokens": int(usage_raw.get("completion_tokens") or 0),
+            }
+        return ChatDelta(type="end", usage=usage)
+
     async def stream(
         self,
         messages: list[ChatMessage],
@@ -459,23 +496,9 @@ class LlamaCppProvider:
         }
         message = (result.get("choices") or [{}])[0].get("message") or {}
         content = str(message.get("content") or "")
-        think_open = _LT + "think" + _GT
-        think_close = _LT + "/think" + _GT
-        if think_open in content and think_close in content:
-            before, rest = content.split(think_open, 1)
-            reasoning, after = rest.split(think_close, 1)
-            if before.strip():
-                yield ChatDelta(type="text", text=before)
-            if reasoning.strip():
-                yield ChatDelta(type="reasoning", text=reasoning.strip())
-            content = after
-        elif think_close in content:
-            # Some chat templates open the thinking block implicitly at the
-            # assistant prefix; only the closing tag reaches detokenized text.
-            reasoning, content = content.split(think_close, 1)
-            reasoning = reasoning.replace(think_open, "").strip()
-            if reasoning:
-                yield ChatDelta(type="reasoning", text=reasoning)
+        deltas, content = self._thinking_deltas(content)
+        for delta in deltas:
+            yield delta
         calls, text = parse_tool_calls(content)
         # A model can hallucinate a familiar tool name even when its schema was
         # not supplied. Never execute a call outside the active tool set.
@@ -486,11 +509,4 @@ class LlamaCppProvider:
                     yield ChatDelta(type="text", text=piece)
         for call in calls:
             yield ChatDelta(type="tool_call", tool_call=call)
-        usage_raw = result.get("usage") if isinstance(result.get("usage"), dict) else None
-        usage = None
-        if usage_raw:
-            usage = {
-                "prompt_tokens": int(usage_raw.get("prompt_tokens") or 0),
-                "completion_tokens": int(usage_raw.get("completion_tokens") or 0),
-            }
-        yield ChatDelta(type="end", usage=usage)
+        yield self._usage_delta(result)

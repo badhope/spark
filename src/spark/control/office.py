@@ -283,63 +283,77 @@ class MeetingMinutes:
         return buffer.getvalue()
 
 
+def _minutes_lists(
+    raw_lines: list[str],
+) -> tuple[list[str], list[str], list[dict[str, Any]], list[ActionItem]]:
+    attendees: list[str] = []
+    topics: list[str] = []
+    decisions: list[dict[str, Any]] = []
+    actions: list[ActionItem] = []
+    for index, line in enumerate(raw_lines, 1):
+        match = _ATTENDEES.match(line)
+        if match:
+            attendees = [
+                part.strip()
+                for part in re.split(r"[,，、;；]", match.group(1))
+                if part.strip()
+            ]
+            continue
+        topic_line = _TOPIC_LINE.match(line)
+        if topic_line:
+            topics.append(topic_line.group(1).strip()[:60])
+            continue
+        topic = _TOPIC.match(line)
+        if topic and len(topic.group(1)) <= 60:
+            topics.append(topic.group(1).strip())
+            continue
+        if _DECISION.search(line):
+            decisions.append({"text": line[:240], "line": index})
+            continue
+        if _ACTION.search(line):
+            owner_match = _OWNER.search(line)
+            owner = ""
+            if owner_match:
+                owner = (owner_match.group(1) or owner_match.group(2) or "").strip()
+            due_match = _DUE.search(line)
+            due = due_match.group(1) if due_match else ""
+            actions.append(ActionItem(text=line[:240], owner=owner, due=due, line=index))
+    return attendees, topics, decisions, actions
+
+
+def _minutes_topics(raw_lines: list[str], topics: list[str]) -> list[str]:
+    if topics:
+        return topics
+    fallback = [
+        line
+        for line in raw_lines
+        if not _DECISION.search(line)
+        and not _ACTION.search(line)
+        and not _ATTENDEES.match(line)
+    ][:3]
+    return [line[:60] for line in fallback]
+
+
+def _minutes_summary(
+    topics: list[str], decisions: list[dict[str, Any]], actions: list[ActionItem]
+) -> str:
+    summary = (
+        f"本次会议围绕 {len(topics)} 个议题展开，"
+        f"形成 {len(decisions)} 项决议、{len(actions)} 项行动。"
+    )
+    if decisions:
+        summary += f" 首项决议：{decisions[0]['text'][:80]}"
+    return summary
+
+
 class MeetingMinutesService:
     def build(self, title: str, transcript: str) -> MeetingMinutes:
         raw_lines = [line.strip() for line in transcript.splitlines() if line.strip()]
-        attendees: list[str] = []
-        topics: list[str] = []
-        decisions: list[dict[str, Any]] = []
-        actions: list[ActionItem] = []
-
-        for index, line in enumerate(raw_lines, 1):
-            match = _ATTENDEES.match(line)
-            if match:
-                attendees = [
-                    part.strip()
-                    for part in re.split(r"[,，、;；]", match.group(1))
-                    if part.strip()
-                ]
-                continue
-            topic_line = _TOPIC_LINE.match(line)
-            if topic_line:
-                topics.append(topic_line.group(1).strip()[:60])
-                continue
-            topic = _TOPIC.match(line)
-            if topic and len(topic.group(1)) <= 60:
-                topics.append(topic.group(1).strip())
-                continue
-            if _DECISION.search(line):
-                decisions.append({"text": line[:240], "line": index})
-                continue
-            if _ACTION.search(line):
-                owner_match = _OWNER.search(line)
-                owner = ""
-                if owner_match:
-                    owner = (owner_match.group(1) or owner_match.group(2) or "").strip()
-                due_match = _DUE.search(line)
-                due = due_match.group(1) if due_match else ""
-                actions.append(
-                    ActionItem(text=line[:240], owner=owner, due=due, line=index)
-                )
-
-        if not topics:
-            fallback = [
-                line
-                for line in raw_lines
-                if not _DECISION.search(line)
-                and not _ACTION.search(line)
-                and not _ATTENDEES.match(line)
-            ][:3]
-            topics = [line[:60] for line in fallback]
-        summary = (
-            f"本次会议围绕 {len(topics)} 个议题展开，"
-            f"形成 {len(decisions)} 项决议、{len(actions)} 项行动。"
-        )
-        if decisions:
-            summary += f" 首项决议：{decisions[0]['text'][:80]}"
+        attendees, topics, decisions, actions = _minutes_lists(raw_lines)
+        topics = _minutes_topics(raw_lines, topics)
         return MeetingMinutes(
             title=title.strip() or "未命名会议",
-            summary=summary,
+            summary=_minutes_summary(topics, decisions, actions),
             attendees=attendees,
             topics=topics,
             decisions=decisions,

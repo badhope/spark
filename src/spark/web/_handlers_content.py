@@ -121,103 +121,176 @@ def _plugin_entries(workdir: Path) -> list[dict[str, Any]]:
     return out
 
 
+def _skills_read(handler: HandlerBase, state, body: dict) -> None:
+    rel = _safe_rel(str(body.get("path") or ""))
+    if rel is None:
+        handler._json(400, {"error": "invalid path"})
+        return
+    target = state.workdir / rel
+    try:
+        resolved = target.resolve()
+        resolved.relative_to((state.workdir / SKILLS_DIR).resolve())
+    except (ValueError, OSError):
+        handler._json(400, {"error": "path outside .spark/skills"})
+        return
+    if not resolved.is_file():
+        handler._json(404, {"error": "not found"})
+        return
+    handler._json(200, {"path": rel, "content": resolved.read_text(encoding="utf-8", errors="replace")})
+
+
+def _skills_save(handler: HandlerBase, state, body: dict) -> None:
+    name = _safe_rel(str(body.get("name") or ""))
+    content = str(body.get("content") or "")
+    if name is None:
+        handler._json(400, {"error": "invalid name"})
+        return
+    if len(content) > _MAX_BODY_CHARS:
+        handler._json(413, {"error": "skill too large"})
+        return
+    if not content.strip():
+        handler._json(400, {"error": "content required"})
+        return
+    if not name.endswith(".md"):
+        name = f"{name}.md"
+    target = state.workdir / SKILLS_DIR / name
+    try:
+        resolved = target.resolve()
+        resolved.relative_to((state.workdir / SKILLS_DIR).resolve())
+    except (ValueError, OSError):
+        handler._json(400, {"error": "path outside .spark/skills"})
+        return
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    resolved.write_text(content, encoding="utf-8")
+    # A skill without ``---`` frontmatter is invisible to discovery, yet the
+    # endpoint answered ``ok`` and the list stayed empty — the user believes
+    # the save worked. Tell them instead of silently dropping the entry.
+    from spark.skills import discover_skills
+
+    names = {skill.name for skill in discover_skills(state.workdir)}
+    saved_name = resolved.stem
+    if saved_name not in names:
+        handler._json(
+            422,
+            {
+                "error": "skill saved but not discoverable: add YAML frontmatter "
+                "(name/description between --- lines)",
+                "path": f"{SKILLS_DIR}/{name}",
+            },
+        )
+        return
+    handler._json(200, {"ok": True, "items": _skill_entries(state.workdir)})
+
+
+def _skills_delete(handler: HandlerBase, state, body: dict) -> None:
+    rel = _safe_rel(str(body.get("path") or ""))
+    if rel is None:
+        handler._json(400, {"error": "invalid path"})
+        return
+    target = state.workdir / rel
+    try:
+        resolved = target.resolve()
+        resolved.relative_to((state.workdir / SKILLS_DIR).resolve())
+    except (ValueError, OSError):
+        handler._json(400, {"error": "path outside .spark/skills"})
+        return
+    if not resolved.is_file():
+        handler._json(404, {"error": "not found"})
+        return
+    resolved.unlink()
+    handler._json(200, {"ok": True, "items": _skill_entries(state.workdir)})
+
+
 def _handle_skills(handler: HandlerBase, body: dict) -> None:
     """技能：list / read / save / delete，全部限定在 ``.spark/skills`` 内。"""
     state = _route_state(handler)
     action = str(body.get("action") or "list").strip()
-
     if action == "list":
         handler._json(200, {"items": _skill_entries(state.workdir)})
         return
-
-    if action == "read":
-        rel = _safe_rel(str(body.get("path") or ""))
-        if rel is None:
-            handler._json(400, {"error": "invalid path"})
-            return
-        target = state.workdir / rel
-        try:
-            resolved = target.resolve()
-            resolved.relative_to((state.workdir / SKILLS_DIR).resolve())
-        except (ValueError, OSError):
-            handler._json(400, {"error": "path outside .spark/skills"})
-            return
-        if not resolved.is_file():
-            handler._json(404, {"error": "not found"})
-            return
-        handler._json(200, {"path": rel, "content": resolved.read_text(encoding="utf-8", errors="replace")})
+    handlers = {
+        "read": _skills_read,
+        "save": _skills_save,
+        "delete": _skills_delete,
+    }
+    action_handler = handlers.get(action)
+    if action_handler is not None:
+        action_handler(handler, state, body)
         return
-
-    if action == "save":
-        name = _safe_rel(str(body.get("name") or ""))
-        content = str(body.get("content") or "")
-        if name is None:
-            handler._json(400, {"error": "invalid name"})
-            return
-        if len(content) > _MAX_BODY_CHARS:
-            handler._json(413, {"error": "skill too large"})
-            return
-        if not content.strip():
-            handler._json(400, {"error": "content required"})
-            return
-        if not name.endswith(".md"):
-            name = f"{name}.md"
-        target = state.workdir / SKILLS_DIR / name
-        try:
-            resolved = target.resolve()
-            resolved.relative_to((state.workdir / SKILLS_DIR).resolve())
-        except (ValueError, OSError):
-            handler._json(400, {"error": "path outside .spark/skills"})
-            return
-        resolved.parent.mkdir(parents=True, exist_ok=True)
-        resolved.write_text(content, encoding="utf-8")
-        # A skill without ``---`` frontmatter is invisible to discovery, yet the
-        # endpoint answered ``ok`` and the list stayed empty — the user believes
-        # the save worked. Tell them instead of silently dropping the entry.
-        from spark.skills import discover_skills
-
-        names = {s.name for s in discover_skills(state.workdir)}
-        saved_name = resolved.stem
-        if saved_name not in names:
-            handler._json(
-                422,
-                {
-                    "error": "skill saved but not discoverable: add YAML frontmatter "
-                    "(name/description between --- lines)",
-                    "path": f"{SKILLS_DIR}/{name}",
-                },
-            )
-            return
-        handler._json(200, {"ok": True, "items": _skill_entries(state.workdir)})
-        return
-
-    if action == "delete":
-        rel = _safe_rel(str(body.get("path") or ""))
-        if rel is None:
-            handler._json(400, {"error": "invalid path"})
-            return
-        target = state.workdir / rel
-        try:
-            resolved = target.resolve()
-            resolved.relative_to((state.workdir / SKILLS_DIR).resolve())
-        except (ValueError, OSError):
-            handler._json(400, {"error": "path outside .spark/skills"})
-            return
-        if not resolved.is_file():
-            handler._json(404, {"error": "not found"})
-            return
-        resolved.unlink()
-        handler._json(200, {"ok": True, "items": _skill_entries(state.workdir)})
-        return
-
     handler._json(400, {"error": "action must be list, read, save or delete"})
+
+def _prompts_save_system(handler: HandlerBase, state, body: dict) -> None:
+    if state.busy:
+        handler._json(409, {"error": "agent is busy"})
+        return
+    content = str(body.get("content") or "")
+    if len(content) > _MAX_BODY_CHARS:
+        handler._json(413, {"error": "prompt too large"})
+        return
+    with state.settings_lock:
+        state.cfg.agent.system_prompt = content
+        try:
+            from spark.web._handlers_common import _save_config
+
+            _save_config(state.cfg)
+        except Exception as exc:  # aqg: top-level boundary — 保存失败要如实回给 UI
+            handler._json(500, {"error": f"save failed: {exc}"})
+            return
+    handler._json(200, {"ok": True, "system_prompt": content})
+
+
+def _prompts_save_command(handler: HandlerBase, state, body: dict) -> None:
+    name = _safe_rel(str(body.get("name") or ""))
+    content = str(body.get("content") or "")
+    if name is None:
+        handler._json(400, {"error": "invalid name"})
+        return
+    if not content.strip():
+        handler._json(400, {"error": "content required"})
+        return
+    if len(content) > _MAX_BODY_CHARS:
+        handler._json(413, {"error": "command too large"})
+        return
+    if not name.endswith(".md"):
+        name = f"{name}.md"
+    target = state.workdir / COMMANDS_DIR / name
+    try:
+        resolved = target.resolve()
+        resolved.relative_to((state.workdir / COMMANDS_DIR).resolve())
+    except (ValueError, OSError):
+        handler._json(400, {"error": "path outside .spark/commands"})
+        return
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    resolved.write_text(content, encoding="utf-8")
+    handler._json(200, {"ok": True, "commands": _command_entries(state.workdir)})
+
+
+def _prompts_delete_command(handler: HandlerBase, state, body: dict) -> None:
+    name = _safe_rel(str(body.get("name") or ""))
+    if name is None:
+        handler._json(400, {"error": "invalid name"})
+        return
+    # 与 save_command 保持一致：允许传 "review" 或 "review.md"。
+    if not name.endswith(".md"):
+        name = f"{name}.md"
+    target = state.workdir / COMMANDS_DIR / name
+    try:
+        resolved = target.resolve()
+        resolved.relative_to((state.workdir / COMMANDS_DIR).resolve())
+    except (ValueError, OSError):
+        handler._json(400, {"error": "path outside .spark/commands"})
+        return
+    if not resolved.is_file():
+        handler._json(404, {"error": "not found"})
+        return
+    resolved.unlink()
+    handler._json(200, {"ok": True, "commands": _command_entries(state.workdir)})
 
 
 def _handle_prompts(handler: HandlerBase, body: dict) -> None:
     """提示词：系统提示词读写 + 斜杠命令模板的增删。"""
     state = _route_state(handler)
     action = str(body.get("action") or "list").strip()
-
     if action == "list":
         handler._json(
             200,
@@ -228,78 +301,16 @@ def _handle_prompts(handler: HandlerBase, body: dict) -> None:
             },
         )
         return
-
-    if action == "save_system":
-        if state.busy:
-            handler._json(409, {"error": "agent is busy"})
-            return
-        content = str(body.get("content") or "")
-        if len(content) > _MAX_BODY_CHARS:
-            handler._json(413, {"error": "prompt too large"})
-            return
-        with state.settings_lock:
-            state.cfg.agent.system_prompt = content
-            try:
-                from spark.web._handlers_common import _save_config
-
-                _save_config(state.cfg)
-            except Exception as exc:  # aqg: top-level boundary — 保存失败要如实回给 UI
-                handler._json(500, {"error": f"save failed: {exc}"})
-                return
-        handler._json(200, {"ok": True, "system_prompt": content})
+    handlers = {
+        "save_system": _prompts_save_system,
+        "save_command": _prompts_save_command,
+        "delete_command": _prompts_delete_command,
+    }
+    action_handler = handlers.get(action)
+    if action_handler is not None:
+        action_handler(handler, state, body)
         return
-
-    if action == "save_command":
-        name = _safe_rel(str(body.get("name") or ""))
-        content = str(body.get("content") or "")
-        if name is None:
-            handler._json(400, {"error": "invalid name"})
-            return
-        if not content.strip():
-            handler._json(400, {"error": "content required"})
-            return
-        if len(content) > _MAX_BODY_CHARS:
-            handler._json(413, {"error": "command too large"})
-            return
-        if not name.endswith(".md"):
-            name = f"{name}.md"
-        target = state.workdir / COMMANDS_DIR / name
-        try:
-            resolved = target.resolve()
-            resolved.relative_to((state.workdir / COMMANDS_DIR).resolve())
-        except (ValueError, OSError):
-            handler._json(400, {"error": "path outside .spark/commands"})
-            return
-        resolved.parent.mkdir(parents=True, exist_ok=True)
-        resolved.write_text(content, encoding="utf-8")
-        handler._json(200, {"ok": True, "commands": _command_entries(state.workdir)})
-        return
-
-    if action == "delete_command":
-        name = _safe_rel(str(body.get("name") or ""))
-        if name is None:
-            handler._json(400, {"error": "invalid name"})
-            return
-        # 与 save_command 保持一致：允许传 "review" 或 "review.md"。
-        # 早期只按原样拼接，传裸名时永远 404，界面上的删除按钮等于失效。
-        if not name.endswith(".md"):
-            name = f"{name}.md"
-        target = state.workdir / COMMANDS_DIR / name
-        try:
-            resolved = target.resolve()
-            resolved.relative_to((state.workdir / COMMANDS_DIR).resolve())
-        except (ValueError, OSError):
-            handler._json(400, {"error": "path outside .spark/commands"})
-            return
-        if not resolved.is_file():
-            handler._json(404, {"error": "not found"})
-            return
-        resolved.unlink()
-        handler._json(200, {"ok": True, "commands": _command_entries(state.workdir)})
-        return
-
     handler._json(400, {"error": "unknown action"})
-
 
 def _default_system_prompt() -> str:
     try:
@@ -310,145 +321,146 @@ def _default_system_prompt() -> str:
         return ""
 
 
-def _handle_plugins(handler: HandlerBase, body: dict) -> None:
-    state = _route_state(handler)
-    action = str(body.get("action") or "list").strip()
-    if action in {"enable", "disable"}:
-        # Enabling a plugin permits code execution. Keep this local-only: remote
-        # token holders can use the agent but must not flip execution grants.
-        if not getattr(handler, "_is_loopback", lambda: False)() and not is_device_admin(handler):
-            handler._json(
-                403,
-                {
-                    "error": "plugin enable/disable requires local control or a device_admin scope",
-                    "hint": "grant a 30-minute device_admin scope from the local remote panel",
-                },
-            )
-            return
-        name = str(body.get("name") or "").strip()
-        from spark.config import ConfigError, default_home
-        from spark.plugins import scan_plugins, set_plugin_enabled
-
-        record = next(
-            (item for item in scan_plugins(state.workdir) if item.name == name), None
+def _plugins_toggle(handler: HandlerBase, state, body: dict, action: str) -> None:
+    # Enabling a plugin permits code execution. Keep this local-only: remote
+    # token holders can use the agent but must not flip execution grants.
+    if not getattr(handler, "_is_loopback", lambda: False)() and not is_device_admin(handler):
+        handler._json(
+            403,
+            {
+                "error": "plugin enable/disable requires local control or a device_admin scope",
+                "hint": "grant a 30-minute device_admin scope from the local remote panel",
+            },
         )
-        if record is None:
-            handler._json(404, {"error": f"plugin not installed: {name}"})
-            return
-        if record.manifest is None or record.error:
-            handler._json(400, {"error": f"plugin manifest is invalid: {name}"})
-            return
-        if action == "enable":
-            # 执行层 _signature_gate 对 invalid/revoked/untrusted 永远拒绝；
-            # Web 开关不能先把它们点亮、等下一轮再报错，否则用户看到的
-            # “已启用”和实际“不会执行”互相矛盾。
-            blocked = {"invalid", "revoked", "untrusted"}
-            status = record.signature_status or "unknown"
-            if status in blocked:
-                handler._json(
-                    400,
-                    {
-                        "error": (
-                            f"插件签名状态为 {status}，执行层会拒绝；请先修复签名或重新信任："
-                            f"{record.signature_error}"
-                        )
-                    },
-                )
-                return
-            if bool(getattr(state.cfg.plugins, "require_signature", False)) and status != "signed":
-                handler._json(
-                    400,
-                    {
-                        "error": (
-                            "当前配置要求插件签名；该插件状态为 "
-                            f"{status}：{record.signature_error}"
-                        )
-                    },
-                )
-                return
-        try:
-            set_plugin_enabled(name, action == "enable")
-        except ConfigError as exc:
-            handler._json(400, {"error": str(exc)})
-            return
-        # The loop copies [plugins].enabled into its registry at build time. Keep
-        # the in-memory config and the live loop in sync so the /health command
-        # and plugin tools appear immediately instead of after a restart.
-        enabled = set(state.cfg.plugins.enabled)
-        if action == "enable":
-            enabled.add(name)
-        else:
-            enabled.discard(name)
-        state.cfg.plugins.enabled = sorted(enabled)
-        try:
-            state.rebuild_loop(session_id=state.session_id or None)
-        except Exception as exc:  # noqa: BLE001 - config is saved; report reload issue
+        return
+    name = str(body.get("name") or "").strip()
+    from spark.config import ConfigError, default_home
+    from spark.plugins import scan_plugins, set_plugin_enabled
+
+    record = next((item for item in scan_plugins(state.workdir) if item.name == name), None)
+    if record is None:
+        handler._json(404, {"error": f"plugin not installed: {name}"})
+        return
+    if record.manifest is None or record.error:
+        handler._json(400, {"error": f"plugin manifest is invalid: {name}"})
+        return
+    if action == "enable":
+        # 执行层 _signature_gate 对 invalid/revoked/untrusted 永远拒绝；
+        # Web 开关不能先把它们点亮、等下一轮再报错。
+        blocked = {"invalid", "revoked", "untrusted"}
+        status = record.signature_status or "unknown"
+        if status in blocked:
             handler._json(
-                200,
+                400,
                 {
-                    "ok": False,
-                    "name": name,
-                    "enabled": action == "enable",
-                    "error": f"plugin saved but loop reload failed: {exc}",
-                    "items": _plugin_entries(state.workdir),
-                    "config": str(default_home() / "config.toml"),
+                    "error": (
+                        f"插件签名状态为 {status}，执行层会拒绝；请先修复签名或重新信任："
+                        f"{record.signature_error}"
+                    )
                 },
             )
             return
+        if bool(getattr(state.cfg.plugins, "require_signature", False)) and status != "signed":
+            handler._json(
+                400,
+                {
+                    "error": (
+                        "当前配置要求插件签名；该插件状态为 "
+                        f"{status}：{record.signature_error}"
+                    )
+                },
+            )
+            return
+    try:
+        set_plugin_enabled(name, action == "enable")
+    except ConfigError as exc:
+        handler._json(400, {"error": str(exc)})
+        return
+    # The loop copies [plugins].enabled into its registry at build time.
+    enabled = set(state.cfg.plugins.enabled)
+    if action == "enable":
+        enabled.add(name)
+    else:
+        enabled.discard(name)
+    state.cfg.plugins.enabled = sorted(enabled)
+    try:
+        state.rebuild_loop(session_id=state.session_id or None)
+    except Exception as exc:  # noqa: BLE001 - config is saved; report reload issue
         handler._json(
             200,
             {
-                "ok": True,
+                "ok": False,
                 "name": name,
                 "enabled": action == "enable",
+                "error": f"plugin saved but loop reload failed: {exc}",
                 "items": _plugin_entries(state.workdir),
                 "config": str(default_home() / "config.toml"),
             },
         )
         return
-    if action == "policy":
-        if not getattr(handler, "_is_loopback", lambda: False)() and not is_device_admin(handler):
-            handler._json(
-                403,
-                {
-                    "error": "plugin signature policy requires local control or a device_admin scope",
-                },
-            )
-            return
-        required = body.get("require_signature")
-        if not isinstance(required, bool):
-            handler._json(400, {"error": "require_signature must be a boolean"})
-            return
-        from spark.config import ConfigError
-        from spark.plugins import set_plugin_require_signature
+    handler._json(
+        200,
+        {
+            "ok": True,
+            "name": name,
+            "enabled": action == "enable",
+            "items": _plugin_entries(state.workdir),
+            "config": str(default_home() / "config.toml"),
+        },
+    )
 
-        try:
-            set_plugin_require_signature(required)
-        except ConfigError as exc:
-            handler._json(400, {"error": str(exc)})
-            return
-        state.cfg.plugins.require_signature = required
-        try:
-            state.rebuild_loop(session_id=state.session_id or None)
-        except Exception as exc:  # noqa: BLE001 - config saved; report reload issue
-            handler._json(
-                200,
-                {
-                    "ok": False,
-                    "require_signature": required,
-                    "error": f"policy saved but loop reload failed: {exc}",
-                    "items": _plugin_entries(state.workdir),
-                },
-            )
-            return
+
+def _plugins_policy(handler: HandlerBase, state, body: dict) -> None:
+    if not getattr(handler, "_is_loopback", lambda: False)() and not is_device_admin(handler):
+        handler._json(
+            403,
+            {"error": "plugin signature policy requires local control or a device_admin scope"},
+        )
+        return
+    required = body.get("require_signature")
+    if not isinstance(required, bool):
+        handler._json(400, {"error": "require_signature must be a boolean"})
+        return
+    from spark.config import ConfigError
+    from spark.plugins import set_plugin_require_signature
+
+    try:
+        set_plugin_require_signature(required)
+    except ConfigError as exc:
+        handler._json(400, {"error": str(exc)})
+        return
+    state.cfg.plugins.require_signature = required
+    try:
+        state.rebuild_loop(session_id=state.session_id or None)
+    except Exception as exc:  # noqa: BLE001 - config saved; report reload issue
         handler._json(
             200,
             {
-                "ok": True,
+                "ok": False,
                 "require_signature": required,
+                "error": f"policy saved but loop reload failed: {exc}",
                 "items": _plugin_entries(state.workdir),
             },
         )
+        return
+    handler._json(
+        200,
+        {
+            "ok": True,
+            "require_signature": required,
+            "items": _plugin_entries(state.workdir),
+        },
+    )
+
+
+def _handle_plugins(handler: HandlerBase, body: dict) -> None:
+    state = _route_state(handler)
+    action = str(body.get("action") or "list").strip()
+    if action in {"enable", "disable"}:
+        _plugins_toggle(handler, state, body, action)
+        return
+    if action == "policy":
+        _plugins_policy(handler, state, body)
         return
     if action != "list":
         handler._json(400, {"error": "unknown plugin action"})
@@ -463,6 +475,72 @@ def _handle_plugins(handler: HandlerBase, body: dict) -> None:
         },
     )
 
+def _knowledge_add(handler: HandlerBase, state, kb, body: dict) -> None:
+    raw_paths = body.get("paths")
+    if not isinstance(raw_paths, list) or not raw_paths:
+        handler._json(400, {"error": "paths required"})
+        return
+    added: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for raw in raw_paths:
+        rel = _safe_rel(str(raw))
+        if rel is None:
+            errors.append(f"{raw}: invalid path")
+            continue
+        target = (state.workdir / rel).resolve()
+        try:
+            target.relative_to(state.workdir.resolve())
+        except ValueError:
+            errors.append(f"{rel}: outside workdir")
+            continue
+        if not target.is_file():
+            errors.append(f"{rel}: not found")
+            continue
+        try:
+            meta = kb.add_file(target)
+            added.append(meta.__dict__)
+        except ValueError as exc:
+            errors.append(f"{rel}: {exc}")
+    handler._json(
+        200 if not errors or added else 400,
+        {"added": added, "errors": errors, "items": [d.__dict__ for d in kb.docs()]},
+    )
+
+
+def _knowledge_search(handler: HandlerBase, state, kb, body: dict) -> None:
+    query = str(body.get("query") or "").strip()
+    if not query:
+        handler._json(400, {"error": "query required"})
+        return
+    kb.ensure_embeddings()
+    hits = kb.search(query, top_k=int(getattr(state.cfg.context, "knowledge_top_k", 6)))
+    handler._json(200, {"hits": hits})
+
+
+def _knowledge_settings(handler: HandlerBase, state, body: dict) -> None:
+    enabled = body.get("enabled")
+    top_k = body.get("top_k")
+    with state.settings_lock:
+        if isinstance(enabled, bool):
+            state.cfg.context.knowledge_enabled = enabled
+        if isinstance(top_k, int) and 1 <= top_k <= 50:
+            state.cfg.context.knowledge_top_k = top_k
+        try:
+            from spark.web._handlers_common import _save_config
+
+            _save_config(state.cfg)
+        except Exception as exc:  # aqg: top-level boundary
+            handler._json(500, {"error": f"save failed: {exc}"})
+            return
+        handler._json(
+            200,
+            {
+                "ok": True,
+                "enabled": state.cfg.context.knowledge_enabled,
+                "top_k": state.cfg.context.knowledge_top_k,
+            },
+        )
+
 
 def _handle_knowledge(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)
@@ -476,7 +554,6 @@ def _handle_knowledge(handler: HandlerBase, body: dict) -> None:
         embedder=make_embedder(state.cfg),
         embedding_model=state.cfg.memory.embedding_model,
     )
-
     if action == "list":
         handler._json(
             200,
@@ -487,39 +564,9 @@ def _handle_knowledge(handler: HandlerBase, body: dict) -> None:
             },
         )
         return
-
     if action == "add":
-        raw_paths = body.get("paths")
-        if not isinstance(raw_paths, list) or not raw_paths:
-            handler._json(400, {"error": "paths required"})
-            return
-        added: list[dict[str, Any]] = []
-        errors: list[str] = []
-        for raw in raw_paths:
-            rel = _safe_rel(str(raw))
-            if rel is None:
-                errors.append(f"{raw}: invalid path")
-                continue
-            target = (state.workdir / rel).resolve()
-            try:
-                target.relative_to(state.workdir.resolve())
-            except ValueError:
-                errors.append(f"{rel}: outside workdir")
-                continue
-            if not target.is_file():
-                errors.append(f"{rel}: not found")
-                continue
-            try:
-                meta = kb.add_file(target)
-                added.append(meta.__dict__)
-            except ValueError as exc:
-                errors.append(f"{rel}: {exc}")
-        handler._json(
-            200 if not errors or added else 400,
-            {"added": added, "errors": errors, "items": [d.__dict__ for d in kb.docs()]},
-        )
+        _knowledge_add(handler, state, kb, body)
         return
-
     if action == "delete":
         doc_id = str(body.get("id") or "").strip()
         if not doc_id:
@@ -528,40 +575,10 @@ def _handle_knowledge(handler: HandlerBase, body: dict) -> None:
         ok = kb.remove(doc_id)
         handler._json(200, {"ok": ok, "items": [d.__dict__ for d in kb.docs()]})
         return
-
     if action == "search":
-        query = str(body.get("query") or "").strip()
-        if not query:
-            handler._json(400, {"error": "query required"})
-            return
-        kb.ensure_embeddings()
-        hits = kb.search(query, top_k=int(getattr(state.cfg.context, "knowledge_top_k", 6)))
-        handler._json(200, {"hits": hits})
+        _knowledge_search(handler, state, kb, body)
         return
-
     if action == "settings":
-        enabled = body.get("enabled")
-        top_k = body.get("top_k")
-        with state.settings_lock:
-            if isinstance(enabled, bool):
-                state.cfg.context.knowledge_enabled = enabled
-            if isinstance(top_k, int) and 1 <= top_k <= 50:
-                state.cfg.context.knowledge_top_k = top_k
-            try:
-                from spark.web._handlers_common import _save_config
-
-                _save_config(state.cfg)
-            except Exception as exc:  # aqg: top-level boundary
-                handler._json(500, {"error": f"save failed: {exc}"})
-                return
-            handler._json(
-                200,
-                {
-                    "ok": True,
-                    "enabled": state.cfg.context.knowledge_enabled,
-                    "top_k": state.cfg.context.knowledge_top_k,
-                },
-            )
+        _knowledge_settings(handler, state, body)
         return
-
     handler._json(400, {"error": "action must be list, add, delete, search or settings"})

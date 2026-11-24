@@ -195,42 +195,45 @@ def _node_package_manager(root: Path) -> str:
     return "npm"
 
 
-def _commands_for(root: Path, manifests: set[str]) -> dict[str, list[str]]:
-    commands: dict[str, list[str]] = {"test": [], "build": [], "lint": [], "dev": []}
+def _python_commands(root: Path, manifests: set[str], commands: dict[str, list[str]]) -> None:
+    if not manifests & {"pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile"}:
+        return
+    if (root / "uv.lock").exists():
+        commands["test"].append("uv run pytest")
+    elif (root / "poetry.lock").exists():
+        commands["test"].append("poetry run pytest")
+    else:
+        commands["test"].append("python -m pytest")
+    pyproject = root / "pyproject.toml"
+    pyproject_text = (
+        pyproject.read_text(encoding="utf-8", errors="replace")
+        if pyproject.exists()
+        else ""
+    )
+    if (root / "ruff.toml").exists() or (root / ".ruff.toml").exists() or "ruff" in pyproject_text:
+        commands["lint"].append("ruff check .")
+    if (root / "mypy.ini").exists() or pyproject.exists():
+        commands["lint"].append("python -m mypy .")
+    if (root / "manage.py").exists():
+        commands["dev"].append("python manage.py runserver")
 
-    # --- Python ---
-    if manifests & {"pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile"}:
-        if (root / "uv.lock").exists():
-            commands["test"].append("uv run pytest")
-        elif (root / "poetry.lock").exists():
-            commands["test"].append("poetry run pytest")
-        else:
-            commands["test"].append("python -m pytest")
-        if (root / "ruff.toml").exists() or (root / ".ruff.toml").exists() or "ruff" in (
-            (root / "pyproject.toml").read_text(encoding="utf-8", errors="replace")
-            if (root / "pyproject.toml").exists()
-            else ""
-        ):
-            commands["lint"].append("ruff check .")
-        if (root / "mypy.ini").exists() or (root / "pyproject.toml").exists():
-            commands["lint"].append("python -m mypy .")
-        if (root / "manage.py").exists():
-            commands["dev"].append("python manage.py runserver")
 
-    # --- Node ---
+def _node_commands(root: Path, commands: dict[str, list[str]]) -> None:
     pkg = _read_json(root / "package.json") if (root / "package.json").exists() else None
-    if pkg:
-        pm = _node_package_manager(root)
-        raw_scripts = pkg.get("scripts")
-        scripts: dict[str, Any] = raw_scripts if isinstance(raw_scripts, dict) else {}
-        for label in ("test", "build", "lint", "dev", "start"):
-            if label in scripts:
-                target = "dev" if label in {"dev", "start"} else label
-                commands[target].append(f"{pm} run {label}")
-        if not commands["test"]:
-            commands["test"].append(f"{pm} test")
+    if not pkg:
+        return
+    pm = _node_package_manager(root)
+    raw_scripts = pkg.get("scripts")
+    scripts: dict[str, Any] = raw_scripts if isinstance(raw_scripts, dict) else {}
+    for label in ("test", "build", "lint", "dev", "start"):
+        if label in scripts:
+            target = "dev" if label in {"dev", "start"} else label
+            commands[target].append(f"{pm} run {label}")
+    if not commands["test"]:
+        commands["test"].append(f"{pm} test")
 
-    # --- Go / Rust / JVM ---
+
+def _native_commands(root: Path, manifests: set[str], commands: dict[str, list[str]]) -> None:
     if "go.mod" in manifests:
         commands["test"].append("go test ./...")
         commands["build"].append("go build ./...")
@@ -245,19 +248,28 @@ def _commands_for(root: Path, manifests: set[str]) -> dict[str, list[str]]:
         commands["test"].append(f"{gradle} test")
         commands["build"].append(f"{gradle} build")
 
-    # --- Makefile targets (only a few well-known ones) ---
+
+def _make_commands(root: Path, commands: dict[str, list[str]]) -> None:
     makefile = root / "Makefile"
-    if makefile.exists():
-        try:
-            text = makefile.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            text = ""
-        for target in ("test", "build", "lint", "dev"):
-            if any(line.startswith(target + ":") for line in text.splitlines()):
-                commands[target].append(f"make {target}")
+    if not makefile.exists():
+        return
+    try:
+        text = makefile.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        text = ""
+    lines = text.splitlines()
+    for target in ("test", "build", "lint", "dev"):
+        if any(line.startswith(target + ":") for line in lines):
+            commands[target].append(f"make {target}")
 
+
+def _commands_for(root: Path, manifests: set[str]) -> dict[str, list[str]]:
+    commands: dict[str, list[str]] = {"test": [], "build": [], "lint": [], "dev": []}
+    _python_commands(root, manifests, commands)
+    _node_commands(root, commands)
+    _native_commands(root, manifests, commands)
+    _make_commands(root, commands)
     return {k: v for k, v in commands.items() if v}
-
 
 @dataclass(frozen=True)
 class _ScanResult:

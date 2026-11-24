@@ -186,6 +186,39 @@ def _walk(root: Path):
         yield Path(dirpath), filenames
 
 
+def _grep_file(
+    file: Path,
+    *,
+    root: Path,
+    sandbox: WorkdirSandbox,
+    regex: re.Pattern[str],
+    remaining: int,
+) -> tuple[list[str], bool, int]:
+    try:
+        resolved = file.resolve()
+        resolved.relative_to(root)
+    except (OSError, ValueError):
+        return [], False, 0
+    if not sandbox.is_path_allowed(resolved):
+        # 命中保护路径清单（凭据/系统路径等）：跳过该文件
+        return [], False, 0
+    try:
+        size = file.stat().st_size
+        if size > MAX_FILE_BYTES:
+            return [], False, 0
+        text = file.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return [], False, 0
+    rel = file.relative_to(sandbox.root).as_posix()
+    matches: list[str] = []
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if regex.search(line):
+            matches.append(f"{rel}:{lineno}: {line.strip()[:240]}")
+            if len(matches) >= remaining:
+                return matches, True, size
+    return matches, False, size
+
+
 def grep_tool(sandbox: WorkdirSandbox, args: GrepArgs) -> ToolResult:
     try:
         base = sandbox.resolve(args.path)
@@ -215,29 +248,19 @@ def grep_tool(sandbox: WorkdirSandbox, args: GrepArgs) -> ToolResult:
             if glob_filter and not fnmatch.fnmatch(name, glob_filter):
                 continue
             file = dirpath / name
-            try:
-                resolved = file.resolve()
-                resolved.relative_to(root)
-            except (OSError, ValueError):
-                continue
-            if not sandbox.is_path_allowed(resolved):
-                # 命中保护路径清单（凭据/系统路径等）：跳过该文件
-                continue
-            try:
-                size = file.stat().st_size
-                if size > MAX_FILE_BYTES:
-                    continue
-                text = file.read_text(encoding="utf-8", errors="replace")
-            except OSError:
+            found, hit_limit, size = _grep_file(
+                file,
+                root=root,
+                sandbox=sandbox,
+                regex=regex,
+                remaining=max_results - len(matches),
+            )
+            if not size:
                 continue
             budget.take(size)
-            rel = file.relative_to(sandbox.root).as_posix()
-            for lineno, line in enumerate(text.splitlines(), 1):
-                if regex.search(line):
-                    matches.append(f"{rel}:{lineno}: {line.strip()[:240]}")
-                    if len(matches) >= max_results:
-                        truncated = True
-                        break
+            matches.extend(found)
+            if hit_limit:
+                truncated = True
     payload: dict = {
         "results": matches,
         "count": len(matches),

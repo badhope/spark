@@ -308,6 +308,73 @@ class Report:
         return buffer.getvalue()
 
 
+def _parse_metric(line: str, splitter: re.Pattern[str]) -> Metric | None:
+    parts = [part.strip() for part in splitter.split(line) if part.strip()]
+    if len(parts) < 2:
+        return None
+    try:
+        value = float(parts[1].replace("%", ""))
+    except ValueError:
+        return None
+    target: float | None = None
+    if len(parts) >= 3 and parts[2] not in {"", "-", "—"}:
+        try:
+            target = float(parts[2].replace("%", ""))
+        except ValueError:
+            target = None
+    direction = "higher"
+    if len(parts) >= 5 and parts[4].strip().lower() in {"lower", "low", "低", "越低越好"}:
+        direction = "lower"
+    return Metric(
+        name=parts[0],
+        value=value,
+        target=target,
+        unit=parts[3] if len(parts) >= 4 else "",
+        direction=direction,
+    )
+
+
+def _parse_metrics(metrics_text: str, splitter: re.Pattern[str]) -> list[Metric]:
+    metrics: list[Metric] = []
+    for line in metrics_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        metric = _parse_metric(stripped, splitter)
+        if metric is not None:
+            metrics.append(metric)
+    return metrics
+
+
+def _parse_sections(sections_text: str) -> list[ReportSection]:
+    sections: list[ReportSection] = []
+    heading = ""
+    body: list[str] = []
+    for line in sections_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            if heading:
+                sections.append(ReportSection(heading, "\n".join(body).strip()))
+            heading = stripped.lstrip("#").strip() or "说明"
+            body = []
+        elif stripped:
+            body.append(stripped)
+    if heading:
+        sections.append(ReportSection(heading, "\n".join(body).strip()))
+    return sections
+
+
+def _default_summary(metrics: list[Metric]) -> str:
+    achieved = sum(
+        1 for metric in metrics
+        if metric.achievement is not None and metric.achievement >= 1
+    )
+    return (
+        f"本期共跟踪 {len(metrics)} 项指标，"
+        f"其中 {achieved} 项达到目标；详见下方指标与说明。"
+    )
+
+
 class ReportService:
     _METRIC_SPLIT = re.compile(r"[,，\t]")
 
@@ -318,60 +385,12 @@ class ReportService:
         metrics_text: str,
         sections_text: str,
     ) -> Report:
-        metrics: list[Metric] = []
-        for line in metrics_text.splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = [part.strip() for part in self._METRIC_SPLIT.split(line) if part.strip()]
-            if len(parts) < 2:
-                continue
-            try:
-                value = float(parts[1].replace("%", ""))
-            except ValueError:
-                continue
-            target: float | None = None
-            if len(parts) >= 3 and parts[2] not in {"", "-", "—"}:
-                try:
-                    target = float(parts[2].replace("%", ""))
-                except ValueError:
-                    target = None
-            direction = "higher"
-            if len(parts) >= 5 and parts[4].strip().lower() in {"lower", "low", "低", "越低越好"}:
-                direction = "lower"
-            metrics.append(
-                Metric(
-                    name=parts[0],
-                    value=value,
-                    target=target,
-                    unit=parts[3] if len(parts) >= 4 else "",
-                    direction=direction,
-                )
-            )
+        metrics = _parse_metrics(metrics_text, self._METRIC_SPLIT)
         if not metrics:
             raise ValueError("at least one metric line is required (name,value[,target[,unit]])")
-
-        sections: list[ReportSection] = []
-        heading = ""
-        body: list[str] = []
-        for line in sections_text.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("#"):
-                if heading:
-                    sections.append(ReportSection(heading, "\n".join(body).strip()))
-                heading = stripped.lstrip("#").strip() or "说明"
-                body = []
-            elif stripped:
-                body.append(stripped)
-        if heading:
-            sections.append(ReportSection(heading, "\n".join(body).strip()))
-
+        sections = _parse_sections(sections_text)
         if not summary.strip():
-            achieved = sum(1 for metric in metrics if metric.achievement is not None and metric.achievement >= 1)
-            summary = (
-                f"本期共跟踪 {len(metrics)} 项指标，"
-                f"其中 {achieved} 项达到目标；详见下方指标与说明。"
-            )
+            summary = _default_summary(metrics)
         return Report(
             title=title.strip() or "未命名报告",
             summary=summary.strip(),

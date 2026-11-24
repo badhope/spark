@@ -185,6 +185,38 @@ def build_privacy_receipt(
     }
 
 
+def _delivery_entries(touched: set[str], changes: dict) -> list[dict]:
+    raw_entries = list(changes.get("entries") or [])
+    if not touched:
+        return raw_entries
+    entries = [item for item in raw_entries if str(item.get("path") or "") in touched]
+    known = {str(item.get("path") or "") for item in entries}
+    for path in sorted(touched):
+        if path not in known:
+            entries.append({"code": "M", "path": path})
+    return entries
+
+
+def _delivery_changes(store: SessionStore, session_id: str, wd: str, events: list[dict]):
+    try:
+        from spark.web.git_api import git_changes
+
+        changes = git_changes(wd)
+    except Exception:
+        changes = {"repo": False, "entries": [], "diff": "", "status_count": 0}
+    touched = _paths_from_events(events)
+    entries = _delivery_entries(touched, changes)
+    diff_text = _git_diff_paths(wd, touched, str(changes.get("diff") or ""))[:20000]
+    return changes, touched, entries, diff_text
+
+
+def _delivery_usage(store: SessionStore, session_id: str, cfg: Any) -> dict:
+    usage = store.session_token_usage(
+        session_id, model=getattr(cfg.provider, "model", "") or None
+    )
+    return {**usage, "scope": "session"}
+
+
 def build_delivery(
     store: SessionStore,
     session_id: str,
@@ -197,12 +229,7 @@ def build_delivery(
     workdir: str = "",
     since_id: int = 0,
 ) -> dict[str, Any]:
-    """Build (and persist) the ledger entry for one turn/task.
-
-    The ledger is intentionally evidence-shaped: changed files, command
-    output, approvals, cost, checkpoint and privacy receipt.  A task can be
-    "review" without being "done"; only the user can accept it.
-    """
+    """Build (and persist) the ledger entry for one turn/task."""
     now = time.time()
     wd = workdir or _safe_workdir(store, session_id)
     events = [
@@ -210,26 +237,9 @@ def build_delivery(
         for event in store.list_tool_events(session_id, limit=500)
         if int(event.get("id") or 0) > int(since_id or 0)
     ]
-    try:
-        from spark.web.git_api import git_changes
-
-        changes = git_changes(wd)
-    except Exception:
-        changes = {"repo": False, "entries": [], "diff": "", "status_count": 0}
-    touched = _paths_from_events(events)
-    raw_entries = list(changes.get("entries") or [])
-    if touched:
-        entries = [item for item in raw_entries if str(item.get("path") or "") in touched]
-        for path in sorted(touched):
-            if not any(str(item.get("path") or "") == path for item in entries):
-                entries.append({"code": "M", "path": path})
-    else:
-        entries = raw_entries
-    diff_text = _git_diff_paths(wd, touched, str(changes.get("diff") or ""))[:20000]
+    changes, touched, entries, diff_text = _delivery_changes(store, session_id, wd, events)
     checkpoints = store.list_checkpoints(session_id)
     metrics = store.list_turn_metrics(session_id, limit=1)
-    usage = store.session_token_usage(session_id, model=getattr(cfg.provider, "model", "") or None)
-    usage = {**usage, "scope": "session"}
     delivery = {
         "id": uuid.uuid4().hex,
         "session_id": session_id,
@@ -249,14 +259,13 @@ def build_delivery(
         },
         "tests": _tests_from_events(events),
         "approvals": _approvals_from_events(events),
-        "cost": usage,
+        "cost": _delivery_usage(store, session_id, cfg),
         "checkpoint_id": (checkpoints[-1].get("id") if checkpoints else None),
         "metrics": (metrics[0].get("metrics") if metrics else {}),
         "privacy": build_privacy_receipt(store, session_id, cfg, workdir=wd, events=events),
         "created_at": now,
     }
     return store.save_delivery(delivery)
-
 
 def _delivery_files_section(delivery: dict[str, Any]) -> list[str]:
     lines = ["", "## 变更文件"]

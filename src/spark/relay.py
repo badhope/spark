@@ -574,6 +574,63 @@ class _RelayHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001 - HTTP boundary
             self._error(exc)
 
+    def _relay_register(self, channel: str, body: dict) -> None:
+        self.hub.register(channel, str(body.get("key") or ""))
+        _send_json(self, 201, {"ok": True, "channel": channel})
+
+    def _relay_responses(self, channel: str, body: dict) -> None:
+        self.hub.complete(
+            channel,
+            self._key(),
+            str(body.get("request_id") or ""),
+            {
+                "status": int(body.get("status") or 200),
+                "headers": _headers_dict(body.get("headers")),
+                "body_b64": _b64_payload(body.get("body_b64")),
+            },
+        )
+        _send_json(self, 200, {"ok": True})
+
+    def _relay_stream(self, channel: str, body: dict) -> None:
+        kind = str(body.get("type") or "")
+        event: dict[str, Any] = {"type": kind}
+        if kind == "headers":
+            event["status"] = int(body.get("status") or 200)
+            event["headers"] = _headers_dict(body.get("headers"))
+        elif kind == "chunk":
+            event["body_b64"] = _b64_payload(body.get("body_b64"))
+        elif kind == "error":
+            event["error"] = str(body.get("error") or "stream failed")[:300]
+        elif kind != "end":
+            raise RelayError("stream event type must be headers/chunk/end/error")
+        if not self.hub.stream_event(
+            channel,
+            self._key(),
+            str(body.get("request_id") or ""),
+            event,
+        ):
+            _send_json(self, 410, {"error": "stream consumer is gone"})
+            return
+        _send_json(self, 200, {"ok": True})
+
+    def _relay_call(self, channel: str, body: dict) -> None:
+        if bool(body.get("stream")):
+            self._stream_call(channel, body)
+            return
+        response = self.hub.submit(
+            channel,
+            self._key(),
+            body,
+            timeout=_timeout_value(body.get("timeout")),
+        )
+        # Relay transport success is 200; the upstream status travels
+        # inside the JSON envelope so a 404/500 body is not discarded.
+        _send_json(self, 200, {
+            "status": int(response.get("status") or 200),
+            "headers": _headers_dict(response.get("headers")),
+            "body_b64": _b64_payload(response.get("body_b64")),
+        })
+
     def do_POST(self) -> None:  # noqa: N802
         try:
             parsed = urlparse(self.path)
@@ -586,67 +643,19 @@ class _RelayHandler(BaseHTTPRequestHandler):
                 return
             channel, action = parts[2], parts[3]
             body = _read_json(self)
-            if action == "register":
-                self.hub.register(channel, str(body.get("key") or ""))
-                _send_json(self, 201, {"ok": True, "channel": channel})
-                return
-            if action == "responses":
-                self.hub.complete(
-                    channel,
-                    self._key(),
-                    str(body.get("request_id") or ""),
-                    {
-                        "status": int(body.get("status") or 200),
-                        "headers": _headers_dict(body.get("headers")),
-                        "body_b64": _b64_payload(body.get("body_b64")),
-                    },
-                )
-                _send_json(self, 200, {"ok": True})
-                return
-            if action == "stream":
-                kind = str(body.get("type") or "")
-                event: dict[str, Any] = {"type": kind}
-                if kind == "headers":
-                    event["status"] = int(body.get("status") or 200)
-                    event["headers"] = _headers_dict(body.get("headers"))
-                elif kind == "chunk":
-                    event["body_b64"] = _b64_payload(body.get("body_b64"))
-                elif kind == "error":
-                    event["error"] = str(body.get("error") or "stream failed")[:300]
-                elif kind != "end":
-                    raise RelayError("stream event type must be headers/chunk/end/error")
-                if not self.hub.stream_event(
-                    channel,
-                    self._key(),
-                    str(body.get("request_id") or ""),
-                    event,
-                ):
-                    _send_json(self, 410, {"error": "stream consumer is gone"})
-                    return
-                _send_json(self, 200, {"ok": True})
-                return
-            if action == "call":
-                if bool(body.get("stream")):
-                    self._stream_call(channel, body)
-                    return
-                response = self.hub.submit(
-                    channel,
-                    self._key(),
-                    body,
-                    timeout=_timeout_value(body.get("timeout")),
-                )
-                # Relay transport success is 200; the upstream status travels
-                # inside the JSON envelope so a 404/500 body is not discarded.
-                _send_json(self, 200, {
-                    "status": int(response.get("status") or 200),
-                    "headers": _headers_dict(response.get("headers")),
-                    "body_b64": _b64_payload(response.get("body_b64")),
-                })
+            handlers = {
+                "register": self._relay_register,
+                "responses": self._relay_responses,
+                "stream": self._relay_stream,
+                "call": self._relay_call,
+            }
+            handler = handlers.get(action)
+            if handler is not None:
+                handler(channel, body)
                 return
             _send_json(self, 404, {"error": "not found"})
         except Exception as exc:  # noqa: BLE001 - HTTP boundary
             self._error(exc)
-
     def _web_method(self, method: str) -> None:
         try:
             parsed = urlparse(self.path)

@@ -48,95 +48,99 @@ def _safe_module(name: str) -> str | None:
     return raw
 
 
+def _wiki_status(handler: HandlerBase, root: Path) -> None:
+    index = root / INDEX_NAME
+    modules = sorted(p.name for p in (root / MODULE_DIR).glob("*.md")) if root.is_dir() else []
+    handler._json(
+        200,
+        {
+            "exists": index.is_file(),
+            "index_path": str(index) if index.is_file() else "",
+            "modules": len(modules),
+            "out_dir": str(root),
+            "max_files": _last_max_files(root) or 240,
+        },
+    )
+
+
+def _wiki_generate(handler: HandlerBase, state, body: dict) -> None:
+    if state.busy:
+        handler._json(409, {"error": "agent is busy"})
+        return
+    from spark.wiki import WikiConfig, build_wiki
+
+    raw_files = body.get("max_files", 240)
+    try:
+        max_files = max(1, min(int(raw_files), 2000))
+    except (TypeError, ValueError):
+        handler._json(400, {"error": "max_files must be an integer"})
+        return
+    try:
+        stats = build_wiki(state.workdir.resolve(), WikiConfig(max_files=max_files))
+    except OSError as exc:
+        handler._json(500, {"error": f"wiki generation failed: {exc}"})
+        return
+    handler._json(200, {"ok": True, "max_files": max_files, **stats})
+
+
+def _wiki_read(handler: HandlerBase, root: Path, body: dict) -> None:
+    raw = str(body.get("name") or "")
+    if not raw or raw == INDEX_NAME:
+        target = root / INDEX_NAME
+    else:
+        safe = _safe_module(raw)
+        if safe is None:
+            handler._json(400, {"error": "invalid module name"})
+            return
+        target = root / MODULE_DIR / safe
+    if not target.is_file():
+        handler._json(404, {"error": "wiki not generated yet", "name": raw})
+        return
+    try:
+        text = target.read_text(encoding="utf-8")
+    except OSError as exc:
+        handler._json(500, {"error": f"read failed: {exc}"})
+        return
+    handler._json(
+        200,
+        {
+            "name": target.name,
+            "content": text[:MAX_DOC_CHARS],
+            "truncated": len(text) > MAX_DOC_CHARS,
+            "chars": len(text),
+        },
+    )
+
+
+def _wiki_delete(handler: HandlerBase, state, root: Path) -> None:
+    import shutil
+
+    if not root.is_dir():
+        handler._json(200, {"ok": True, "removed": False})
+        return
+    try:
+        root.relative_to(state.workdir.resolve())
+    except ValueError:
+        handler._json(400, {"error": "wiki directory is outside the workdir"})
+        return
+    shutil.rmtree(root)
+    handler._json(200, {"ok": True, "removed": True})
+
+
 def _handle_wiki(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)
     action = str(body.get("action") or "status").strip()
     root = _wiki_root(state.workdir)
-
     if action == "status":
-        index = root / INDEX_NAME
-        modules = sorted(p.name for p in (root / MODULE_DIR).glob("*.md")) if root.is_dir() else []
-        handler._json(
-            200,
-            {
-                "exists": index.is_file(),
-                "index_path": str(index) if index.is_file() else "",
-                "modules": len(modules),
-                "out_dir": str(root),
-                # Report what the last generation actually used, not the
-                # form's default: the panel showed 240 next to a 30-file wiki.
-                "max_files": _last_max_files(root) or 240,
-            },
-        )
+        _wiki_status(handler, root)
         return
-
     if action == "generate":
-        if state.busy:
-            handler._json(409, {"error": "agent is busy"})
-            return
-        from spark.wiki import WikiConfig, build_wiki
-
-        raw_files = body.get("max_files", 240)
-        try:
-            max_files = max(1, min(int(raw_files), 2000))
-        except (TypeError, ValueError):
-            handler._json(400, {"error": "max_files must be an integer"})
-            return
-        try:
-            stats = build_wiki(
-                state.workdir.resolve(),
-                WikiConfig(max_files=max_files),
-            )
-        except OSError as exc:
-            handler._json(500, {"error": f"wiki generation failed: {exc}"})
-            return
-        handler._json(200, {"ok": True, "max_files": max_files, **stats})
+        _wiki_generate(handler, state, body)
         return
-
     if action == "read":
-        raw = str(body.get("name") or "")
-        if not raw or raw == INDEX_NAME:
-            target = root / INDEX_NAME
-        else:
-            safe = _safe_module(raw)
-            if safe is None:
-                handler._json(400, {"error": "invalid module name"})
-                return
-            target = root / MODULE_DIR / safe
-        if not target.is_file():
-            handler._json(404, {"error": "wiki not generated yet", "name": raw})
-            return
-        try:
-            text = target.read_text(encoding="utf-8")
-        except OSError as exc:
-            handler._json(500, {"error": f"read failed: {exc}"})
-            return
-        truncated = len(text) > MAX_DOC_CHARS
-        handler._json(
-            200,
-            {
-                "name": target.name,
-                "content": text[:MAX_DOC_CHARS],
-                "truncated": truncated,
-                "chars": len(text),
-            },
-        )
+        _wiki_read(handler, root, body)
         return
-
     if action == "delete":
-        # 产物可随时重建；删除只是清理，不做确认对话框（前端二次确认）。
-        import shutil
-
-        if not root.is_dir():
-            handler._json(200, {"ok": True, "removed": False})
-            return
-        try:
-            root.relative_to(state.workdir.resolve())
-        except ValueError:
-            handler._json(400, {"error": "wiki directory is outside the workdir"})
-            return
-        shutil.rmtree(root)
-        handler._json(200, {"ok": True, "removed": True})
+        _wiki_delete(handler, state, root)
         return
-
     handler._json(400, {"error": f"unknown action: {action}"})

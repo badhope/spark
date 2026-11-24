@@ -308,6 +308,42 @@ class KnowledgeBase:
                 return None
         return out
 
+    def _vector_dim(self, vectors: dict) -> int:
+        for vec in vectors.values():
+            if isinstance(vec, list) and vec:
+                return len(vec)
+        return 0
+
+    def _missing_chunks(self, chunks: list[dict], vectors: dict) -> list[tuple[str, str]]:
+        missing: list[tuple[str, str]] = []
+        for chunk in chunks:
+            key = f"{chunk.get('doc_name')}:{chunk.get('index')}"
+            if isinstance(vectors.get(key), list) and vectors.get(key):
+                continue
+            text = str(chunk.get("text") or "")
+            if text:
+                missing.append((key, text))
+        return missing
+
+    def _store_batch(
+        self, batch: list[tuple[str, str]], vectors: dict, dim: int
+    ) -> tuple[int, int] | None:
+        vecs = self._embed([text for _, text in batch])
+        if vecs is None:
+            return None
+        added = 0
+        for (key, _), vec in zip(batch, vecs, strict=True):
+            if not vec or (dim and len(vec) != dim):
+                continue
+            if not dim:
+                dim = len(vec)
+            vectors[key] = vec
+            added += 1
+        if added:
+            # 每批落盘一次：中途断网时已算好的不丢，下次只补缺口。
+            self._save_vectors({"model": self.embedding_model, "vectors": vectors})
+        return added, dim
+
     def ensure_embeddings(self) -> int:
         """给已有分块补向量；返回本次新写入的条数。
 
@@ -317,42 +353,19 @@ class KnowledgeBase:
         if not self._embedder:
             return 0
         data = self._load()
-        chunks = data.get("chunks") or []
         vectors = dict(self._load_vectors().get("vectors") or {})
-        dim = 0
-        for vec in vectors.values():
-            if isinstance(vec, list) and vec:
-                dim = len(vec)
-                break
-        missing: list[tuple[str, str]] = []
-        for c in chunks:
-            key = f"{c.get('doc_name')}:{c.get('index')}"
-            vec = vectors.get(key)
-            if isinstance(vec, list) and vec:
-                continue
-            text = str(c.get("text") or "")
-            if text:
-                missing.append((key, text))
+        dim = self._vector_dim(vectors)
+        missing = self._missing_chunks(data.get("chunks") or [], vectors)
         added = 0
         for start in range(0, len(missing), EMBED_BATCH):
-            batch = missing[start : start + EMBED_BATCH]
-            vecs = self._embed([text for _, text in batch])
-            if vecs is None:
+            result = self._store_batch(
+                missing[start : start + EMBED_BATCH], vectors, dim
+            )
+            if result is None:
                 break
-            for (key, _), vec in zip(batch, vecs, strict=True):
-                if not vec:
-                    continue
-                if dim and len(vec) != dim:
-                    continue
-                if not dim:
-                    dim = len(vec)
-                vectors[key] = vec
-                added += 1
-            # 每批落盘一次：中途断网时已算好的不丢，下次只补缺口。
-            if added:
-                self._save_vectors({"model": self.embedding_model, "vectors": vectors})
+            batch_added, dim = result
+            added += batch_added
         return added
-
     def _drop_doc_vectors(self, doc_name: str) -> None:
         vectors_data = self._load_vectors()
         vectors = dict(vectors_data.get("vectors") or {})

@@ -116,6 +116,64 @@ class TurnReplayRecorder:
 
     # -- 观测 ----------------------------------------------------------------
 
+    def _append_tool(self, event: TurnEvent) -> int:
+        call = event.tool_call
+        if call is None:
+            return -1
+        idx = len(self._tools)
+        self._tool_index[call.id] = idx
+        self._tools.append(
+            {
+                "id": call.id,
+                "name": call.name,
+                "arguments": call.arguments,
+                "ok": None,
+                "result": None,
+                "approval": None,
+            }
+        )
+        return idx
+
+    def _record_tool_start(self, event: TurnEvent) -> None:
+        self._append_tool(event)
+
+    def _record_tool_end(self, event: TurnEvent) -> None:
+        call = event.tool_call
+        if call is None:
+            return
+        idx = self._tool_index.get(call.id)
+        if idx is None or idx < 0:
+            # resume 重放或旧记录：追加为独立条目，保证不丢
+            idx = self._append_tool(event)
+        self._tools[idx]["ok"] = bool(event.result.ok) if event.result else None
+        self._tools[idx]["result"] = event.result.payload if event.result else None
+
+    def _record_approval_event(self, event: TurnEvent) -> None:
+        if event.approval is None:
+            return
+        self._approvals.append(
+            {
+                "tool": event.tool_call.name if event.tool_call else None,
+                "summary": event.approval.summary,
+                "decision": None,  # 决策经 record_approval 回填
+            }
+        )
+
+    def _record_metric_event(self, event: TurnEvent) -> None:
+        data = event.data
+        if data is None:
+            return
+        if event.type == "compaction":
+            self._compaction = {
+                "before_tokens": data.get("before_tokens"),
+                "after_tokens": data.get("after_tokens"),
+                "summarized_messages": data.get("summarized_messages"),
+            }
+            return
+        usage = data.get("usage")
+        if isinstance(usage, dict):
+            self._context_after = {"used": usage.get("used"), "limit": usage.get("limit")}
+
     def observe(self, event: TurnEvent) -> None:
         try:
             etype = event.type
@@ -124,60 +182,15 @@ class TurnReplayRecorder:
             elif etype == "reasoning_delta" and event.text:
                 self._reasoning_parts.append(event.text)
             elif etype == "tool_start" and event.tool_call is not None:
-                self._tool_index[event.tool_call.id] = len(self._tools)
-                self._tools.append(
-                    {
-                        "id": event.tool_call.id,
-                        "name": event.tool_call.name,
-                        "arguments": event.tool_call.arguments,
-                        "ok": None,
-                        "result": None,
-                        "approval": None,
-                    }
-                )
+                self._record_tool_start(event)
             elif etype == "tool_end" and event.tool_call is not None:
-                idx = self._tool_index.get(event.tool_call.id)
-                if idx is None:
-                    # resume 重放或旧记录：追加为独立条目，保证不丢
-                    idx = len(self._tools)
-                    self._tool_index[event.tool_call.id] = idx
-                    self._tools.append(
-                        {
-                            "id": event.tool_call.id,
-                            "name": event.tool_call.name,
-                            "arguments": event.tool_call.arguments,
-                            "ok": None,
-                            "result": None,
-                            "approval": None,
-                        }
-                    )
-                self._tools[idx]["ok"] = bool(event.result.ok) if event.result else None
-                self._tools[idx]["result"] = (
-                    event.result.payload if event.result else None
-                )
+                self._record_tool_end(event)
             elif etype == "plan" and isinstance(event.data, dict):
                 self._plan = event.data.get("steps") or []
-            elif etype == "approval_needed" and event.approval is not None:
-                self._approvals.append(
-                    {
-                        "tool": event.tool_call.name if event.tool_call else None,
-                        "summary": event.approval.summary,
-                        "decision": None,  # 决策经 record_approval 回填
-                    }
-                )
-            elif etype == "compaction" and isinstance(event.data, dict):
-                self._compaction = {
-                    "before_tokens": event.data.get("before_tokens"),
-                    "after_tokens": event.data.get("after_tokens"),
-                    "summarized_messages": event.data.get("summarized_messages"),
-                }
-            elif etype == "context" and isinstance(event.data, dict):
-                usage = event.data.get("usage")
-                if isinstance(usage, dict):
-                    self._context_after = {
-                        "used": usage.get("used"),
-                        "limit": usage.get("limit"),
-                    }
+            elif etype == "approval_needed":
+                self._record_approval_event(event)
+            elif etype in {"compaction", "context"} and isinstance(event.data, dict):
+                self._record_metric_event(event)
             elif etype == "turn_error":
                 self._status = (
                     "cancelled" if "cancel" in (event.text or "").lower() else "error"
@@ -185,7 +198,6 @@ class TurnReplayRecorder:
                 self._error = event.text
         except Exception:  # pragma: no cover — 观测永不阻塞主循环
             logger.debug("replay observe failed", exc_info=True)
-
     def record_approval(
         self, request: ApprovalRequest, decision: ApprovalDecision
     ) -> None:

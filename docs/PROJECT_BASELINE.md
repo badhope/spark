@@ -9,12 +9,12 @@
 | 项 | 当前值 |
 |---|---|
 | 产品 | Spark |
-| 版本 | `0.15.4` |
+| 版本 | `0.15.8` |
 | 主分支 | `main`；本文随远程 `main` HEAD 同提交发布，具体哈希用 `git rev-parse --short HEAD` 核对 |
 | 许可 | MIT |
 | 包入口 | `spark` / `python -m spark` |
 | 主要入口 | Web、CLI/TUI、桌面壳、VS Code、JetBrains/Neovim（ACP）、A2A API |
-| 代码规模 | `src/spark` 189 个 Python 源文件（mypy 口径） |
+| 代码规模 | `src/spark` 190 个 Python 源文件（mypy 口径） |
 | 最近全量基线 | 见 §2.6；本轮新增定向测试、真实本地模型验收与 120 例 Autopilot 压力矩阵 |
 | 五平台 | GitHub `badhope/spark`、`X33834/spark`、`Morningstar202604/spark`；Gitee `badhope/spark`；GitCode `badhope/spark` |
 
@@ -49,7 +49,7 @@ Spark 是 AI 编程应用，不是通用办公套件，也不是单一 IDE 插�
 
 - **无人值守长任务仍是第一版**：`spark autopilot` 已能无人值守跑 build→repair→audit→done，已有中断轮标记、`--resume` 重试与心跳；`kind=autopilot` 已接入任务队列，排队、失败重试、日配额/成本上限与暂停/恢复复用同一套机制；真实 CLI + AgentLoop 的 `kill -9` 恢复已验收。仍缺真实模型 + 外部仓库的 ≥20 回合基准。
 - **自动化覆盖边界**：现有压力矩阵只覆盖运行器可枚举的失败模式（120 例），不等于 100% 真实编程场景；真实模型行为、超大仓库、并发工作区仍缺证据。
-- **代码质量治理完成第三轮，仍有历史债**：全仓历史 D/E/F 从 70 降到 **58（53 D / 5 E / 0 F）**；PR 上下文、工作流加载、Provider 错误分类、Repo Context、设置保存、MCP secret 恢复、知识库检索、模型档案、聊天流与交付账本均已拆小并有定向回归；新增/增长由 `scripts/check_complexity.py` 的基线门禁在 CI 拦截。剩余 5 个 E 均为流式、进程或并发核心入口。详见 [`reviews/2026-11-25-complexity-second-pass.md`](reviews/2026-11-25-complexity-second-pass.md)。
+- **代码质量治理完成第四轮，D/E/F 清零**：全仓历史 D/E/F 从 **58（53 D / 5 E / 0 F）** 降到 **0**；五个 E 级入口与 51 个 D 级函数全部拆为单一职责函数或小类，`scripts/complexity-baseline.json` 已重建为空集，CI 对任何新增 D/E/F 直接失败。拆分保持校验顺序、错误文案与副作用顺序不变，并修复了 metrics 回合计数、共享 sub-loop owner、知识库 embedding 失败中断、历史消息 `id/feedback`、任务工具收尾等拆分边界问题。详见 [`reviews/2026-11-25-complexity-clearance.md`](reviews/2026-11-25-complexity-clearance.md)。
 - **代码向量库已升级但缺召回指标**：符号感知分块、增量索引、混合重排已落地；还没有人工标注的代码检索 recall@k 数据集。
 - **跨语言符号图只覆盖六种语言**：Python/TS/TSX/JS/Go/Rust 已接入 `spark symbols` 与 `find_symbol` 的 callers/callees/impact；Java/C/C++/C#/Ruby/PHP/Swift 仍缺失；解析是语法级、名字级，不代表完整 LSP。
 - **OpenCode 兼容层只覆盖静态资产**：配置、命令、Agent、权限映射已兼容；插件运行时、provider 注册表、MCP 自动导入明确不支持。
@@ -142,7 +142,7 @@ Spark 是 AI 编程应用，不是通用办公套件，也不是单一 IDE 插�
 | `ruff check src tests scripts` | 通过 |
 | `mypy src/spark --ignore-missing-imports` | 190 files，0 error |
 | `npm run build`（`web/`） | 通过；i18n 1119 keys、1069 calls |
-| 全量 pytest | 2006 passed、13 skipped、0 failed，14 warnings，1380.11s（2026-11-25 0.15.7 收口） |
+| 全量 pytest | 2006 passed、13 skipped、0 failed，14 warnings，1121.79s（2026-11-25 0.15.8 收口，见 `reviews/2026-11-25-complexity-clearance.md`） |
 | 四社区发布 | 掘金、CSDN 已发布待审核；知乎、博客园已公开（链接与状态见 `COMMUNITY_LAUNCH.md`） |
 
 未验证：真实模型 + **外部仓库 ≥20 回合**；并发工作区；外部工具副作用下的长跑恢复。
@@ -172,7 +172,7 @@ Spark 是 AI 编程应用，不是通用办公套件，也不是单一 IDE 插�
 | AUT-04 | 队列接入 Autopilot | ✅ 第一版 | `kind=autopilot` 由 Web 队列 worker 执行；失败重试、日配额、成本上限、暂停/恢复、崩溃续跑复用同一队列；`test_queue_autopilot.py` 覆盖真实链路 |
 | AUT-05 | 真实仓库长任务基准 | 📋 | ≥3 个外部仓库、≥20 回合任务；记录 pass@1、人工介入、恢复成功率、成本 |
 | IDX-02 | 跨语言符号图与调用链 | ✅ 第一版 | Python/TS/TSX/JS/Go/Rust；`spark symbols` 与 `find_symbol` 的 callers/callees/impact；跨文件调用边与置信度；`tests/test_symbol_graph.py` 4 项 |
-| CODE-02 | 重复代码与复杂度门禁 | 🟡 部分 | 重复代码高亮已合并；58 个历史 D/E/F 已列清单；CI 已接入 `scripts/check_complexity.py` 基线门禁，新增 D/E/F 或增长 >3 点即失败；vulture 6 条协议签名仍未纳入固定门禁 |
+| CODE-02 | 重复代码与复杂度门禁 | ✅ | 重复代码高亮已合并；58 个历史 D/E/F 已全部拆分，基线重建为空集；CI `scripts/check_complexity.py` 对任何新增 D/E/F 或增长 >3 点直接失败；vulture 6 条协议签名作为已知白名单保留 |
 | REL-01 | 发布门禁与四社区清单 | 🟡 | Release 资产、README 截图、四社区清单与发布记录已可查 |
 | UX-01 | 全链路过渡与异常提示 | 📋 | Web/手机关键路径有加载、空态、错误恢复；截图与交互测试 |
 | DS-01 | Windows Authenticode | ⏸ 需证书 | `signtool verify /pa` 通过 |

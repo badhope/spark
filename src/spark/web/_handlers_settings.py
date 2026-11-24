@@ -61,6 +61,20 @@ def _validation_error_message(exc: ValidationError) -> str:
     return f"{location}: {first.get('msg', 'invalid value')}"
 
 
+def _openai_key_error(
+    state, *, same_target: bool, api_key: str, api_key_env: str | None
+) -> str | None:
+    if not same_target and not api_key and not api_key_env:
+        return "api_key or api_key_env is required when changing provider or endpoint"
+    available = api_key or (state.cfg.provider.api_key if same_target else "") or ""
+    if not available and not api_key_env:
+        try:
+            available = require_api_key(state.cfg) or ""
+        except ConfigError:
+            return "api_key is required"
+    return None
+
+
 def _resolve_provider_fields(
     state,
     provider_name: str,
@@ -69,21 +83,7 @@ def _resolve_provider_fields(
     api_key: str,
     api_key_env: str | None = None,
 ) -> tuple[str, str | None]:
-    """校验 provider 字段，返回**要持久化的** api_key 与错误。
-
-    两条规则分开：
-
-    * 可用性校验——openai_compat 需要能拿到凭据（显式 key、同端点存储 key、
-      或绑定且存在的环境变量）。切换端点时存储 key 与旧 ``api_key_env`` 都只
-      属于旧端点，因此必须显式提供 ``api_key`` 或 ``api_key_env``，否则把凭据
-      发给新主机。
-    * 持久化——只写用户真正提供的东西。环境变量里的值仅用于校验，绝不落盘
-      成明文 ``api_key``（否则 ``spark config show`` 之外的文件里就多了一份
-      密钥副本）。
-
-    ``mock`` / ``ollama`` 不需要凭据，因此不做可用性校验——此前 ollama 分支
-    在"环境里恰好有 key"时报 400，恰好挡住了最不需要 key 的场景。
-    """
+    """校验 provider 字段，返回**要持久化的** api_key 与错误。"""
     if provider_name not in {"openai_compat", "ollama", "llama_cpp", "mock"}:
         return api_key, "provider must be openai_compat, ollama, llama_cpp or mock"
     if provider_name == "llama_cpp":
@@ -97,18 +97,12 @@ def _resolve_provider_fields(
     if provider_name != "openai_compat":
         # 同端点保留已存密钥（供 Ollama 兼容网关使用），跨端点清空。
         return (state.cfg.provider.api_key or "") if same_target else "", None
-    if not same_target and not api_key and not api_key_env:
-        return api_key, (
-            "api_key or api_key_env is required when changing provider or endpoint"
-        )
-    available = api_key or (state.cfg.provider.api_key if same_target else "") or ""
-    if not available and not api_key_env:
-        try:
-            available = require_api_key(state.cfg) or ""
-        except ConfigError:
-            return api_key, "api_key is required"
+    error = _openai_key_error(
+        state, same_target=same_target, api_key=api_key, api_key_env=api_key_env
+    )
+    if error is not None:
+        return api_key, error
     return api_key or (state.cfg.provider.api_key or "" if same_target else ""), None
-
 
 def _agent_validation_error(approval: str, sandbox_mode: str, effort: str) -> str | None:
     if approval not in {"suggest", "auto-edit", "full-auto", "plan-only", "approve-plan", "manual"}:
@@ -473,6 +467,23 @@ def _parse_hooks(
     return parsed_hooks, None
 
 
+def _agent_text(agent_in: dict, key: str, fallback: object) -> str:
+    return str(agent_in.get(key) or fallback).strip()
+
+
+def _agent_optional(agent_in: dict, key: str, fallback: object) -> str:
+    return str(agent_in.get(key, fallback) or "").strip()
+
+
+def _site_rules(state, agent_in: dict) -> list[str]:
+    raw = agent_in.get("browser_site_rules", state.cfg.agent.browser_site_rules)
+    if isinstance(raw, str):
+        raw = raw.splitlines()
+    if isinstance(raw, list):
+        return [str(line).strip() for line in raw if str(line).strip()]
+    return list(state.cfg.agent.browser_site_rules)
+
+
 def _extract_request_fields(state, body: dict) -> dict[str, Any]:
     """从请求体提取本次保存的全部标量字段（缺省回落当前配置）。"""
     provider_raw = body.get("provider")
@@ -480,68 +491,33 @@ def _extract_request_fields(state, body: dict) -> dict[str, Any]:
     memory_raw = body.get("memory")
     agent_raw = body.get("agent")
     agent_in: dict = agent_raw if isinstance(agent_raw, dict) else {}
-    raw_site_rules = agent_in.get(
-        "browser_site_rules", state.cfg.agent.browser_site_rules
-    )
-    if isinstance(raw_site_rules, str):
-        raw_site_rules = raw_site_rules.splitlines()
-    site_rules = (
-        [str(line).strip() for line in raw_site_rules if str(line).strip()]
-        if isinstance(raw_site_rules, list)
-        else list(state.cfg.agent.browser_site_rules)
-    )
     replay_in = body.get("replay")
     updater_in = body.get("updater")
     return {
         "provider_in": provider_in,
         "agent_in": agent_in,
         "base_url": str(
-            provider_in.get("base_url")
-            or body.get("base_url")
-            or state.cfg.provider.base_url
+            provider_in.get("base_url") or body.get("base_url") or state.cfg.provider.base_url
         ).strip(),
         "model": str(
-            provider_in.get("model")
-            or body.get("model")
-            or state.cfg.provider.model
+            provider_in.get("model") or body.get("model") or state.cfg.provider.model
         ).strip(),
-        "api_key": str(
-            provider_in.get("api_key") or body.get("api_key") or ""
-        ).strip(),
-        "provider_name": str(
-            provider_in.get("name") or state.cfg.provider.name
-        ).strip(),
+        "api_key": str(provider_in.get("api_key") or body.get("api_key") or "").strip(),
+        "provider_name": str(provider_in.get("name") or state.cfg.provider.name).strip(),
         "api_key_env": (
-            str(provider_in["api_key_env"]).strip()
-            if "api_key_env" in provider_in
-            else None
+            str(provider_in["api_key_env"]).strip() if "api_key_env" in provider_in else None
         ),
-        "approval": str(
-            agent_in.get("approval") or state.cfg.agent.approval
-        ).strip(),
-        "sandbox_mode": str(
-            agent_in.get("sandbox_mode") or state.cfg.agent.sandbox_mode
-        ).strip(),
-        "effort": str(
-            agent_in.get("effort") or state.cfg.agent.effort
-        ).strip(),
-        "tool_preset": str(
-            agent_in.get("tool_preset") or state.cfg.agent.tool_preset
-        ).strip(),
-        "browser_engine": str(
-            agent_in.get("browser_engine") or state.cfg.agent.browser_engine
-        ).strip(),
-        "browser_profile": str(
-            agent_in.get("browser_profile", state.cfg.agent.browser_profile) or ""
-        ).strip(),
-        "browser_cdp_endpoint": str(
-            agent_in.get("browser_cdp_endpoint", state.cfg.agent.browser_cdp_endpoint)
-            or ""
-        ).strip(),
+        "approval": _agent_text(agent_in, "approval", state.cfg.agent.approval),
+        "sandbox_mode": _agent_text(agent_in, "sandbox_mode", state.cfg.agent.sandbox_mode),
+        "effort": _agent_text(agent_in, "effort", state.cfg.agent.effort),
+        "tool_preset": _agent_text(agent_in, "tool_preset", state.cfg.agent.tool_preset),
+        "browser_engine": _agent_text(agent_in, "browser_engine", state.cfg.agent.browser_engine),
+        "browser_profile": _agent_optional(agent_in, "browser_profile", state.cfg.agent.browser_profile),
+        "browser_cdp_endpoint": _agent_optional(agent_in, "browser_cdp_endpoint", state.cfg.agent.browser_cdp_endpoint),
         "browser_headless": bool(
             agent_in.get("browser_headless", state.cfg.agent.browser_headless)
         ),
-        "browser_site_rules": site_rules,
+        "browser_site_rules": _site_rules(state, agent_in),
         "provider_resilience": (
             {
                 "api_keys": provider_in.get("api_keys"),
@@ -555,7 +531,6 @@ def _extract_request_fields(state, body: dict) -> dict[str, Any]:
         "replay_in": replay_in if isinstance(replay_in, dict) else {},
         "updater_in": updater_in if isinstance(updater_in, dict) else {},
     }
-
 
 def _validate_candidate(cfg: SparkConfig) -> str | None:
     """用 ``config.py`` 的模型规则整体校验候选配置（单一事实来源）。

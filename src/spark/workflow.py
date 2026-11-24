@@ -8,6 +8,7 @@ workflow fails before any model/tool call and can be checked in CI.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import re
 from collections import deque
 from contextlib import ExitStack, contextmanager
@@ -369,6 +370,39 @@ class WorkflowRun:
             "graph": self.graph(),
         }
 
+    @staticmethod
+    def _state_statuses(spec: WorkflowSpec, raw: object) -> dict[str, str]:
+        if not isinstance(raw, dict):
+            raise WorkflowError("statuses 必须是对象")
+        known = {step.id for step in spec.steps}
+        statuses = {step_id: str(raw.get(step_id, "pending")) for step_id in known}
+        allowed = {
+            "pending", "running", "completed", "failed", "blocked",
+            "cancelled", "paused", "budget-exceeded",
+        }
+        bad = [f"{name}={state}" for name, state in statuses.items() if state not in allowed]
+        if bad:
+            raise WorkflowError("未知状态: " + ", ".join(bad))
+        return statuses
+
+    @staticmethod
+    def _state_maps(data: dict[str, Any], known: set[str]) -> tuple[dict, dict, dict]:
+        outputs = data.get("outputs") or {}
+        errors = data.get("errors") or {}
+        if not isinstance(outputs, dict) or not isinstance(errors, dict):
+            raise WorkflowError("outputs/errors 必须是对象")
+        raw_costs = data.get("costs") or {}
+        if not isinstance(raw_costs, dict):
+            raise WorkflowError("costs 必须是对象")
+        return (
+            {str(k): str(v) for k, v in outputs.items() if k in known},
+            {str(k): str(v) for k, v in errors.items() if k in known},
+            {
+                str(k): float(v) for k, v in raw_costs.items()
+                if k in known and isinstance(v, (int, float))
+            },
+        )
+
     @classmethod
     def from_state(cls, spec: WorkflowSpec, data: dict[str, Any]) -> "WorkflowRun":
         if not isinstance(data, dict):
@@ -377,40 +411,17 @@ class WorkflowRun:
             raise WorkflowError(
                 f"状态属于 {data.get('workflow')!r}，不是 {spec.name!r}"
             )
-        raw_statuses = data.get("statuses") or {}
-        if not isinstance(raw_statuses, dict):
-            raise WorkflowError("statuses 必须是对象")
+        statuses = cls._state_statuses(spec, data.get("statuses") or {})
         known = {step.id for step in spec.steps}
-        statuses = {
-            step_id: str(raw_statuses.get(step_id, "pending"))
-            for step_id in known
-        }
-        allowed = {
-            "pending", "running", "completed", "failed", "blocked",
-            "cancelled", "paused", "budget-exceeded",
-        }
-        bad = [f"{name}={state}" for name, state in statuses.items() if state not in allowed]
-        if bad:
-            raise WorkflowError("未知状态: " + ", ".join(bad))
-        outputs = data.get("outputs") or {}
-        errors = data.get("errors") or {}
-        if not isinstance(outputs, dict) or not isinstance(errors, dict):
-            raise WorkflowError("outputs/errors 必须是对象")
-        raw_costs = data.get("costs") or {}
-        if not isinstance(raw_costs, dict):
-            raise WorkflowError("costs 必须是对象")
+        outputs, errors, costs = cls._state_maps(data, known)
         return cls(
             spec=spec,
             statuses=statuses,
-            outputs={str(k): str(v) for k, v in outputs.items() if k in known},
-            errors={str(k): str(v) for k, v in errors.items() if k in known},
-            costs={
-                str(k): float(v) for k, v in raw_costs.items()
-                if k in known and isinstance(v, (int, float))
-            },
+            outputs=outputs,
+            errors=errors,
+            costs=costs,
             events=list(data.get("events") or []),
         )
-
 
 def prepare_resume(run: WorkflowRun) -> WorkflowRun:
     """Reset unfinished/failed nodes to pending, keeping completed outputs."""
@@ -460,6 +471,174 @@ def rerun_steps(run: WorkflowRun, step_ids: set[str]) -> WorkflowRun:
     )
 
 
+class _WorkflowEngine:
+    """Own the scheduling loop and per-step retry state for one run."""
+
+    def __init__(
+        self,
+        spec: WorkflowSpec,
+        runner: Any,
+        *,
+        wf_span: Any,
+        run: WorkflowRun,
+        pending: set[str],
+        stop_after: set[str],
+        locks: WorkspaceLocks | None,
+        semaphore: Any,
+        cancel: Any,
+        cost_limit_usd: float,
+        cost_getter: Any,
+        on_event: Any,
+    ) -> None:
+        self.spec = spec
+        self.runner = runner
+        self.wf_span = wf_span
+        self.result = run
+        self.pending = pending
+        self.stop_after = stop_after
+        self.locks = locks
+        self.semaphore = semaphore
+        self.cancel = cancel
+        self.cost_limit_usd = cost_limit_usd
+        self.cost_getter = cost_getter
+        self.on_event = on_event
+
+    def emit(self, kind: str, step: StepSpec, **extra: Any) -> None:
+        payload = {"type": kind, "step": step.id, **extra}
+        self.result.events.append(payload)
+        if self.on_event is not None:
+            self.on_event(payload)
+
+    def cancelled(self) -> bool:
+        if self.cancel is None:
+            return False
+        return bool(self.cancel() if callable(self.cancel) else self.cancel.is_set())
+
+    def deps_outputs(self, step: StepSpec) -> dict[str, str]:
+        return {
+            name: self.result.outputs.get(name, "")
+            for name in step.needs
+            if name in self.result.outputs
+        }
+
+    async def _run_step_body(self, step: StepSpec) -> Any:
+        if step.writes and self.locks is not None:
+            with self.locks.acquire(step.writes):
+                result = self.runner(step, self.deps_outputs(step))
+                if inspect.isawaitable(result):
+                    result = await result
+                return result
+        result = self.runner(step, self.deps_outputs(step))
+        if inspect.isawaitable(result):
+            result = await result
+        return result
+
+    async def _execute(self, step: StepSpec) -> None:
+        from spark.otel import end_step_span, start_step_span
+
+        async with self.semaphore:
+            self.result.statuses[step.id] = "running"
+            self.emit("step_started", step)
+            step_span = start_step_span(self.wf_span, workflow=self.spec.name, step=step.id)
+            attempt = 0
+            while attempt < step.max_attempts:
+                attempt += 1
+                try:
+                    result = await self._run_step_body(step)
+                    self.result.outputs[step.id] = str(result or "")
+                    self.result.statuses[step.id] = "completed"
+                    self.emit("step_completed", step, attempt=attempt)
+                    end_step_span(
+                        step_span,
+                        status="completed",
+                        cost_usd=self.result.costs.get(step.id, 0.0),
+                    )
+                    self.pending.discard(step.id)
+                    return
+                except Exception as exc:  # noqa: BLE001 - reported as step failure
+                    self.result.errors[step.id] = str(exc)
+                    self.emit("step_failed", step, attempt=attempt, error=str(exc))
+            self.result.statuses[step.id] = "failed"
+            end_step_span(
+                step_span,
+                status="failed",
+                cost_usd=self.result.costs.get(step.id, 0.0),
+            )
+            self.pending.discard(step.id)
+
+    def _ready_steps(self) -> list[StepSpec]:
+        return [
+            step
+            for step in self.spec.steps
+            if step.id in self.pending
+            and all(self.result.statuses.get(dep) == "completed" for dep in step.needs)
+        ]
+
+    def _block_failed_dependents(self) -> None:
+        for step in self.spec.steps:
+            if step.id in self.pending and any(
+                self.result.statuses.get(dep) == "failed" for dep in step.needs
+            ):
+                self.result.statuses[step.id] = "blocked"
+                self.pending.discard(step.id)
+
+    def _budget_break(self) -> bool:
+        if self.cost_limit_usd <= 0:
+            return False
+        spent = float(self.cost_getter()) if callable(self.cost_getter) else self.result.cost_usd
+        if spent < float(self.cost_limit_usd):
+            return False
+        for name in sorted(self.pending):
+            self.result.statuses[name] = "budget-exceeded"
+        self.emit(
+            "run_budget_exceeded",
+            self.spec.steps[0],
+            spent=round(spent, 6),
+            limit=round(float(self.cost_limit_usd), 6),
+        )
+        return True
+
+    def _pause_break(self) -> bool:
+        hit = [step for step in self.spec.steps if step.id in self.stop_after]
+        if not hit or not self.pending or not any(
+            self.result.statuses.get(step.id) == "completed" for step in hit
+        ):
+            return False
+        for name in sorted(self.pending):
+            self.result.statuses[name] = "paused"
+        self.emit("run_paused", hit[0], pending=len(self.pending))
+        return True
+
+    def _cancel_break(self) -> bool:
+        if not self.cancelled():
+            return False
+        for name in sorted(self.pending):
+            self.result.statuses[name] = "cancelled"
+        self.emit("run_cancelled", self.spec.steps[0], pending=len(self.pending))
+        return True
+
+    async def execute(self) -> WorkflowRun:
+        import asyncio
+
+        from spark.otel import end_workflow_span
+
+        while self.pending:
+            if self._cancel_break():
+                break
+            ready = self._ready_steps()
+            if not ready:
+                for name in sorted(self.pending):
+                    self.result.statuses[name] = "blocked"
+                break
+            await asyncio.gather(*(self._execute(step) for step in ready))
+            # A failed node must not leave its dependents runnable.
+            self._block_failed_dependents()
+            if self._budget_break() or self._pause_break():
+                break
+        end_workflow_span(self.wf_span, statuses=self.result.statuses, cost_usd=self.result.cost_usd)
+        return self.result
+
+
 async def run_workflow(
     spec: WorkflowSpec,
     runner: Any,
@@ -482,10 +661,9 @@ async def run_workflow(
     AgentLoop, so it can be tested with fakes and reused by any surface.
     """
     import asyncio
-    import inspect
 
     workers = max(1, min(int(max_parallel), 8))
-    from spark.otel import end_step_span, end_workflow_span, start_step_span, start_workflow_span
+    from spark.otel import start_workflow_span
 
     wf_span = start_workflow_span(
         name=spec.name, version=str(spec.version), steps=len(spec.steps), max_parallel=workers
@@ -500,107 +678,21 @@ async def run_workflow(
     pending = {
         step.id for step in spec.steps if run.statuses.get(step.id) != "completed"
     }
-    stop_after = set(stop_after or ())
-    locks = WorkspaceLocks(workdir) if workdir is not None else None
-    semaphore = asyncio.Semaphore(workers)
-
-    def emit(kind: str, step: StepSpec, **extra: Any) -> None:
-        payload = {"type": kind, "step": step.id, **extra}
-        run.events.append(payload)
-        if on_event is not None:
-            on_event(payload)
-
-    def cancelled() -> bool:
-        if cancel is None:
-            return False
-        return bool(cancel() if callable(cancel) else cancel.is_set())
-
-    def deps_outputs(step: StepSpec) -> dict[str, str]:
-        return {
-            name: run.outputs.get(name, "")
-            for name in step.needs
-            if name in run.outputs
-        }
-
-    async def execute(step: StepSpec) -> None:
-        async with semaphore:
-            run.statuses[step.id] = "running"
-            emit("step_started", step)
-            step_span = start_step_span(wf_span, workflow=spec.name, step=step.id)
-            attempt = 0
-            while attempt < step.max_attempts:
-                attempt += 1
-                try:
-                    if step.writes and locks is not None:
-                        with locks.acquire(step.writes):
-                            result = runner(step, deps_outputs(step))
-                            if inspect.isawaitable(result):
-                                result = await result
-                    else:
-                        result = runner(step, deps_outputs(step))
-                        if inspect.isawaitable(result):
-                            result = await result
-                    run.outputs[step.id] = str(result or "")
-                    run.statuses[step.id] = "completed"
-                    emit("step_completed", step, attempt=attempt)
-                    end_step_span(step_span, status="completed", cost_usd=run.costs.get(step.id, 0.0))
-                    pending.discard(step.id)
-                    return
-                except Exception as exc:  # noqa: BLE001 - reported as step failure
-                    run.errors[step.id] = str(exc)
-                    emit("step_failed", step, attempt=attempt, error=str(exc))
-            run.statuses[step.id] = "failed"
-            end_step_span(step_span, status="failed", cost_usd=run.costs.get(step.id, 0.0))
-            pending.discard(step.id)
-
-    while pending:
-        if cancelled():
-            for name in sorted(pending):
-                run.statuses[name] = "cancelled"
-            emit("run_cancelled", spec.steps[0], pending=len(pending))
-            break
-        ready = [
-            step
-            for step in spec.steps
-            if step.id in pending
-            and all(run.statuses.get(dep) == "completed" for dep in step.needs)
-        ]
-        if not ready:
-            for name in sorted(pending):
-                run.statuses[name] = "blocked"
-            break
-        await asyncio.gather(*(execute(step) for step in ready))
-        # A failed node must not leave its dependents runnable.
-        for step in spec.steps:
-            if step.id in pending and any(
-                run.statuses.get(dep) == "failed" for dep in step.needs
-            ):
-                run.statuses[step.id] = "blocked"
-                pending.discard(step.id)
-        if cost_limit_usd > 0:
-            spent = (
-                float(cost_getter())
-                if callable(cost_getter)
-                else run.cost_usd
-            )
-            if spent >= float(cost_limit_usd):
-                for name in sorted(pending):
-                    run.statuses[name] = "budget-exceeded"
-                emit(
-                    "run_budget_exceeded",
-                    spec.steps[0],
-                    spent=round(spent, 6),
-                    limit=round(float(cost_limit_usd), 6),
-                )
-                break
-        hit = [step for step in spec.steps if step.id in stop_after]
-        if hit and pending and any(run.statuses.get(step.id) == "completed" for step in hit):
-            for name in sorted(pending):
-                run.statuses[name] = "paused"
-            emit("run_paused", hit[0], pending=len(pending))
-            break
-    end_workflow_span(wf_span, statuses=run.statuses, cost_usd=run.cost_usd)
-    return run
+    engine = _WorkflowEngine(
+        spec,
+        runner,
+        wf_span=wf_span,
+        run=run,
+        pending=pending,
+        stop_after=set(stop_after or ()),
+        locks=WorkspaceLocks(workdir) if workdir is not None else None,
+        semaphore=asyncio.Semaphore(workers),
+        cancel=cancel,
+        cost_limit_usd=cost_limit_usd,
+        cost_getter=cost_getter,
+        on_event=on_event,
+    )
+    return await engine.execute()
 
 
 # ---------------------------------------------------------------------------

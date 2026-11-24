@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spark-agent"
-version = "0.15.7"
+version = "0.15.8"
 description = "Browser-native, cross-platform, open-source AI coding application with auditable guardrails"
 readme = "README.md"
 license = { text = "MIT" }

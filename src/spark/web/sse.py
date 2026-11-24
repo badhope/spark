@@ -29,6 +29,11 @@ _SSE_STOP = object()
 
 
 class _SSESession:
+    _pending_text: list[str]
+    _pending_chars: int
+    _pending_since: float | None
+    _last_write: float
+
     def __init__(
         self,
         wfile,
@@ -156,23 +161,38 @@ class _SSESession:
         except (OSError, ValueError):
             return True
 
+    def _flush_pending(self) -> None:
+        if not self._pending_text:
+            return
+        text = sanitize("".join(self._pending_text), self._secrets)
+        self._write_payload({"type": "text_delta", "text": text})
+        self._pending_text.clear()
+        self._pending_chars = 0
+        self._pending_since = None
+        self._last_write = time.monotonic()
+
+    def _append_text(self, value: str) -> None:
+        while value:
+            if not self._pending_text:
+                self._pending_since = time.monotonic()
+            room = self._max_text_chars - self._pending_chars
+            part = value[:room]
+            self._pending_text.append(part)
+            self._pending_chars += len(part)
+            value = value[len(part):]
+            if self._pending_chars >= self._max_text_chars:
+                self._flush_pending()
+            elif (
+                self._pending_since is not None
+                and time.monotonic() - self._pending_since >= self._flush_interval
+            ):
+                self._flush_pending()
+
     def _run(self) -> None:
-        pending_text: list[str] = []
-        pending_chars = 0
-        pending_since: float | None = None
-        last_write = time.monotonic()
-
-        def flush_pending() -> None:
-            nonlocal pending_chars, pending_since, last_write
-            if not pending_text:
-                return
-            text = sanitize("".join(pending_text), self._secrets)
-            self._write_payload({"type": "text_delta", "text": text})
-            pending_text.clear()
-            pending_chars = 0
-            pending_since = None
-            last_write = time.monotonic()
-
+        self._pending_text = []
+        self._pending_chars = 0
+        self._pending_since = None
+        self._last_write = time.monotonic()
         try:
             while True:
                 if self._stop.is_set():
@@ -182,59 +202,44 @@ class _SSESession:
                     return
                 try:
                     item = self._queue.get(
-                        timeout=self._next_timeout(pending_since, last_write)
+                        timeout=self._next_timeout(self._pending_since, self._last_write)
                     )
                 except queue.Empty:
                     now = time.monotonic()
                     if (
-                        pending_text
-                        and pending_since is not None
-                        and now - pending_since >= self._flush_interval
+                        self._pending_text
+                        and self._pending_since is not None
+                        and now - self._pending_since >= self._flush_interval
                     ):
-                        flush_pending()
-                    if time.monotonic() - last_write >= self._heartbeat_interval:
+                        self._flush_pending()
+                    if time.monotonic() - self._last_write >= self._heartbeat_interval:
                         self._write(b": ping\n\n")
-                        last_write = time.monotonic()
+                        self._last_write = time.monotonic()
                     continue
                 if item is _SSE_STOP:
                     return
                 if item is _SSE_DONE:
-                    flush_pending()
+                    self._flush_pending()
                     self._write_payload({"type": "done"})
                     return
                 if isinstance(item, bytes):
-                    flush_pending()
+                    self._flush_pending()
                     self._write(item)
-                    last_write = time.monotonic()
+                    self._last_write = time.monotonic()
                     continue
                 if isinstance(item, dict):
-                    flush_pending()
+                    self._flush_pending()
                     self._write_payload(item)
-                    last_write = time.monotonic()
+                    self._last_write = time.monotonic()
                     continue
                 event_type = getattr(item, "type", "")
                 text = getattr(item, "text", None)
                 if event_type == "text_delta" and text:
-                    value = str(text)
-                    while value:
-                        if not pending_text:
-                            pending_since = time.monotonic()
-                        room = self._max_text_chars - pending_chars
-                        part = value[:room]
-                        pending_text.append(part)
-                        pending_chars += len(part)
-                        value = value[len(part) :]
-                        if pending_chars >= self._max_text_chars:
-                            flush_pending()
-                        elif (
-                            pending_since is not None
-                            and time.monotonic() - pending_since >= self._flush_interval
-                        ):
-                            flush_pending()
+                    self._append_text(str(text))
                     continue
-                flush_pending()
+                self._flush_pending()
                 self._write_payload(_event_payload(item))
-                last_write = time.monotonic()
+                self._last_write = time.monotonic()
         except SSE_DISCONNECT_ERRORS:
             self._disconnect()
         except (TypeError, ValueError, UnicodeError):

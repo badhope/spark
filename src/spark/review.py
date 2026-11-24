@@ -228,11 +228,7 @@ def _extract_json_object(raw: str) -> dict | None:
     return None
 
 
-def parse_review(text: str) -> ReviewResult:
-    """从模型输出提取 findings JSON；失败降级为单条 info finding。"""
-    raw = (text or "").strip()
-    result = ReviewResult(raw=raw)
-    data: dict | None = None
+def _review_json(raw: str) -> dict | None:
     if "```" in raw:
         for chunk in raw.split("```"):
             chunk = chunk.strip()
@@ -241,41 +237,47 @@ def parse_review(text: str) -> ReviewResult:
             if chunk.lstrip().startswith("{"):
                 data = _extract_json_object(chunk)
                 if data is not None:
-                    break
-    if data is None:
-        data = _extract_json_object(raw)
+                    return data
+    return _extract_json_object(raw)
+
+
+def _review_line(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        digits = value.strip()
+        return int(digits) if digits.lstrip("-").isdigit() else None
+    return value if isinstance(value, int) else None
+
+
+def _review_finding(item: dict) -> ReviewFinding:
+    severity = str(item.get("severity") or "info").lower()
+    if severity not in {"high", "medium", "low", "info"}:
+        severity = "info"
+    return ReviewFinding(
+        severity=severity,
+        file=str(item.get("file") or ""),
+        line=_review_line(item.get("line")),
+        comment=str(item.get("comment") or "").strip(),
+    )
+
+
+def parse_review(text: str) -> ReviewResult:
+    """从模型输出提取 findings JSON；失败降级为单条 info finding。"""
+    raw = (text or "").strip()
+    result = ReviewResult(raw=raw)
+    data = _review_json(raw)
     if data is None:
         result.summary = raw[:2000] or "（模型没有返回可解析的审查结果）"
         result.findings = [ReviewFinding(severity="info", comment=result.summary)]
         return result
     result.summary = str(data.get("summary") or "").strip()
     for item in data.get("findings") or []:
-        if not isinstance(item, dict):
-            continue
-        severity = str(item.get("severity") or "info").lower()
-        if severity not in {"high", "medium", "low", "info"}:
-            severity = "info"
-        line = item.get("line")
-        if isinstance(line, bool):
-            line = None
-        elif isinstance(line, str):
-            # 真实模型常把行号输出成字符串（"line": "42"），此前被静默丢弃。
-            digits = line.strip()
-            line = int(digits) if digits.lstrip("-").isdigit() else None
-        elif not isinstance(line, int):
-            line = None
-        result.findings.append(
-            ReviewFinding(
-                severity=severity,
-                file=str(item.get("file") or ""),
-                line=line,
-                comment=str(item.get("comment") or "").strip(),
-            )
-        )
+        if isinstance(item, dict):
+            result.findings.append(_review_finding(item))
     if not result.summary and not result.findings:
         result.summary = raw[:2000]
     return result
-
 
 ORDER = {"high": 0, "medium": 1, "low": 2, "info": 3}
 

@@ -407,27 +407,15 @@ class CodeIndex:
         n = max(1, len(chunks))
         avg = sum(len(c.get("tokens") or []) for c in chunks) / n
         df: dict[str, int] = {}
-        for c in chunks:
-            for token in set(c.get("tokens") or []):
+        for chunk in chunks:
+            for token in set(chunk.get("tokens") or []):
                 df[token] = df.get(token, 0) + 1
-        k1, b = 1.2, 0.75
         scored: list[tuple[float, dict]] = []
-        for c in chunks:
-            toks = c.get("tokens") or []
-            counts: dict[str, int] = {}
-            for token in toks:
-                counts[token] = counts.get(token, 0) + 1
-            score = 0.0
-            for token in q_set:
-                tf = counts.get(token, 0)
-                if not tf:
-                    continue
-                idf = math.log(1 + (n - df.get(token, 0) + 0.5) / (df.get(token, 0) + 0.5))
-                denom = tf + k1 * (1 - b + b * len(toks) / max(1.0, avg))
-                score += idf * (tf * (k1 + 1)) / denom
-            text_low = str(c.get("text") or "").lower()
-            path_low = str(c.get("path") or "").lower()
-            symbol_low = str(c.get("symbol") or "").lower()
+        for chunk in chunks:
+            text_low = str(chunk.get("text") or "").lower()
+            path_low = str(chunk.get("path") or "").lower()
+            symbol_low = str(chunk.get("symbol") or "").lower()
+            score = self._bm25_score(chunk, q_set, df, n, avg)
             if q_low in text_low:
                 score += 2.5
             if q_low in path_low:
@@ -437,9 +425,24 @@ class CodeIndex:
             elif q_low and q_low in symbol_low:
                 score += 2.0
             if score > 0:
-                scored.append((score, c))
+                scored.append((score, chunk))
         return scored
 
+    def _bm25_score(self, chunk: dict, q_set: set[str], df: dict[str, int], n: int, avg: float) -> float:
+        toks = chunk.get("tokens") or []
+        counts: dict[str, int] = {}
+        for token in toks:
+            counts[token] = counts.get(token, 0) + 1
+        k1, b = 1.2, 0.75
+        score = 0.0
+        for token in q_set:
+            tf = counts.get(token, 0)
+            if not tf:
+                continue
+            idf = math.log(1 + (n - df.get(token, 0) + 0.5) / (df.get(token, 0) + 0.5))
+            denom = tf + k1 * (1 - b + b * len(toks) / max(1.0, avg))
+            score += idf * (tf * (k1 + 1)) / denom
+        return score
     def _query_vector(self, query: str) -> list[float]:
         vectors = self._load_vectors()
         if not self.embedder or not vectors:

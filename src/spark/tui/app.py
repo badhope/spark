@@ -539,52 +539,84 @@ class SparkApp(App):
                 self._flush_text(chat)
             return
         self._flush_text(chat)
-        if event.type == "reasoning_delta" and event.text:
-            chat.write(f"[dim italic]思考: {rich_escape(event.text)}[/dim italic]")
-        elif event.type == "tool_start" and event.tool_call:
-            chat.write(f"[bold yellow]▶ {rich_escape(event.tool_call.name)}[/bold yellow] ...")
-        elif event.type == "tool_end" and event.tool_call and event.result:
-            payload = str(event.result.payload)
-            if len(payload) > 500:
-                payload = payload[:500] + "..."
-            status = "ok" if event.result.ok else "fail"
-            color = "green" if event.result.ok else "red"
-            chat.write(
-                f"[{color}]◀ {rich_escape(event.tool_call.name)} "
-                f"{rich_escape('[' + status + ']')}[/{color}] {rich_escape(payload)}"
-            )
-        elif event.type == "plan" and event.data is not None:
-            steps = event.data.get("steps") or []
-            if steps:
-                chat.write("[bold]plan:[/bold] " + " | ".join(
-                    str(s.get("title", "")) for s in steps
-                ))
-            else:
-                chat.write("[dim]plan: (已清空)[/dim]")
-        elif event.type == "context" and event.data and event.data.get("usage"):
-            usage = event.data["usage"]
-            chat.write(
-                f"[dim]context: {usage.get('used')}/{usage.get('limit')} tokens[/dim]"
-            )
-        elif (
-            event.type == "compaction"
-            and event.data
-            and event.data.get("before_tokens")
-        ):
-            chat.write(
-                f"[dim]compacted: {event.data['before_tokens']} -> "
-                f"{event.data.get('after_tokens')} tokens[/dim]"
-            )
+        if event.type == "reasoning_delta":
+            self._render_reasoning(event, chat)
+        elif event.type == "tool_start":
+            self._render_tool_start(event, chat)
+        elif event.type == "tool_end":
+            self._render_tool_end(event, chat)
+        elif event.type == "plan":
+            self._render_plan(event, chat)
+        elif event.type == "context":
+            self._render_context(event, chat)
+        elif event.type == "compaction":
+            self._render_compaction(event, chat)
         elif event.type == "turn_error":
-            text = event.text or "未知错误"
-            hint = error_hint(text)
-            chat.write("[red]━" * 30 + "[/red]")
-            chat.write(f"[red bold]✗ 错误[/red bold] {rich_escape(text)}")
-            if hint:
-                chat.write(f"[yellow]→ {hint}[/yellow]")
-            chat.write("[red]━" * 30 + "[/red]")
-        elif event.type == "turn_end" and event.text:
-            pass
+            self._render_error(event, chat)
+
+    def _render_reasoning(self, event: TurnEvent, chat: RichLog) -> None:
+        if not event.text:
+            return
+        chat.write(f"[dim italic]思考: {rich_escape(event.text or '')}[/dim italic]")
+
+    def _render_tool_start(self, event: TurnEvent, chat: RichLog) -> None:
+        call = event.tool_call
+        if call is None:
+            return
+        chat.write(f"[bold yellow]▶ {rich_escape(call.name)}[/bold yellow] ...")
+
+    def _render_tool_end(self, event: TurnEvent, chat: RichLog) -> None:
+        call = event.tool_call
+        result = event.result
+        if call is None or result is None:
+            return
+        payload = str(result.payload)
+        if len(payload) > 500:
+            payload = payload[:500] + "..."
+        status = "ok" if result.ok else "fail"
+        color = "green" if result.ok else "red"
+        chat.write(
+            f"[{color}]◀ {rich_escape(call.name)} "
+            f"{rich_escape('[' + status + ']')}[/{color}] {rich_escape(payload)}"
+        )
+
+    def _render_plan(self, event: TurnEvent, chat: RichLog) -> None:
+        if event.data is None:
+            return
+        steps = event.data.get("steps") or []
+        if steps:
+            chat.write("[bold]plan:[/bold] " + " | ".join(
+                str(s.get("title", "")) for s in steps
+            ))
+        else:
+            chat.write("[dim]plan: (已清空)[/dim]")
+
+    def _render_context(self, event: TurnEvent, chat: RichLog) -> None:
+        data = event.data or {}
+        usage = data.get("usage")
+        if not usage:
+            return
+        chat.write(
+            f"[dim]context: {usage.get('used')}/{usage.get('limit')} tokens[/dim]"
+        )
+
+    def _render_compaction(self, event: TurnEvent, chat: RichLog) -> None:
+        data = event.data or {}
+        if not data.get("before_tokens"):
+            return
+        chat.write(
+            f"[dim]compacted: {data['before_tokens']} -> "
+            f"{data.get('after_tokens')} tokens[/dim]"
+        )
+
+    def _render_error(self, event: TurnEvent, chat: RichLog) -> None:
+        text = event.text or "未知错误"
+        hint = error_hint(text)
+        chat.write("[red]━" * 30 + "[/red]")
+        chat.write(f"[red bold]✗ 错误[/red bold] {rich_escape(text)}")
+        if hint:
+            chat.write(f"[yellow]→ {hint}[/yellow]")
+        chat.write("[red]━" * 30 + "[/red]")
 
     def _update_status(self, spinner_frame: str = "") -> None:
         try:

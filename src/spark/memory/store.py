@@ -301,23 +301,16 @@ class MemoryStore:
         docs = list(data.get("documents") or [])
         return ids, metas, embs, docs
 
-    def _restore_snapshot(
+    def _snapshot_map(
         self, snapshot: tuple[list[str], list[dict], list[list[float]], list[str]]
-    ) -> None:
-        """Copy-on-write 风格的回滚：先 diff 快照与当前集合，再按 添加 → 更新 → 删除
-        三步退化改动，确保在快照中任意记录未恢复前不删除旧数据。
-
-        旧实现 (先 delete all 再 add) 在 add 失败时会清空集合；新实现永远
-        先写入新增部分，确认原集合数据完整后才清除多余数据。
-        """
+    ) -> dict[str, tuple[str, dict, list[float] | None]]:
         ids, metas, embs, docs = snapshot
-        # 构建快照 lookup
-        snap_map: dict[str, tuple[str, dict, list[float] | None]] = {
+        return {
             sid: (doc, meta, emb)
             for sid, doc, meta, emb in zip(ids, docs, metas, embs, strict=True)
         }
 
-        # 当前集合状态（事务开始后可能已被 add/update/delete 污染）
+    def _current_map(self) -> tuple[list[str], dict[str, tuple[str, dict, list[float] | None]]]:
         cur = self._collection.get(include=["metadatas", "embeddings", "documents"])
         cur_ids = cur.get("ids", [])
         cur_docs = cur.get("documents") or []
@@ -325,17 +318,23 @@ class MemoryStore:
         cur_embs_raw = cur.get("embeddings")
         cur_map: dict[str, tuple[str, dict, list[float] | None]] = {}
         for i, sid in enumerate(cur_ids):
-            d = cur_docs[i] if i < len(cur_docs) else ""
-            m = cur_metas[i] if i < len(cur_metas) else {}
-            e = None
+            doc = cur_docs[i] if i < len(cur_docs) else ""
+            meta = cur_metas[i] if i < len(cur_metas) else {}
+            emb = None
             if cur_embs_raw is not None and i < len(cur_embs_raw) and cur_embs_raw[i] is not None:
-                e = self._numpy_to_list(cur_embs_raw[i])
-            cur_map[sid] = (d, m, e)
+                emb = self._numpy_to_list(cur_embs_raw[i])
+            cur_map[sid] = (doc, meta, emb)
+        return cur_ids, cur_map
 
-        # 三步退化：先补缺（安全），再纠偏（安全），最后删冗余（确认快照数据已全部恢复）
+    def _apply_restore(
+        self,
+        ids: list[str],
+        snap_map: dict[str, tuple[str, dict, list[float] | None]],
+        cur_ids: list[str],
+        cur_map: dict[str, tuple[str, dict, list[float] | None]],
+    ) -> None:
         snap_set = set(snap_map)
         cur_set = set(cur_map)
-
         # 1) ADD: 快照有、当前没有 → 先追加到原集合
         missing = [sid for sid in ids if sid not in cur_set]
         if missing:
@@ -345,7 +344,6 @@ class MemoryStore:
                 metadatas=[snap_map[sid][1] for sid in missing],
                 embeddings=[snap_map[sid][2] for sid in missing],
             )
-
         # 2) UPDATE: 两边都有但内容有差异 → 用快照值覆盖
         common = [sid for sid in ids if sid in cur_set]
         changed = [sid for sid in common if cur_map[sid] != snap_map[sid]]
@@ -356,12 +354,21 @@ class MemoryStore:
                 metadatas=[snap_map[sid][1] for sid in changed],
                 embeddings=[snap_map[sid][2] for sid in changed],
             )
-
         # 3) DELETE: 当前有、快照没有（事务中途新增的冗余数据）
         extra = [sid for sid in cur_ids if sid not in snap_set]
         if extra:
             self._collection.delete(ids=extra)
 
+    def _restore_snapshot(
+        self, snapshot: tuple[list[str], list[dict], list[list[float]], list[str]]
+    ) -> None:
+        """Copy-on-write 风格的回滚：先 diff 快照与当前集合，再按 添加 → 更新 → 删除
+        三步退化改动，确保在快照中任意记录未恢复前不删除旧数据。
+        """
+        ids, _metas, _embs, _docs = snapshot
+        snap_map = self._snapshot_map(snapshot)
+        cur_ids, cur_map = self._current_map()
+        self._apply_restore(ids, snap_map, cur_ids, cur_map)
 
     # ------------------------------------------------------------------
     # Read helpers
@@ -763,6 +770,79 @@ class MemoryStore:
             scores[row.id] = scores.get(row.id, 0.0) + 1.0 / (k + rank + 1)
         return scores
 
+    def _query_tokens(self, query: str) -> list[str]:
+        q_tokens: list[str] = []
+        seen: set[str] = set()
+        for token in tokenize(query):
+            if token not in seen:
+                seen.add(token)
+                q_tokens.append(token)
+        return q_tokens
+
+    def _search_rows(
+        self, source_session: str | None, exclude_session: str | None
+    ) -> list[MemoryRow]:
+        rows: list[MemoryRow] = []
+        for row in self.all_active():
+            if source_session is not None and row.source_session not in (None, source_session):
+                continue
+            if exclude_session is not None and row.source_session == exclude_session:
+                continue
+            rows.append(row)
+        return rows
+
+    def _idf(self, rows: list[MemoryRow], q_tokens: list[str]) -> dict[str, float]:
+        if not q_tokens:
+            return {}
+        doc_freq: dict[str, int] = {}
+        for row in rows:
+            rk = set((row.keywords or "").split())
+            for token in q_tokens:
+                if token in rk:
+                    doc_freq[token] = doc_freq.get(token, 0) + 1
+        n_docs = len(rows)
+        return {
+            token: math.log(1.0 + (n_docs - df + 0.5) / (df + 0.5))
+            for token, df in doc_freq.items()
+        }
+
+    def _rrf_search(
+        self,
+        rows: list[MemoryRow],
+        q_tokens: list[str],
+        idf: dict[str, float],
+        query_embedding: list[float],
+        top_k: int,
+    ) -> list[tuple[MemoryRow, float]]:
+        vec_rank = sorted(
+            rows,
+            key=lambda r: cosine(r.embedding or [0.0] * len(query_embedding), query_embedding)
+            if r.embedding and len(r.embedding) == len(query_embedding)
+            else 0.0,
+            reverse=True,
+        )
+        kw_rank = sorted(rows, key=lambda r: self._bm25(r, q_tokens, idf), reverse=True)
+        merged = self._rrf_merge(vec_rank, kw_rank)
+        ranked = sorted(rows, key=lambda r: merged.get(r.id, 0.0), reverse=True)
+        ranked = [r for r in ranked if merged.get(r.id, 0.0) > 0.0]
+        return [(r, merged[r.id]) for r in ranked[:top_k]]
+
+    def _linear_search(
+        self,
+        rows: list[MemoryRow],
+        q_tokens: list[str],
+        query_embedding: list[float] | None,
+        min_score: float,
+        top_k: int,
+    ) -> list[tuple[MemoryRow, float]]:
+        results: list[tuple[MemoryRow, float]] = []
+        for row in rows:
+            score = self.score(row, q_tokens, query_embedding)
+            if score > min_score:
+                results.append((row, score))
+        results.sort(key=lambda pair: pair[1], reverse=True)
+        return results[:top_k]
+
     def search(
         self,
         query: str,
@@ -774,83 +854,19 @@ class MemoryStore:
         exclude_session: str | None = None,
         hybrid: bool = True,
     ) -> list[tuple[MemoryRow, float]]:
-        """Hybrid keyword + vector search over active memories.
-
-        双路径均为一等公民，按 embedding 可用性分流（embedding 默认关闭，
-        关键词路径是多数部署的默认主路径）：
-
-        * 有 query_embedding 且 ``hybrid=True``（默认）→ **RRF 融合**：向量
-          余弦排序与 BM25 词法排序各自独立，再按 reciprocal rank 融合——
-          对中文同义/近义表达与精确术语命中都不漏检。
-        * 无 embedding 或 ``hybrid=False`` → 线性加权打分（kw 0.75 / recency
-          0.15 / importance 0.10，有向量时叠加余弦项），作为关键词-only
-          模式的排序基准。
-        """
+        """Hybrid keyword + vector search over active memories."""
         top_k = top_k or self.cfg.top_k
-        q_tokens: list[str] = []
-        seen: set[str] = set()
-        for t in tokenize(query):
-            if t not in seen:
-                seen.add(t)
-                q_tokens.append(t)
-        rows: list[MemoryRow] = []
-        for row in self.all_active():
-            if source_session is not None and row.source_session not in (
-                None,
-                source_session,
-            ):
-                continue
-            if exclude_session is not None and row.source_session == exclude_session:
-                continue
-            rows.append(row)
+        q_tokens = self._query_tokens(query)
+        rows = self._search_rows(source_session, exclude_session)
         if not rows:
             return []
-
-        # 词法 IDF（基于当前集合）
-        if q_tokens:
-            doc_freq: dict[str, int] = {}
-            for row in rows:
-                rk = set((row.keywords or "").split())
-                for t in q_tokens:
-                    if t in rk:
-                        doc_freq[t] = doc_freq.get(t, 0) + 1
-            n_docs = len(rows)
-            idf = {
-                t: math.log(1.0 + (n_docs - df + 0.5) / (df + 0.5))
-                for t, df in doc_freq.items()
-            }
-        else:
-            idf = {}
-        self._avg_kw_len = sum(len((r.keywords or "").split()) for r in rows) / max(1, len(rows))
-
+        idf = self._idf(rows, q_tokens)
+        self._avg_kw_len = sum(len((r.keywords or "").split()) for r in rows) / max(
+            1, len(rows)
+        )
         if hybrid and query_embedding is not None:
-            # RRF：双路独立排序
-            vec_rank = sorted(
-                rows,
-                key=lambda r: cosine(r.embedding or [0.0] * len(query_embedding), query_embedding)
-                if r.embedding and len(r.embedding) == len(query_embedding)
-                else 0.0,
-                reverse=True,
-            )
-            kw_rank = sorted(
-                rows,
-                key=lambda r: self._bm25(r, q_tokens, idf),
-                reverse=True,
-            )
-            merged = self._rrf_merge(vec_rank, kw_rank)
-            ranked = sorted(rows, key=lambda r: merged.get(r.id, 0.0), reverse=True)
-            ranked = [r for r in ranked if merged.get(r.id, 0.0) > 0.0]
-            return [(r, merged[r.id]) for r in ranked[:top_k]]
-
-        # 旧线性加权路径（hybrid=False / 无向量）
-        results: list[tuple[MemoryRow, float]] = []
-        for row in rows:
-            s = self.score(row, q_tokens, query_embedding)
-            if s > min_score:
-                results.append((row, s))
-        results.sort(key=lambda pair: pair[1], reverse=True)
-        return results[:top_k]
-
+            return self._rrf_search(rows, q_tokens, idf, query_embedding, top_k)
+        return self._linear_search(rows, q_tokens, query_embedding, min_score, top_k)
     def enforce_capacity(self, *, stale_days: float = 180.0) -> int:
         archived = 0
         with self.transaction():

@@ -263,17 +263,77 @@ def _handle_sessions_fork(handler: HandlerBase, body: dict) -> None:
     )
 
 
-def _history_messages(state) -> list[dict]:
-    """Extract serializable message list from current loop history.
+def _user_entry(msg, row_id: int | None, feedback: dict) -> dict:
+    display_content, attachment_names = split_attachments(msg.content)
+    entry: dict = {"role": "user", "content": display_content}
+    if attachment_names:
+        entry["attachments"] = attachment_names
+    if row_id is not None:
+        entry["id"] = row_id
+        if feedback.get(row_id):
+            entry["feedback"] = feedback[row_id]
+    if msg.images:
+        entry["images"] = [f"data:{i.media_type};base64,{i.data}" for i in msg.images]
+    return entry
 
-    Each row carries its database id when in-memory history and stored rows are
-    index aligned, so the UI can delete or rewind from an exact message instead
-    of guessing an index. Ids are omitted (never fabricated) when compaction or
-    a race left the two lists out of sync.
-    """
-    messages: list[dict] = []
+
+def _tool_entry(msg, row_id: int | None) -> dict:
+    entry = {
+        "role": "tool",
+        "name": msg.name or "",
+        "content": msg.content or "",
+    }
+    if msg.tool_call_id:
+        entry["tool_call_id"] = msg.tool_call_id
+    if row_id is not None:
+        entry["id"] = row_id
+    return entry
+
+
+def _assistant_entry(msg, row_id: int | None, feedback: dict) -> dict:
+    entry: dict = {"role": "assistant", "content": msg.content}
+    if row_id is not None:
+        entry["id"] = row_id
+        if feedback.get(row_id):
+            entry["feedback"] = feedback[row_id]
+    return entry
+
+
+def _assistant_tool_entry(msg, row_id: int | None, feedback: dict) -> dict:
+    # An assistant message that only requested tools has no text; emit it as a
+    # tool-call carrier so reloading keeps the same cards.
+    entry = {
+        "role": "assistant",
+        "content": msg.content or "",
+        "tool_calls": [
+            {"id": c.id, "name": c.name, "arguments": c.arguments}
+            for c in msg.tool_calls
+        ],
+    }
+    if row_id is not None:
+        entry["id"] = row_id
+        if feedback.get(row_id):
+            entry["feedback"] = feedback[row_id]
+    return entry
+
+
+def _history_entry(msg, row_id: int | None, feedback: dict) -> dict | None:
+    if msg.role in {"user", "assistant"} and msg.content and not (
+        msg.role == "assistant" and msg.tool_calls
+    ):
+        if msg.role == "user":
+            return _user_entry(msg, row_id, feedback)
+        return _assistant_entry(msg, row_id, feedback)
+    if msg.role == "tool":
+        return _tool_entry(msg, row_id)
+    if msg.role == "assistant" and msg.tool_calls:
+        return _assistant_tool_entry(msg, row_id, feedback)
+    return None
+
+def _history_messages(state) -> list[dict]:
+    """Extract serializable message list from current loop history."""
     if state.loop is None:
-        return messages
+        return []
     history = list(state.loop.history or [])
     ids: list[int] = []
     try:
@@ -286,58 +346,13 @@ def _history_messages(state) -> list[dict]:
     except Exception:  # pragma: no cover - feedback is additive metadata
         logger.debug("list_message_feedback failed", exc_info=True)
         feedback = {}
+    messages: list[dict] = []
     for index, msg in enumerate(history):
         row_id = ids[index] if aligned else None
-        if msg.role in {"user", "assistant"} and msg.content and not (
-            msg.role == "assistant" and msg.tool_calls
-        ):
-            display_content = msg.content
-            attachment_names: list[str] = []
-            if msg.role == "user":
-                display_content, attachment_names = split_attachments(msg.content)
-            entry: dict = {"role": msg.role, "content": display_content}
-            if attachment_names:
-                entry["attachments"] = attachment_names
-            if row_id is not None:
-                entry["id"] = row_id
-                if feedback.get(row_id):
-                    entry["feedback"] = feedback[row_id]
-            if msg.role == "user" and msg.images:
-                entry["images"] = [
-                    f"data:{i.media_type};base64,{i.data}" for i in msg.images
-                ]
-            messages.append(entry)
-        elif msg.role == "tool":
-            entry = {
-                "role": "tool",
-                "name": msg.name or "",
-                "content": msg.content or "",
-            }
-            if msg.tool_call_id:
-                entry["tool_call_id"] = msg.tool_call_id
-            if row_id is not None:
-                entry["id"] = row_id
-            messages.append(entry)
-        elif msg.role == "assistant" and msg.tool_calls:
-            # An assistant message that only requested tools has no text, so it
-            # was dropped entirely: reloading a session lost the tool arguments
-            # (the card rendered `{}`) and merged turns. Emit it as a tool-call
-            # carrier so the UI can rebuild the same cards it showed live.
-            entry = {
-                "role": "assistant",
-                "content": msg.content or "",
-                "tool_calls": [
-                    {"id": c.id, "name": c.name, "arguments": c.arguments}
-                    for c in msg.tool_calls
-                ],
-            }
-            if row_id is not None:
-                entry["id"] = row_id
-                if feedback.get(row_id):
-                    entry["feedback"] = feedback[row_id]
+        entry = _history_entry(msg, row_id, feedback)
+        if entry is not None:
             messages.append(entry)
     return messages
-
 
 def _session_markdown(state) -> str:
     """Render the current session as a portable Markdown transcript.
@@ -598,6 +613,48 @@ def _handle_question_answer(handler: HandlerBase, body: dict) -> None:
     handler._json(200, {"ok": True, "session_id": session_id or None})
 
 
+def _lease_payload(runtime, owner: str, *, with_session: bool = True) -> dict:
+    payload = {"ok": True, "caller": owner}
+    if with_session:
+        payload["session_id"] = runtime.session_id
+    payload["lease"] = runtime.lease_snapshot()
+    return payload
+
+
+def _lease_renew(handler: HandlerBase, runtime, owner: str) -> None:
+    if not runtime.lease_renew(owner):
+        handler._json(
+            409,
+            {
+                "error": "lease is not held by this device",
+                "code": "lease_not_held",
+                "lease": runtime.lease_snapshot(),
+            },
+        )
+        return
+    # renew 的响应保持拆分前的字段集：不含 session_id。
+    handler._json(200, _lease_payload(runtime, owner, with_session=False))
+
+
+def _lease_takeover_audit(handler: HandlerBase, state, runtime, owner: str, result: dict) -> None:
+    audit = getattr(state, "audit", None)
+    if audit is None:
+        return
+    device: dict[str, Any] = {}
+    pairing = getattr(state, "pairing", None)
+    if pairing is not None:
+        device = pairing.device_for_token(
+            str(getattr(handler, "headers", {}).get("X-Spark-Token") or "")
+        ) or {}
+    audit.record(
+        str(device.get("id") or owner),
+        str(device.get("name") or owner),
+        "session.lease.takeover",
+        detail=f"session {runtime.session_id} · from {result.get('took_over')}",
+        source="device" if owner.startswith("dev:") else "local",
+    )
+
+
 def _handle_session_lease(handler: HandlerBase, body: dict) -> None:
     """Read or mutate the RC-04 owner lease for a session."""
     state = _route_state(handler)
@@ -615,41 +672,17 @@ def _handle_session_lease(handler: HandlerBase, body: dict) -> None:
         )
         return
     if action == "status":
-        handler._json(
-            200,
-            {
-                "ok": True,
-                "caller": owner,
-                "session_id": runtime.session_id,
-                "lease": runtime.lease_snapshot(),
-            },
-        )
+        handler._json(200, _lease_payload(runtime, owner))
         return
     if not owner:
         handler._json(403, {"error": "device identity is unavailable"})
         return
     if action == "renew":
-        if not runtime.lease_renew(owner):
-            handler._json(
-                409,
-                {
-                    "error": "lease is not held by this device",
-                    "code": "lease_not_held",
-                    "lease": runtime.lease_snapshot(),
-                },
-            )
-            return
-        handler._json(
-            200,
-            {"ok": True, "caller": owner, "lease": runtime.lease_snapshot()},
-        )
+        _lease_renew(handler, runtime, owner)
         return
     if action == "release":
         runtime.lease_release(owner)
-        handler._json(
-            200,
-            {"ok": True, "caller": owner, "lease": runtime.lease_snapshot()},
-        )
+        handler._json(200, _lease_payload(runtime, owner, with_session=False))
         return
     result = runtime.lease_claim(owner, takeover=action == "takeover")
     if not result.get("ok"):
@@ -663,31 +696,8 @@ def _handle_session_lease(handler: HandlerBase, body: dict) -> None:
         )
         return
     if action == "takeover" and result.get("took_over"):
-        audit = getattr(state, "audit", None)
-        if audit is not None:
-            device: dict[str, Any] = {}
-            pairing = getattr(state, "pairing", None)
-            if pairing is not None:
-                device = pairing.device_for_token(
-                    str(getattr(handler, "headers", {}).get("X-Spark-Token") or "")
-                ) or {}
-            audit.record(
-                str(device.get("id") or owner),
-                str(device.get("name") or owner),
-                "session.lease.takeover",
-                detail=f"session {runtime.session_id} · from {result.get('took_over')}",
-                source="device" if owner.startswith("dev:") else "local",
-            )
-    handler._json(
-        200,
-        {
-            "ok": True,
-            "caller": owner,
-            "session_id": runtime.session_id,
-            "lease": runtime.lease_snapshot(),
-        },
-    )
-
+        _lease_takeover_audit(handler, state, runtime, owner, result)
+    handler._json(200, _lease_payload(runtime, owner))
 
 def _handle_checkpoints_rollback(handler: HandlerBase, body: dict) -> None:
     state = _route_state(handler)

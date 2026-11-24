@@ -42,6 +42,56 @@ def _build_transcript(user_text: str, assistant_text: str, tool_summary: str) ->
     return "\n".join(pieces)
 
 
+class _UnionFind:
+    def __init__(self, size: int) -> None:
+        self.parent = list(range(size))
+
+    def find(self, x: int) -> int:
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]
+            x = self.parent[x]
+        return x
+
+    def union(self, a: int, b: int) -> None:
+        ra, rb = self.find(a), self.find(b)
+        if ra != rb:
+            self.parent[rb] = ra
+
+
+def _candidate_pairs(token_sets: list[set[str]]) -> set[tuple[int, int]]:
+    # Compare only pairs that share at least one keyword; a full O(M^2) sweep
+    # with 1536-dim embeddings was ~32s at 500 rows.
+    inverted: dict[str, list[int]] = {}
+    for i, tokens in enumerate(token_sets):
+        for token in tokens:
+            inverted.setdefault(token, []).append(i)
+    candidates: set[tuple[int, int]] = set()
+    for members in inverted.values():
+        if len(members) < 2 or len(members) > 200:
+            continue
+        for a_pos in range(len(members)):
+            for b_pos in range(a_pos + 1, len(members)):
+                a, b = members[a_pos], members[b_pos]
+                candidates.add((a, b) if a < b else (b, a))
+    return candidates
+
+
+def _cluster_close(
+    i: int, j: int, token_sets: list[set[str]], emb_map: dict[int, list[float]]
+) -> bool:
+    from spark.memory.store import cosine
+
+    kw = _kw_jaccard(token_sets[i], token_sets[j])
+    if kw > 0.5:
+        return True
+    return bool(
+        i in emb_map
+        and j in emb_map
+        and kw > 0.12
+        and cosine(emb_map[i], emb_map[j]) > 0.88
+    )
+
+
 class MemoryService:
     def __init__(self, store: MemoryStore, cfg: SparkConfig) -> None:
         self.store = store
@@ -385,52 +435,16 @@ class MemoryService:
         rows = self.store.all_active()
         token_sets = [set(r.keywords.split()) for r in rows]
         emb_map = {i: r.embedding for i, r in enumerate(rows) if r.embedding}
-        parent = list(range(len(rows)))
-
-        def find(x: int) -> int:
-            while parent[x] != x:
-                parent[x] = parent[parent[x]]
-                x = parent[x]
-            return x
-
-        def union(a: int, b: int) -> None:
-            ra, rb = find(a), find(b)
-            if ra != rb:
-                parent[rb] = ra
-
-        # Compare only pairs that share at least one keyword. A full O(M^2) sweep
-        # with 1536-dim embeddings took ~32s at 500 rows; the inverted index keeps
-        # this proportional to the actual candidate pairs.
-        from spark.memory.store import cosine
-
-        inverted: dict[str, list[int]] = {}
-        for i, tokens in enumerate(token_sets):
-            for token in tokens:
-                inverted.setdefault(token, []).append(i)
-
-        candidates: set[tuple[int, int]] = set()
-        for members in inverted.values():
-            if len(members) < 2 or len(members) > 200:
+        union = _UnionFind(len(rows))
+        for i, j in _candidate_pairs(token_sets):
+            if union.find(i) == union.find(j):
                 continue
-            for a_pos in range(len(members)):
-                for b_pos in range(a_pos + 1, len(members)):
-                    a, b = members[a_pos], members[b_pos]
-                    candidates.add((a, b) if a < b else (b, a))
-
-        for i, j in candidates:
-            if find(i) == find(j):
-                continue
-            kw = _kw_jaccard(token_sets[i], token_sets[j])
-            close = kw > 0.5
-            if not close and i in emb_map and j in emb_map and kw > 0.12:
-                close = cosine(emb_map[i], emb_map[j]) > 0.88
-            if close:
-                union(i, j)
+            if _cluster_close(i, j, token_sets, emb_map):
+                union.union(i, j)
         groups: dict[int, list[int]] = {}
         for i in range(len(rows)):
-            groups.setdefault(find(i), []).append(i)
+            groups.setdefault(union.find(i), []).append(i)
         return [[rows[i] for i in idxs] for idxs in groups.values() if len(idxs) >= 2]
-
     def optimize(self) -> dict:
         report: dict = {"consolidated_groups": 0, "archived": 0, "errors": []}
         if not self.cfg.memory.enabled:

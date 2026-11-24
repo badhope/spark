@@ -2,6 +2,26 @@
 
 本项目遵循语义化版本。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [0.15.8] - 2026-11-25
+
+### Changed
+
+- 第四轮复杂度清扫：剩余 58 个 D/E/F 全部拆分，覆盖 `run_shell`、`run_workflow`、`AgentLoop._llm_round`、`spawn_subtasks_parallel`、TUI `_render` 五个 E 级入口，以及 CLI、Web、内存/索引、Provider、relay 等 51 个 D 级函数。
+- 全仓历史 D/E/F 从 **58（53 D / 5 E / 0 F）** 降到 **0**；`scripts/complexity-baseline.json` 重建为 `functions: {}`，门禁从“允许 58 个旧债”切换为“任何新增 D/E/F 直接失败”。
+- 拆分保持校验顺序、错误文案、回退分支与副作用顺序不变，没有为降复杂度改变默认值或放宽校验。
+
+### Fixed
+
+- `_llm_round` 拆分后补回 `begin_provider_round()`，回合指标不再出现 rounds=0。
+- `spawn_subtask` 与并发分支共用 `_create_sub_loop` 时修正 owner 绑定，避免 `AgentLoop object has no attribute _create_sub_loop`。
+- 知识库 embedding 失败时停止后续批次，不再把失败当“0 条新增”继续。
+- 历史消息拆分后补回 assistant 普通文本的 `id/feedback`；任务工具补回 `_finish_tool_execution`；SSE pending 字段补类级类型声明。
+
+### Docs
+
+- 新增 `docs/reviews/2026-11-25-complexity-clearance.md`；`PROJECT_BASELINE`、`REMAINING` 与本轮评审同步到 0 D/E/F。
+- `tests/test_p1_03_testcmd.py` 的 CLI 接线见证升级为模块源码，覆盖拆分后的 `_run_test_mode` helper。
+
 ## [0.15.7] - 2026-11-25
 
 ### Changed

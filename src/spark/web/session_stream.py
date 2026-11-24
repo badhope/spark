@@ -17,6 +17,26 @@ POLL_SECS = 0.15
 MAX_STREAM_SECS = 600.0
 
 
+def _initial_events(events: list[dict], cursor: int) -> list[dict]:
+    if cursor == 0 and events:
+        last_turn = str(events[-1].get("turn_id") or "")
+        if last_turn:
+            return [e for e in events if str(e.get("turn_id") or "") == last_turn]
+    return events
+
+
+def _emit_events(handler, events: list[dict], cursor: int, *, legacy: bool) -> tuple[int, bool]:
+    done = False
+    for event in events:
+        seq = int(event.get("seq") or 0)
+        _write_event(handler, seq, event, legacy=legacy)
+        cursor = max(cursor, seq)
+        if str(event.get("type") or "") == "done":
+            done = True
+            break
+    return cursor, done
+
+
 def serve_session_events(handler, state, session_id: str, after_seq: int = 0) -> None:
     runtime = state.runtime_for(session_id)
     if runtime is None:
@@ -40,18 +60,9 @@ def serve_session_events(handler, state, session_id: str, after_seq: int = 0) ->
                 payload = {"type": "reset_required", "session_id": session_id}
                 _write_event(handler, 0, payload, legacy=legacy)
                 break
-            if cursor == 0 and events:
-                last_turn = str(events[-1].get("turn_id") or "")
-                if last_turn:
-                    events = [e for e in events if str(e.get("turn_id") or "") == last_turn]
-            for event in events:
-                seq = int(event.get("seq") or 0)
-                _write_event(handler, seq, event, legacy=legacy)
-                cursor = max(cursor, seq)
-                last_write = time.monotonic()
-                if str(event.get("type") or "") == "done":
-                    done = True
-                    break
+            events = _initial_events(events, cursor)
+            cursor, done = _emit_events(handler, events, cursor, legacy=legacy)
+            last_write = time.monotonic() if events else last_write
             if done:
                 break
             if events:

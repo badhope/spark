@@ -249,8 +249,11 @@ def test_web_stream_wires_test_slash() -> None:
 
 
 def test_cli_exec_wires_test_slash() -> None:
+    # 复杂度拆分把 /test 分支移进 _run_test_mode 后，接线见证同样升级为
+    # 模块源码：parse_slash 在 _exec_async，handle_test 在 helper。
     from spark import cli
 
-    src = inspect.getsource(cli._exec_async)
+    src = inspect.getsource(cli)
     assert "parse_slash" in src
     assert "handle_test" in src
+    assert "_run_test_mode" in src

@@ -260,6 +260,53 @@ def _references(path: Path, symbol: str, root: Path) -> list[dict[str, Any]]:
     return out
 
 
+def _reverse_imports(files: list[Path], root: Path) -> dict[Path, set[Path]]:
+    reverse: dict[Path, set[Path]] = {}
+    for source in files:
+        for target in _imports(source, root):
+            reverse.setdefault(target, set()).add(source)
+    return reverse
+
+
+def _import_closure(reverse: dict[Path, set[Path]], changed: Path) -> set[Path]:
+    # Direct importers, then one more hop so a test importing a facade still
+    # shows up when the implementation changes.
+    importers: set[Path] = set(reverse.get(changed, set()))
+    frontier = set(importers)
+    for _depth in range(2):
+        next_frontier: set[Path] = set()
+        for item in frontier:
+            next_frontier |= reverse.get(item, set()) - importers
+        importers |= next_frontier
+        frontier = next_frontier
+    return importers
+
+
+def _affected_tests(
+    files: list[Path],
+    *,
+    root: Path,
+    changed: Path,
+    importers: set[Path],
+    reverse: dict[Path, set[Path]],
+    symbol: str,
+    symbol_refs: list[dict[str, Any]],
+) -> set[Path]:
+    affected: set[Path] = set()
+    ref_files = {ref["file"] for ref in symbol_refs}
+    for source in files:
+        if not _is_test(source, root):
+            continue
+        resolved = source.resolve()
+        if resolved == changed or resolved in importers:
+            affected.add(source)
+        elif resolved in reverse.get(changed, set()):
+            affected.add(source)
+        elif symbol and _relative(root, source) in ref_files:
+            affected.add(source)
+    return affected
+
+
 def analyze_impact(
     root: Path,
     path: str | Path,
@@ -278,49 +325,24 @@ def analyze_impact(
         return {"error": f"path escapes the workspace: {path}"}
     if not changed.is_file():
         return {"error": f"file not found: {path}"}
-
     files = _iter_source(root)
-    import_map: dict[Path, set[Path]] = {}
-    reverse_imports: dict[Path, set[Path]] = {}
-    for source in files:
-        imported = _imports(source, root)
-        import_map[source] = imported
-        for target in imported:
-            reverse_imports.setdefault(target, set()).add(source)
-
-    # Reverse-import closure: direct importers, then one more hop so a test
-    # importing a small facade still shows up when the implementation changes.
-    importers: set[Path] = set(reverse_imports.get(changed, set()))
-    frontier = set(importers)
-    for _depth in range(2):
-        next_frontier: set[Path] = set()
-        for item in frontier:
-            next_frontier |= reverse_imports.get(item, set()) - importers
-        importers |= next_frontier
-        frontier = next_frontier
-
+    reverse = _reverse_imports(files, root)
+    importers = _import_closure(reverse, changed)
     symbol_refs: list[dict[str, Any]] = []
     if symbol:
         for source in files:
             symbol_refs.extend(_references(source, symbol, root))
             if len(symbol_refs) >= max_results:
                 break
-
-    affected: set[Path] = set()
-    for source in files:
-        if not _is_test(source, root):
-            continue
-        if source.resolve() == changed:
-            affected.add(source)
-            continue
-        if source.resolve() in importers or source.resolve() in reverse_imports.get(changed, set()):
-            affected.add(source)
-            continue
-        if symbol and any(
-            ref["file"] == _relative(root, source) for ref in symbol_refs
-        ):
-            affected.add(source)
-
+    affected = _affected_tests(
+        files,
+        root=root,
+        changed=changed,
+        importers=importers,
+        reverse=reverse,
+        symbol=symbol,
+        symbol_refs=symbol_refs,
+    )
     tests = sorted(_relative(root, p) for p in affected)[:max_results]
     return {
         "changed": _relative(root, changed),
@@ -332,6 +354,5 @@ def analyze_impact(
         "truncated": len(tests) >= max_results or len(symbol_refs) >= max_results,
         "note": "candidate set from reverse imports + word-boundary references; not a semantic proof",
     }
-
 
 __all__ = ["analyze_impact"]

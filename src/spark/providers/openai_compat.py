@@ -478,15 +478,13 @@ class OpenAICompatProvider:
             f"{self.max_retries} retries (models tried: {', '.join(targets)}): {msg}"
         ) from last_exc
 
-    async def _stream_impl(
+    async def _select_response(
         self,
+        targets: list[str],
         messages: list[ChatMessage],
         tools: list[dict],
-        effort: str | None = None,
-    ) -> AsyncIterator[ChatDelta]:
-        # P1：目标链 = 主模型 + fallback_models；每个目标独立重试，凭据池逐次轮换。
-        # 任一目标成功即返回；全部失败才抛错（错误信息脱敏全部池内密钥）。
-        targets: list[str] = [self.model, *self.fallback_models]
+        effort: str | None,
+    ) -> Any:
         response = None
         last_exc: Exception | None = None
         for ti, target in enumerate(targets):
@@ -501,72 +499,90 @@ class OpenAICompatProvider:
                     target,
                     targets[ti + 1],
                 )
-        # If all targets exhausted without success
         if response is None:
             self._raise_all_failed(targets, last_exc)
+        return response
 
-        tool_acc: dict[int, dict[str, str]] = {}
-        think_state: dict[str, bool] = {"open": False, "closed": False}
-        reported_usage: dict[str, int] = {}
-        text_seen = 0
-        finish_reason: str | None = None
-
+    async def _stream_response(
+        self,
+        response: Any,
+        tool_acc: dict[int, dict[str, str]],
+        think_state: dict[str, bool],
+        state: dict[str, Any],
+    ) -> AsyncIterator[ChatDelta]:
         async for chunk in response:
-            _collect_usage(chunk, reported_usage)
+            _collect_usage(chunk, state["usage"])
             # Guard against LiteLLM returning None/empty chunks
             if not chunk or not chunk.choices:
                 continue
             choice = chunk.choices[0]
             if getattr(choice, "finish_reason", None):
-                finish_reason = str(choice.finish_reason)
+                state["finish_reason"] = str(choice.finish_reason)
             delta = choice.delta if choice.delta else None
             if delta is None:
                 continue
-
-            # 1) Separate reasoning content (DeepSeek R1 etc.)
             reasoning = getattr(delta, "reasoning_content", None)
             if not reasoning:
-                # Some providers use a plain "reasoning" attribute
                 reasoning = getattr(delta, "reasoning", None)
             if reasoning:
                 yield ChatDelta(type="reasoning", text=str(reasoning))
-
-            # 2) Regular text content (may still carry <think> tags)
             content = delta.content
             if content:
                 for piece, kind in _split_think(str(content), think_state):
                     if kind == "reasoning":
                         yield ChatDelta(type="reasoning", text=piece)
                     elif piece:
-                        text_seen += len(piece)
+                        state["text_seen"] += len(piece)
                         yield ChatDelta(type="text", text=piece)
-
-            # 3) Tool-call deltas (OpenAI-style incremental aggregation)
             for tc in delta.tool_calls or []:
                 _accumulate_tool_call(tool_acc, tc)
 
-        # Yield aggregated tool calls after the stream ends
+    async def _empty_answer_fallback(
+        self, messages: list[ChatMessage], tools: list[dict], effort: str | None
+    ) -> AsyncIterator[ChatDelta]:
+        for fallback in self.fallback_models:
+            alt = OpenAICompatProvider(
+                self.base_url, fallback, self.api_key, max_retries=0
+            )
+            async for delta in alt.stream(messages, tools, effort):
+                yield delta
+            return
+
+    async def _stream_impl(
+        self,
+        messages: list[ChatMessage],
+        tools: list[dict],
+        effort: str | None = None,
+    ) -> AsyncIterator[ChatDelta]:
+        # P1：目标链 = 主模型 + fallback_models；每个目标独立重试，凭据池逐次轮换。
+        # 任一目标成功即返回；全部失败才抛错（错误信息脱敏全部池内密钥）。
+        targets: list[str] = [self.model, *self.fallback_models]
+        response = await self._select_response(targets, messages, tools, effort)
+        tool_acc: dict[int, dict[str, str]] = {}
+        think_state: dict[str, bool] = {"open": False, "closed": False}
+        state: dict[str, Any] = {
+            "usage": {},
+            "text_seen": 0,
+            "finish_reason": None,
+        }
+        async for delta in self._stream_response(response, tool_acc, think_state, state):
+            yield delta
         for delta in _tool_call_deltas(tool_acc):
             yield delta
         # Reasoning models can spend the entire completion budget on hidden
         # reasoning and emit zero answer text. Retrying is the only sane
         # recovery: the caller would otherwise show an empty reply.
         if (
-            not text_seen
+            not state["text_seen"]
             and not tool_acc
-            and finish_reason == "length"
+            and state["finish_reason"] == "length"
             and self.fallback_models
         ):
             logger.warning("provider_empty_answer model=%s; trying fallback", self.model)
-            for fallback in self.fallback_models:
-                alt = OpenAICompatProvider(
-                    self.base_url, fallback, self.api_key, max_retries=0
-                )
-                async for delta in alt.stream(messages, tools, effort):
-                    yield delta
-                return
-        yield ChatDelta(type="end", usage=reported_usage or None)
-
+            async for delta in self._empty_answer_fallback(messages, tools, effort):
+                yield delta
+            return
+        yield ChatDelta(type="end", usage=state["usage"] or None)
 
 def _collect_usage(chunk: Any, reported_usage: dict[str, int]) -> None:
     """流尾 usage 帧（choices 为空、usage 有值）先提取，提取失败静默跳过。"""

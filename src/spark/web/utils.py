@@ -301,66 +301,80 @@ def ui_dir_for() -> Path | None:
     return None
 
 
+def _mcp_transport(
+    item: dict, name: str
+) -> tuple[Literal["stdio", "sse", "streamable_http"], str, Any | None]:
+    from spark.config import McpTransportConfig
+
+    transport = cast(
+        Literal["stdio", "sse", "streamable_http"],
+        str(item.get("transport") or "stdio").strip() or "stdio",
+    )
+    if transport not in {"stdio", "sse", "streamable_http"}:
+        transport = "stdio"
+    command = str(item.get("command") or "").strip()
+    http_raw = item.get("http") if isinstance(item.get("http"), dict) else None
+    if transport == "stdio":
+        if not command:
+            raise ValueError("each MCP server needs name and command")
+        return transport, command, None
+    url = str((http_raw or {}).get("url") or "").strip()
+    if not url:
+        raise ValueError(f"MCP server '{name}' needs http.url for {transport}")
+    headers_raw = (http_raw or {}).get("headers")
+    headers = (
+        {str(k): str(v) for k, v in headers_raw.items()}
+        if isinstance(headers_raw, dict)
+        else {}
+    )
+    try:
+        timeout_sec = int((http_raw or {}).get("timeout_sec") or 30)
+    except (TypeError, ValueError):
+        timeout_sec = 30
+    return transport, command, McpTransportConfig(
+        url=url, headers=headers, timeout_sec=timeout_sec
+    )
+
+
+def _parse_mcp_item(item: object) -> object | None:
+    from spark.config import McpServerConfig
+
+    if not isinstance(item, dict):
+        return None
+    name = str(item.get("name") or "").strip()
+    if not name:
+        return None
+    transport, command, http = _mcp_transport(item, name)
+    args_raw = item.get("args")
+    ro_raw = item.get("readonly_tools")
+    allowed_raw = item.get("allowed_tools")
+    env_raw = item.get("env")
+    return McpServerConfig(
+        name=name,
+        command=command,
+        args=[str(a) for a in args_raw] if isinstance(args_raw, list) else [],
+        env={str(k): str(v) for k, v in env_raw.items()}
+        if isinstance(env_raw, dict)
+        else {},
+        readonly_tools=[str(a) for a in ro_raw] if isinstance(ro_raw, list) else [],
+        transport=transport,
+        http=http,
+        allowed_tools=[str(a) for a in allowed_raw]
+        if isinstance(allowed_raw, list)
+        else [],
+    )
+
+
 def parse_mcp_servers(items: list) -> list:
-    from spark.config import McpServerConfig, McpTransportConfig
+    from spark.config import McpServerConfig
 
     out: list[McpServerConfig] = []
     for item in items:
-        if not isinstance(item, dict):
-            continue
-        name = str(item.get("name") or "").strip()
-        if not name:
-            continue
-        transport = cast(
-            Literal["stdio", "sse", "streamable_http"],
-            str(item.get("transport") or "stdio").strip() or "stdio",
-        )
-        if transport not in {"stdio", "sse", "streamable_http"}:
-            transport = "stdio"
-        command = str(item.get("command") or "").strip()
-        http_raw = item.get("http") if isinstance(item.get("http"), dict) else None
-        http: McpTransportConfig | None = None
-        if transport == "stdio":
-            if not command:
-                raise ValueError("each MCP server needs name and command")
-        else:
-            url = str((http_raw or {}).get("url") or "").strip()
-            if not url:
-                raise ValueError(f"MCP server '{name}' needs http.url for {transport}")
-            headers_raw = (http_raw or {}).get("headers")
-            headers = (
-                {str(k): str(v) for k, v in headers_raw.items()}
-                if isinstance(headers_raw, dict)
-                else {}
-            )
-            try:
-                timeout_sec = int((http_raw or {}).get("timeout_sec") or 30)
-            except (TypeError, ValueError):
-                timeout_sec = 30
-            http = McpTransportConfig(url=url, headers=headers, timeout_sec=timeout_sec)
-        args_raw = item.get("args")
-        ro_raw = item.get("readonly_tools")
-        allowed_raw = item.get("allowed_tools")
-        env_raw = item.get("env")
-        out.append(
-            McpServerConfig(
-                name=name,
-                command=command,
-                args=[str(a) for a in args_raw] if isinstance(args_raw, list) else [],
-                env={str(k): str(v) for k, v in env_raw.items()}
-                if isinstance(env_raw, dict)
-                else {},
-                readonly_tools=[str(a) for a in ro_raw]
-                if isinstance(ro_raw, list)
-                else [],
-                transport=transport,
-                http=http,
-                allowed_tools=[str(a) for a in allowed_raw]
-                if isinstance(allowed_raw, list)
-                else [],
-            )
-        )
+        parsed = _parse_mcp_item(item)
+        if parsed is not None:
+            out.append(parsed)  # type: ignore[arg-type]
     return out
+
 
 
 def _cache_control(path: str) -> str | None:

@@ -162,58 +162,59 @@ def _suggested_command(pkg: dict[str, Any]) -> tuple[str, list[str]]:
     return runtime, args
 
 
+def _registry_remotes(remotes: list[dict[str, Any]]) -> list[dict[str, str]]:
+    return [
+        {"url": r.get("url") or "", "type": r.get("type") or ""} for r in remotes
+    ]
+
+
+def _registry_required_env(pkg: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": e.get("name") or "",
+            "required": bool(e.get("isRequired")),
+            "secret": bool(e.get("isSecret")),
+        }
+        for e in pkg.get("environmentVariables") or []
+    ]
+
+
+def _registry_entry(name: str, versions: list[dict[str, Any]]) -> dict[str, Any]:
+    item = _pick_latest_version(versions)
+    srv = item.get("server") or {}
+    pkgs = srv.get("packages") or []
+    pkg = next(
+        (p for p in pkgs if (p.get("transport") or {}).get("type") == "stdio"),
+        pkgs[0] if pkgs else {},
+    )
+    command, args = _suggested_command(pkg)
+    remotes = srv.get("remotes") or []
+    transport = "stdio" if pkg else ("remote" if remotes else "unknown")
+    repo = srv.get("repository") or {}
+    return {
+        "name": name,
+        "title": srv.get("title") or name,
+        "description": srv.get("description") or "",
+        "version": srv.get("version") or "",
+        "repository_url": repo.get("url") or "",
+        "transport": transport,
+        "remotes": _registry_remotes(remotes),
+        "remote_url": remotes[0].get("url") if remotes else None,
+        "suggested_command": command or None,
+        "suggested_args": args,
+        "required_env": _registry_required_env(pkg),
+    }
+
 def parse_registry_servers(payload: dict[str, Any]) -> list[dict[str, Any]]:
     """把 registry v0 响应拍平成聚合代理内部的 entry 列表。"""
 
-    raw = payload.get("servers") or []
     by_name: dict[str, list[dict[str, Any]]] = {}
-    for item in raw:
+    for item in payload.get("servers") or []:
         srv = item.get("server") or {}
         name = srv.get("name") or ""
-        if not name:
-            continue
-        by_name.setdefault(name, []).append(item)
-
-    entries: list[dict[str, Any]] = []
-    for name, versions in by_name.items():
-        item = _pick_latest_version(versions)
-        srv = item.get("server") or {}
-        pkgs = srv.get("packages") or []
-        # 多个 package 时优先 stdio（前端一键添加只支持 stdio 行）
-        pkg = next(
-            (p for p in pkgs if (p.get("transport") or {}).get("type") == "stdio"),
-            pkgs[0] if pkgs else {},
-        )
-        command, args = _suggested_command(pkg)
-        remotes = srv.get("remotes") or []
-        transport = "stdio" if pkg else ("remote" if remotes else "unknown")
-        repo = srv.get("repository") or {}
-        entries.append(
-            {
-                "name": name,
-                "title": srv.get("title") or name,
-                "description": srv.get("description") or "",
-                "version": srv.get("version") or "",
-                "repository_url": repo.get("url") or "",
-                "transport": transport,
-                "remotes": [
-                    {"url": r.get("url") or "", "type": r.get("type") or ""} for r in remotes
-                ],
-                "remote_url": remotes[0].get("url") if remotes else None,
-                "suggested_command": command or None,
-                "suggested_args": args,
-                "required_env": [
-                    {
-                        "name": e.get("name") or "",
-                        "required": bool(e.get("isRequired")),
-                        "secret": bool(e.get("isSecret")),
-                    }
-                    for e in pkg.get("environmentVariables") or []
-                ],
-            }
-        )
-    return entries
-
+        if name:
+            by_name.setdefault(name, []).append(item)
+    return [_registry_entry(name, versions) for name, versions in by_name.items()]
 
 # ---------------------------------------------------------------------------
 # Glama 评分（best-effort）

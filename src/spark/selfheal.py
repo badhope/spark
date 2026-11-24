@@ -114,6 +114,54 @@ def _runtime_rows(env: dict[str, str]) -> list[dict]:
     return rows
 
 
+def _workdir_rows(resolved: Path) -> list[dict]:
+    if not resolved.exists():
+        return [_row("bad", "workdir.missing", f"工作目录不存在：{resolved}", "自动创建该目录", auto=True)]
+    if not resolved.is_dir():
+        return [_row("bad", "workdir.not_dir", f"工作目录不是文件夹：{resolved}", "换一个 --workdir")]
+    if not _writable(resolved):
+        return [_row("bad", "workdir.readonly", f"工作目录不可写：{resolved}", "检查目录权限或换目录")]
+    return [_row("ok", "workdir.ok", f"工作目录可用：{resolved}")]
+
+
+def _home_rows(home: Path) -> list[dict]:
+    if not home.exists():
+        return [_row("warn", "home.missing", f"配置目录不存在：{home}", "自动创建", auto=True)]
+    if not _writable(home):
+        return [_row("bad", "home.readonly", f"配置目录不可写：{home}", "检查权限或设置 SPARK_HOME 到可写目录")]
+    return [_row("ok", "home.ok", f"配置目录可用：{home}")]
+
+
+def _provider_rows(cfg: SparkConfig) -> list[dict]:
+    if cfg.provider.name == "mock":
+        return [_row("warn", "provider.mock", "当前为 Mock 展示模式：脚本回复，不会真实调用大模型", "运行 spark init 或填 API Key，或退出演示模式")]
+    if cfg.provider.name == "ollama":
+        return [_row("ok", "provider.ollama", f"Ollama 本地模型：{cfg.provider.model}")]
+    if not (cfg.provider.api_key or env_api_key(cfg)):
+        key_env = cfg.provider.api_key_env or "SPARK_API_KEY"
+        return [
+            _row(
+                "bad",
+                "provider.no_key",
+                f"未配置 API Key——真实对话会被阻止，不会回退 Mock；需要环境变量 {key_env}",
+                f"设置环境变量 {key_env}，或在 Web 设置中填入密钥",
+            )
+        ]
+    if not cfg.provider.base_url:
+        return [_row("bad", "provider.no_url", "未配置 base_url", "在设置中填写接口地址")]
+    return [_row("ok", "provider.ok", f"模型：{cfg.provider.model} @ {cfg.provider.base_url}")]
+
+
+def _config_rows(path: Path) -> list[dict]:
+    if not path.exists():
+        return [_row("warn", "config.missing", f"配置文件不存在：{path}", "自动写入默认配置", auto=True)]
+    try:
+        path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return [_row("bad", "config.unreadable", f"配置文件无法读取：{exc}", "备份并重建")]
+    return []
+
+
 def diagnose(
     cfg: SparkConfig,
     *,
@@ -121,90 +169,15 @@ def diagnose(
     config_path: Path | None = None,
 ) -> list[dict]:
     """Full health report. Every row is ``{level, kind, message, fix, auto_fixable}``."""
-    rows: list[dict] = []
     resolved = workdir
     home = default_home()
-
-    # --- workdir ---
-    if not resolved.exists():
-        rows.append(
-            _row(
-                "bad",
-                "workdir.missing",
-                f"工作目录不存在：{resolved}",
-                "自动创建该目录",
-                auto=True,
-            )
-        )
-    elif not resolved.is_dir():
-        rows.append(
-            _row("bad", "workdir.not_dir", f"工作目录不是文件夹：{resolved}", "换一个 --workdir")
-        )
-    elif not _writable(resolved):
-        rows.append(
-            _row("bad", "workdir.readonly", f"工作目录不可写：{resolved}", "检查目录权限或换目录")
-        )
-    else:
-        rows.append(_row("ok", "workdir.ok", f"工作目录可用：{resolved}"))
-
-    # --- SPARK_HOME ---
-    if not home.exists():
-        rows.append(
-            _row("warn", "home.missing", f"配置目录不存在：{home}", "自动创建", auto=True)
-        )
-    elif not _writable(home):
-        rows.append(
-            _row("bad", "home.readonly", f"配置目录不可写：{home}", "检查权限或设置 SPARK_HOME 到可写目录")
-        )
-    else:
-        rows.append(_row("ok", "home.ok", f"配置目录可用：{home}"))
-
-    # --- credentials ---
-    if cfg.provider.name == "mock":
-        rows.append(
-            _row("warn", "provider.mock", "当前为 Mock 展示模式：脚本回复，不会真实调用大模型", "运行 spark init 或填 API Key，或退出演示模式")
-        )
-    elif cfg.provider.name == "ollama":
-        rows.append(_row("ok", "provider.ollama", f"Ollama 本地模型：{cfg.provider.model}"))
-    elif not (cfg.provider.api_key or env_api_key(cfg)):
-        key_env = cfg.provider.api_key_env or "SPARK_API_KEY"
-        rows.append(
-            _row(
-                "bad",
-                "provider.no_key",
-                f"未配置 API Key——真实对话会被阻止，不会回退 Mock；需要环境变量 {key_env}",
-                f"设置环境变量 {key_env}，或在 Web 设置中填入密钥",
-            )
-        )
-    elif not cfg.provider.base_url:
-        rows.append(_row("bad", "provider.no_url", "未配置 base_url", "在设置中填写接口地址"))
-    else:
-        rows.append(_row("ok", "provider.ok", f"模型：{cfg.provider.model} @ {cfg.provider.base_url}"))
-
-    # --- config file ---
-    path = config_path or (home / "config.toml")
-    if not path.exists():
-        rows.append(
-            _row("warn", "config.missing", f"配置文件不存在：{path}", "自动写入默认配置", auto=True)
-        )
-    else:
-        try:
-            path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            rows.append(
-                _row("bad", "config.unreadable", f"配置文件无法读取：{exc}", "备份并重建")
-            )
-
-    # --- runtimes ---
+    rows = _workdir_rows(resolved)
+    rows.extend(_home_rows(home))
+    rows.extend(_provider_rows(cfg))
+    rows.extend(_config_rows(config_path or (home / "config.toml")))
     env = probe_runtimes(resolved if resolved.exists() else Path.cwd())
     rows.extend(_runtime_rows(env))
-
-    # diagnose 是只读报告：此前这里顺手 mkdir SPARK_HOME（违反契约），
-    # 使 home.missing 的自动修复项永远无法触发——看一眼报告就把目录建了，
-    # repair 便无事可做。目录创建归 SessionStore/TurnCheckpointer 构造器
-    # 与 repair 的 home.missing 动作负责。
-
-    # --- summary ---
+    # diagnose 是只读报告：目录创建归 SessionStore/TurnCheckpointer 构造器与 repair。
     bad = sum(1 for r in rows if r["level"] == "bad")
     warn = sum(1 for r in rows if r["level"] == "warn")
     rows.insert(
@@ -217,7 +190,6 @@ def diagnose(
         ),
     )
     return rows
-
 
 def _backup(path: Path) -> Path:
     stamp = time.strftime("%Y%m%d-%H%M%S")

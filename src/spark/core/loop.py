@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 from collections import deque
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -815,17 +815,18 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
         """丢弃一个挂起 turn（清理 checkpoint 与登记）。"""
         await self._checkpointer.unregister(thread_id)
 
-    async def _llm_round(self, memory_block: str | None, rounds: int):
-        """一轮 LLM 调用（原 while 循环体上半段，事件语义逐字节等价）。
+    class _RoundBuffer:
+        def __init__(self) -> None:
+            self.text_parts: list[str] = []
+            self.reasoning_parts: list[str] = []
+            self.tool_calls: list[ToolCall] = []
+            self.reported_usage: dict[str, int] | None = None
+            self.error: str | None = None
+            self.aborted = False
 
-        Yield TurnEvent；终值写入 ``self._last_round``：
-        {"tool_calls": [...], "text": str, "error": str | None}。
-        """
-        self._last_round = {"tool_calls": [], "text": "", "error": None}
+    def _round_preflight(self, rounds: int) -> tuple[TurnEvent | None, str | None]:
         if self.cancelled:
-            yield TurnEvent(type="turn_error", text="Turn cancelled")
-            self._last_round["error"] = "cancelled"
-            return
+            return TurnEvent(type="turn_error", text="Turn cancelled"), "cancelled"
         if rounds >= self.cfg.agent.max_tool_rounds:
             issue = {
                 "code": "tool_loop_limit",
@@ -839,13 +840,14 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
                 "action": "settings",
                 "params": {"rounds": str(rounds)},
             }
-            yield TurnEvent(
-                type="turn_error",
-                text=str(issue["title"]),
-                data={"error": issue, **self._budget_state()},
+            return (
+                TurnEvent(
+                    type="turn_error",
+                    text=str(issue["title"]),
+                    data={"error": issue, **self._budget_state()},
+                ),
+                "max_rounds",
             )
-            self._last_round["error"] = "max_rounds"
-            return
         if self._budget_exceeded():
             budget = self._budget_state()
             cost_spent = budget.get("session_cost_usd")
@@ -857,13 +859,10 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
                     "Token budget exceeded for this turn "
                     f"({self._turn_tokens}/{self.cfg.agent.max_turn_tokens})"
                 )
-            yield TurnEvent(
-                type="turn_error",
-                text=message,
-                data=budget,
-            )
-            self._last_round["error"] = "budget"
-            return
+            return TurnEvent(type="turn_error", text=message, data=budget), "budget"
+        return None, None
+
+    def _round_messages(self, memory_block: str | None) -> list[ChatMessage]:
         messages = build_messages(
             workdir=self.workdir,
             cfg=self.cfg,
@@ -882,10 +881,11 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
             messages[0] = messages[0].model_copy(
                 update={"content": f"{base_system}\n\n{goal_block}"}
             )
-        text_parts: list[str] = []
-        reasoning_parts: list[str] = []
-        tool_calls: list[ToolCall] = []
-        self._reported_usage: dict[str, int] | None = None  # P1：本轮流式真实 usage
+        return messages
+
+    async def _stream_round(
+        self, messages: list[ChatMessage], buffer: _RoundBuffer
+    ) -> AsyncIterator[TurnEvent]:
         if self._turn_metrics is not None:
             self._turn_metrics.begin_provider_round()
         try:
@@ -893,31 +893,30 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
                 messages, self.registry.schemas(), **self._stream_extra
             ):
                 if self.cancelled:
+                    buffer.error = "cancelled"
+                    buffer.aborted = True
                     yield TurnEvent(type="turn_error", text="Turn cancelled")
-                    self._last_round["error"] = "cancelled"
                     return
                 if self._turn_metrics is not None:
                     self._turn_metrics.mark_delta()
                 if delta.type == "reasoning" and delta.text:
-                    reasoning_parts.append(delta.text)
+                    buffer.reasoning_parts.append(delta.text)
                     # show_thinking=False 时不下发 SSE（节省带宽），仍计入 token 用量
                     if self.cfg.agent.show_thinking:
                         yield TurnEvent(type="reasoning_delta", text=delta.text)
                 elif delta.type == "text" and delta.text:
-                    text_parts.append(delta.text)
+                    buffer.text_parts.append(delta.text)
                     if self._turn_metrics is not None:
                         self._turn_metrics.mark_text()
                     yield TurnEvent(type="text_delta", text=delta.text)
                 elif delta.type == "tool_call" and delta.tool_call:
-                    tool_calls.append(delta.tool_call)
+                    buffer.tool_calls.append(delta.tool_call)
                 elif delta.type == "end" and delta.usage:
                     # P1：provider 上报的真实 usage，覆盖估算口径
-                    self._reported_usage = delta.usage
+                    buffer.reported_usage = delta.usage
         except Exception as exc:
             # Distinguish a provider/transport failure from a logic error: the
             # former can be retried with a different model, the latter cannot.
-            # The structured payload is what lets the UI explain *why* instead
-            # of showing a raw LiteLLM stack fragment.
             info = classify_provider_error(
                 exc,
                 self.cfg,
@@ -925,65 +924,101 @@ class AgentLoop(ContextWindowMixin, TurnControlMixin, ToolRunnerMixin, SubagentR
                 live_provider=self.provider,
             )
             self._notify_safe("provider_error", info.to_dict())
-            self._notify_safe("turn_error", {"error": info.text, "stage": "llm", "diagnostic": info.to_dict()})
+            self._notify_safe(
+                "turn_error",
+                {"error": info.text, "stage": "llm", "diagnostic": info.to_dict()},
+            )
             if self._turn_metrics is not None:
                 self._turn_metrics.end_provider_round(error=info.text)
+            buffer.error = info.text
+            buffer.aborted = True
             yield TurnEvent(
                 type="turn_error",
                 text=info.text,
                 data={"error": info.to_dict()},
             )
-            self._last_round["error"] = info.text
             return
 
+    def _tool_guard_events(
+        self, tool_calls: list[ToolCall]
+    ) -> tuple[list[TurnEvent], str | None]:
+        tripped = None
+        for call in tool_calls:
+            guard = self._record_call(call)
+            if guard is not None:
+                tripped = (call.name, guard[1])
+                break
+        if tripped is None:
+            return [], None
+        name, count = tripped
+        context = TurnEvent(
+            type="context",
+            data={
+                "usage": self._usage(),
+                "circuit_breaker": {
+                    "tool": name,
+                    "repeats": count,
+                    "limit": self.cfg.agent.max_repeat_calls,
+                },
+                **self._budget_state(),
+            },
+        )
+        issue = {
+            "code": "tool_repeat_loop",
+            "title": "模型重复调用同一个工具",
+            "message": (
+                f"模型连续 {count} 次用完全相同的参数调用 {name}，"
+                f"已触发保护阈值（{self.cfg.agent.max_repeat_calls}）。"
+            ),
+            "hint": "任务已执行到这里；换一个说法或换 4B 级模型继续。重复调用已被拦截，不会污染工作区。",
+            "retryable": True,
+            "action": "settings",
+            "params": {"tool": name, "repeats": str(count)},
+        }
+        return [
+            context,
+            TurnEvent(
+                type="turn_error",
+                text=str(issue["title"]),
+                data={"error": issue, **self._budget_state()},
+            ),
+        ], "circuit_breaker"
+
+    async def _llm_round(self, memory_block: str | None, rounds: int):
+        """一轮 LLM 调用；终值写入 ``self._last_round``。"""
+        self._last_round = {"tool_calls": [], "text": "", "error": None}
+        preflight_event, preflight_error = self._round_preflight(rounds)
+        if preflight_event is not None:
+            yield preflight_event
+            if preflight_error is not None:
+                self._last_round["error"] = preflight_error
+            return
+        messages = self._round_messages(memory_block)
+        buffer = self._RoundBuffer()
+        self._reported_usage = None  # P1：本轮流式真实 usage
+        async for event in self._stream_round(messages, buffer):
+            yield event
+        if buffer.aborted:
+            self._last_round["error"] = buffer.error
+            return
         if self._turn_metrics is not None:
             self._turn_metrics.end_provider_round()
-        self._charge_tokens(text_parts, reasoning_parts)
-        self._persist_usage(None, messages, text_parts, reasoning_parts)
-
-        if tool_calls:
+        self._charge_tokens(buffer.text_parts, buffer.reasoning_parts)
+        self._persist_usage(None, messages, buffer.text_parts, buffer.reasoning_parts)
+        if buffer.tool_calls:
             if self._turn_metrics is not None:
-                self._turn_metrics.mark_tool_call(len(tool_calls))
-            tripped = None
-            for call in tool_calls:
-                guard = self._record_call(call)
-                if guard is not None:
-                    tripped = (call.name, guard[1])
-                    break
-            if tripped is not None:
-                name, count = tripped
-                yield TurnEvent(
-                    type="context",
-                    data={
-                        "usage": self._usage(),
-                        "circuit_breaker": {
-                            "tool": name,
-                            "repeats": count,
-                            "limit": self.cfg.agent.max_repeat_calls,
-                        },
-                        **self._budget_state(),
-                    },
-                )
-                issue = {
-                    "code": "tool_repeat_loop",
-                    "title": "模型重复调用同一个工具",
-                    "message": (
-                        f"模型连续 {count} 次用完全相同的参数调用 {name}，"
-                        f"已触发保护阈值（{self.cfg.agent.max_repeat_calls}）。"
-                    ),
-                    "hint": "任务已执行到这里；换一个说法或换 4B 级模型继续。重复调用已被拦截，不会污染工作区。",
-                    "retryable": True,
-                    "action": "settings",
-                    "params": {"tool": name, "repeats": str(count)},
-                }
-                yield TurnEvent(
-                    type="turn_error",
-                    text=str(issue["title"]),
-                    data={"error": issue, **self._budget_state()},
-                )
-                self._last_round["error"] = "circuit_breaker"
+                self._turn_metrics.mark_tool_call(len(buffer.tool_calls))
+            guard_events, guard_error = self._tool_guard_events(buffer.tool_calls)
+            for event in guard_events:
+                yield event
+            if guard_error is not None:
+                self._last_round["error"] = guard_error
                 return
-        self._last_round = {"tool_calls": tool_calls, "text": "".join(text_parts), "error": None}
+        self._last_round = {
+            "tool_calls": buffer.tool_calls,
+            "text": "".join(buffer.text_parts),
+            "error": None,
+        }
 
     _SUBTASK_FORWARD_TYPES = frozenset(
         {

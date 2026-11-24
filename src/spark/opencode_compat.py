@@ -107,8 +107,8 @@ def find_config(root: Path) -> Path | None:
     return None
 
 
-def _strip_jsonc(text: str) -> str:
-    """Remove comments and trailing commas without touching string contents."""
+def _strip_comments(text: str) -> str:
+    """Remove // and /* */ comments while preserving string literals."""
     out: list[str] = []
     i = 0
     in_string = False
@@ -146,14 +146,18 @@ def _strip_jsonc(text: str) -> str:
             continue
         out.append(ch)
         i += 1
-    cleaned = "".join(out)
-    # Trailing commas are not valid JSON.  Do a second, string-aware pass.
-    out = []
+    return "".join(out)
+
+
+def _strip_trailing_commas(text: str) -> str:
+    """Remove commas before } or ] without touching string contents."""
+    out: list[str] = []
     i = 0
     in_string = False
     escaped = False
-    while i < len(cleaned):
-        ch = cleaned[i]
+    n = len(text)
+    while i < n:
+        ch = text[i]
         if in_string:
             out.append(ch)
             if escaped:
@@ -171,14 +175,19 @@ def _strip_jsonc(text: str) -> str:
             continue
         if ch == ",":
             j = i + 1
-            while j < len(cleaned) and cleaned[j] in " \t\r\n":
+            while j < n and text[j] in " \t\r\n":
                 j += 1
-            if j < len(cleaned) and cleaned[j] in "}]":
+            if j < n and text[j] in "}]":
                 i += 1
                 continue
         out.append(ch)
         i += 1
     return "".join(out)
+
+
+def _strip_jsonc(text: str) -> str:
+    """Remove comments and trailing commas without touching string contents."""
+    return _strip_trailing_commas(_strip_comments(text))
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -393,6 +402,47 @@ def discover_commands(root: Path) -> list[OpenCodeCommand]:
     return commands
 
 
+def _apply_project_config(
+    project: OpenCodeProject, config: dict[str, Any], config_path: Path
+) -> None:
+    project.model = str(config.get("model") or "")
+    project.small_model = str(config.get("small_model") or "")
+    project.default_agent = str(config.get("default_agent") or "")
+    raw_mcp = config.get("mcp")
+    if isinstance(raw_mcp, dict):
+        project.mcp_servers = raw_mcp
+    raw_instructions = config.get("instructions")
+    if isinstance(raw_instructions, list):
+        project.instructions = [str(x) for x in raw_instructions if x]
+    raw_agents = config.get("agent") or config.get("agents") or {}
+    if isinstance(raw_agents, dict):
+        for name, item in raw_agents.items():
+            if isinstance(item, dict):
+                agent = _agent_from_config(str(name), item, config_path)
+                if agent is not None:
+                    project.agents.append(agent)
+    raw_commands = config.get("command") or config.get("commands") or {}
+    if isinstance(raw_commands, dict):
+        for name, item in raw_commands.items():
+            command = _command_from_config(str(name), item, config_path)
+            if command is not None:
+                project.commands.append(command)
+
+
+def _apply_file_assets(project: OpenCodeProject, root: Path) -> None:
+    # File-based assets win on name collision over inline config entries.
+    seen_agents = {agent.name for agent in project.agents}
+    for agent in discover_agents(root):
+        if agent.name not in seen_agents:
+            project.agents.append(agent)
+            seen_agents.add(agent.name)
+    seen_commands = {command.name for command in project.commands}
+    for command in discover_commands(root):
+        if command.name not in seen_commands:
+            project.commands.append(command)
+            seen_commands.add(command.name)
+
+
 def load_project(root: Path) -> OpenCodeProject:
     """Read OpenCode assets; invalid config is reported, not fatal."""
     root = root.resolve()
@@ -405,42 +455,9 @@ def load_project(root: Path) -> OpenCodeProject:
         except (OSError, ValueError) as exc:
             project.errors.append(f"{config_path}: {exc}")
             config = {}
-        project.model = str(config.get("model") or "")
-        project.small_model = str(config.get("small_model") or "")
-        project.default_agent = str(config.get("default_agent") or "")
-        raw_mcp = config.get("mcp")
-        if isinstance(raw_mcp, dict):
-            project.mcp_servers = raw_mcp
-        raw_instructions = config.get("instructions")
-        if isinstance(raw_instructions, list):
-            project.instructions = [str(x) for x in raw_instructions if x]
-        raw_agents = config.get("agent") or config.get("agents") or {}
-        if isinstance(raw_agents, dict):
-            for name, item in raw_agents.items():
-                if isinstance(item, dict):
-                    agent = _agent_from_config(str(name), item, config_path)
-                    if agent is not None:
-                        project.agents.append(agent)
-        raw_commands = config.get("command") or config.get("commands") or {}
-        if isinstance(raw_commands, dict):
-            for name, item in raw_commands.items():
-                command = _command_from_config(str(name), item, config_path)
-                if command is not None:
-                    project.commands.append(command)
-
-    # File-based assets win on name collision over inline config entries.
-    seen_agents = {agent.name for agent in project.agents}
-    for agent in discover_agents(root):
-        if agent.name not in seen_agents:
-            project.agents.append(agent)
-            seen_agents.add(agent.name)
-    seen_commands = {command.name for command in project.commands}
-    for command in discover_commands(root):
-        if command.name not in seen_commands:
-            project.commands.append(command)
-            seen_commands.add(command.name)
+        _apply_project_config(project, config, config_path)
+    _apply_file_assets(project, root)
     return project
-
 
 def to_declared_agents(project: OpenCodeProject) -> list[DeclaredAgent]:
     return [agent.to_declared() for agent in project.agents]

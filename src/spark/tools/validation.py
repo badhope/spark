@@ -69,6 +69,42 @@ def _object_error(value: dict[str, Any], schema: dict[str, Any], path: str) -> s
     return None
 
 
+def _array_error(value: list, schema: dict, path: str) -> str | None:
+    items = schema.get("items")
+    min_items = schema.get("minItems")
+    max_items = schema.get("maxItems")
+    if isinstance(min_items, int) and len(value) < min_items:
+        return f"{path}: expected at least {min_items} items"
+    if isinstance(max_items, int) and len(value) > max_items:
+        return f"{path}: expected at most {max_items} items"
+    if isinstance(items, dict):
+        for index, item in enumerate(value):
+            error = validate_arguments(item, items, f"{path}[{index}]")
+            if error is not None:
+                return error
+    return None
+
+
+def _string_error(value: str, schema: dict, path: str) -> str | None:
+    min_length = schema.get("minLength")
+    max_length = schema.get("maxLength")
+    if isinstance(min_length, int) and len(value) < min_length:
+        return f"{path}: expected at least {min_length} characters"
+    if isinstance(max_length, int) and len(value) > max_length:
+        return f"{path}: expected at most {max_length} characters"
+    return None
+
+
+def _number_error(value: float, schema: dict, path: str) -> str | None:
+    minimum = schema.get("minimum")
+    maximum = schema.get("maximum")
+    if isinstance(minimum, (int, float)) and not isinstance(minimum, bool) and value < minimum:
+        return f"{path}: must be >= {minimum}"
+    if isinstance(maximum, (int, float)) and not isinstance(maximum, bool) and value > maximum:
+        return f"{path}: must be <= {maximum}"
+    return None
+
+
 def validate_arguments(
     value: Any,
     schema: Any,
@@ -86,38 +122,14 @@ def validate_arguments(
     if enum_error is not None:
         return enum_error
     if isinstance(value, dict):
-        error = _object_error(value, schema, path)
-        if error is not None:
-            return error
-    elif isinstance(value, list):
-        items = schema.get("items")
-        min_items = schema.get("minItems")
-        max_items = schema.get("maxItems")
-        if isinstance(min_items, int) and len(value) < min_items:
-            return f"{path}: expected at least {min_items} items"
-        if isinstance(max_items, int) and len(value) > max_items:
-            return f"{path}: expected at most {max_items} items"
-        if isinstance(items, dict):
-            for index, item in enumerate(value):
-                error = validate_arguments(item, items, f"{path}[{index}]")
-                if error is not None:
-                    return error
-    elif isinstance(value, str):
-        min_length = schema.get("minLength")
-        max_length = schema.get("maxLength")
-        if isinstance(min_length, int) and len(value) < min_length:
-            return f"{path}: expected at least {min_length} characters"
-        if isinstance(max_length, int) and len(value) > max_length:
-            return f"{path}: expected at most {max_length} characters"
-    elif _is_number(value):
-        minimum = schema.get("minimum")
-        maximum = schema.get("maximum")
-        if _is_number(minimum) and value < minimum:
-            return f"{path}: must be >= {minimum}"
-        if _is_number(maximum) and value > maximum:
-            return f"{path}: must be <= {maximum}"
+        return _object_error(value, schema, path)
+    if isinstance(value, list):
+        return _array_error(value, schema, path)
+    if isinstance(value, str):
+        return _string_error(value, schema, path)
+    if _is_number(value):
+        return _number_error(value, schema, path)
     return None
-
 
 def argument_size_error(arguments: dict[str, Any], *, max_bytes: int = 2 * 1024 * 1024) -> str | None:
     """Reject pathological payloads before they reach approval or a tool.

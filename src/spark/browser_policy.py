@@ -193,6 +193,41 @@ def _specific_override(pattern: str, host: str) -> bool:
     return len(fixed) >= 2
 
 
+def _decision(
+    action: str, kind: str, host: str, *, source: str
+) -> tuple[Literal["allow", "prompt", "deny"], str]:
+    # 文案必须与拆分前逐字一致：上游审批卡片按消息前缀分流。
+    if action == "deny":
+        return "deny", f"{source} deny: {host}"
+    if action == "read" and kind == "write":
+        return "deny", f"{source} read-only: {host}"
+    if action == "prompt" and kind == "write":
+        return "prompt", f"{source} prompt: {host}"
+    return "allow", ""
+
+
+def _fallback_decision(
+    action: str, tool_name: str, host: str, args: dict[str, Any] | None
+) -> tuple[Literal["allow", "prompt", "deny"], str]:
+    kind = action_kind(tool_name, args)
+    if action == "deny":
+        return "deny", f"sensitive site blocked: {host}"
+    if action == "read" and kind == "write":
+        return "deny", f"sensitive site read-only: {host}"
+    if action == "prompt" and kind == "write":
+        return "prompt", f"sensitive site needs confirmation: {host}"
+    return "allow", ""
+
+
+def _has_specific_allow(rules: list[SiteRule], host: str) -> bool:
+    return any(
+        rule.action == "allow"
+        and _matches(rule.pattern, host)
+        and _specific_override(rule.pattern, host)
+        for rule in rules
+    )
+
+
 def guard(
     rules: list[SiteRule],
     tool_name: str,
@@ -209,47 +244,18 @@ def guard(
     """
     action = strongest_action(rules, host)
     if action is None and fallback_rules:
-        action = strongest_action(list(fallback_rules), host)
-        if action is not None:
-            kind = action_kind(tool_name, args)
-            if action == "deny":
-                return "deny", f"sensitive site blocked: {host}"
-            if action == "read" and kind == "write":
-                return "deny", f"sensitive site read-only: {host}"
-            if action == "prompt" and kind == "write":
-                return "prompt", f"sensitive site needs confirmation: {host}"
-            return "allow", ""
-    if fallback_rules:
+        fallback = strongest_action(list(fallback_rules), host)
+        if fallback is not None:
+            return _fallback_decision(fallback, tool_name, host, args)
+    if fallback_rules and action == "allow":
         fallback = strongest_action(list(fallback_rules), host)
         # A broad ``*=allow`` must not erase a stricter fallback. A concrete
         # host/subdomain override still may.
-        if fallback and action == "allow":
-            override = any(
-                rule.action == "allow"
-                and _matches(rule.pattern, host)
-                and _specific_override(rule.pattern, host)
-                for rule in rules
-            )
-            if not override:
-                kind = action_kind(tool_name, args)
-                if fallback == "deny":
-                    return "deny", f"sensitive site blocked: {host}"
-                if fallback == "read" and kind == "write":
-                    return "deny", f"sensitive site read-only: {host}"
-                if fallback == "prompt" and kind == "write":
-                    return "prompt", f"sensitive site needs confirmation: {host}"
-                return "allow", ""
+        if fallback and not _has_specific_allow(rules, host):
+            return _fallback_decision(fallback, tool_name, host, args)
     if action is None:
         return "allow", ""
-    kind = action_kind(tool_name, args)
-    if action == "deny":
-        return "deny", f"browser_site_rules deny: {host}"
-    if action == "read" and kind == "write":
-        return "deny", f"browser_site_rules read-only: {host}"
-    if action == "prompt" and kind == "write":
-        return "prompt", f"browser_site_rules prompt: {host}"
-    return "allow", ""
-
+    return _decision(action, action_kind(tool_name, args), host, source="browser_site_rules")
 
 def host_of_url(url: str) -> str:
     try:

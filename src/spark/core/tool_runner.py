@@ -362,6 +362,71 @@ class ToolRunnerMixin:
             result.ok,
         )
 
+    async def _run_ask_tool(self: Any, call: ToolCall, message_id: int):
+        question, options = self._parse_question_args(call.arguments)
+        # Emit first: the browser needs the question to render its card,
+        # and the asker blocks until the user answers.
+        yield TurnEvent(
+            type="question",
+            data={"question": question, "options": options, "tool_id": call.id},
+        )
+        answer = ""
+        ask_error: Exception | None = None
+        try:
+            answer = await self.registry.ctx.question_asker(question, options)
+        except Exception as exc:  # noqa: BLE001
+            ask_error = exc
+        result = self._question_result(question, answer, ask_error)
+        await self._persist_tool(call, message_id, result, "ask")
+        yield TurnEvent(type="tool_end", tool_call=call, result=result)
+
+    async def _run_task_tool(
+        self: Any, call: ToolCall, message_id: int, approval_label: str,
+        started: float, args_summary: str,
+    ):
+        items, task_error = self._collect_task_items(call.arguments)
+        summaries: list[str] = []
+        sub_errors: list[str] = []
+        if task_error:
+            result = ToolResult(ok=False, payload={"error": task_error})
+        elif not items:
+            result = ToolResult(ok=False, payload={"error": "prompt required"})
+        elif len(items) == 1:
+            prompt, system_extra, allowlist, denied, model = self._single_task_params(items[0])
+            async for sub_event in self._forward_subtask_events(
+                self.spawn_subtask(
+                    prompt,
+                    system_extra=system_extra,
+                    tools_allowlist=allowlist,
+                    denied_tools=denied,
+                    model=model,
+                ),
+                summaries,
+                sub_errors,
+            ):
+                yield sub_event
+            result = self._single_task_result(summaries, sub_errors)
+        else:
+            prompts, system_extras, allowlists, denylists, models = self._parallel_task_params(items)
+            agent_names = [a.name if a else "" for _, a in items[:4]]
+            async for sub_event in self._forward_subtask_events(
+                self.spawn_subtasks_parallel(
+                    prompts,
+                    system_extras=system_extras,
+                    tools_allowlists=allowlists,
+                    denied_tool_lists=denylists,
+                    models=models,
+                    agent_names=agent_names,
+                ),
+                summaries,
+                sub_errors,
+            ):
+                yield sub_event
+            result = ToolResult(ok=True, payload={"summaries": summaries})
+        self._finish_tool_execution(call, result, started, args_summary)
+        await self._persist_tool(call, message_id, result, approval_label)
+        yield TurnEvent(type="tool_end", tool_call=call, result=result)
+
     async def _run_tool_body(
         self: Any, call: ToolCall, message_id: int, verdict: dict[str, Any] | None = None
     ):
@@ -443,67 +508,15 @@ class ToolRunnerMixin:
         if approval_label == "allow_always" and call.name not in NEVER_PERSIST_ALLOW:
             self.allow_always.add(call_signature(call))
         if call.name == "ask_user" and self.registry.ctx.question_asker is not None:
-            question, options = self._parse_question_args(call.arguments)
-            # Emit first: the browser needs the question to render its card,
-            # and the asker blocks until the user answers.
-            yield TurnEvent(
-                type="question",
-                data={"question": question, "options": options, "tool_id": call.id},
-            )
-            answer = ""
-            ask_error: Exception | None = None
-            try:
-                answer = await self.registry.ctx.question_asker(question, options)
-            except Exception as exc:  # noqa: BLE001
-                ask_error = exc
-            result = self._question_result(question, answer, ask_error)
-            await self._persist_tool(call, message_id, result, "ask")
-            yield TurnEvent(type="tool_end", tool_call=call, result=result)
+            async for event in self._run_ask_tool(call, message_id):
+                yield event
             return
         if call.name == "task" and self.registry.ctx.task_runner is not None:
-            items, task_error = self._collect_task_items(call.arguments)
-            summaries: list[str] = []
-            sub_errors: list[str] = []
-            if task_error:
-                result = ToolResult(ok=False, payload={"error": task_error})
-            elif not items:
-                result = ToolResult(ok=False, payload={"error": "prompt required"})
-            elif len(items) == 1:
-                prompt, system_extra, allowlist, denied, model = (
-                    self._single_task_params(items[0])
-                )
-                async for sub_event in self._forward_subtask_events(
-                    self.spawn_subtask(
-                        prompt,
-                        system_extra=system_extra,
-                        tools_allowlist=allowlist,
-                        denied_tools=denied,
-                        model=model,
-                    ),
-                    summaries,
-                    sub_errors,
-                ):
-                    yield sub_event
-                result = self._single_task_result(summaries, sub_errors)
-            else:
-                (
-                    prompts, system_extras, allowlists, denylists, models
-                ) = self._parallel_task_params(items)
-                agent_names = [a.name if a else "" for _, a in items[:4]]
-                async for sub_event in self._forward_subtask_events(
-                    self.spawn_subtasks_parallel(
-                        prompts,
-                        system_extras=system_extras,
-                        tools_allowlists=allowlists,
-                        denied_tool_lists=denylists,
-                        models=models,
-                        agent_names=agent_names,
-                    ),
-                    summaries,
-                    sub_errors,
-                ):
-                    yield sub_event
-                result = ToolResult(ok=True, payload={"summaries": summaries})
+            async for event in self._run_task_tool(
+                call, message_id, approval_label, started, args_summary
+            ):
+                yield event
+            return
         else:
             result = await self.registry.execute(call)
         self._finish_tool_execution(call, result, started, args_summary)

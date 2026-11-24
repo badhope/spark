@@ -7,6 +7,8 @@ import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -137,28 +139,57 @@ class RunShellArgs(BaseModel):
     cwd: str | None = None
 
 
-def run_shell(
-    sandbox: WorkdirSandbox, args: RunShellArgs, timeout_sec: int, max_output_chars: int
-) -> ToolResult:
+@dataclass(frozen=True)
+class _ShellPlan:
+    command: list[str] | str
+    process_kwargs: dict[str, Any]
+    network_blocked: bool
+    network_note: str
+    sandbox_kind: str
+
+
+@dataclass(frozen=True)
+class _ShellOutcome:
+    returncode: int | None
+    stdout_bytes: bytes
+    stderr_bytes: bytes
+    stdout_truncated: bool
+    stderr_truncated: bool
+    timed_out: bool
+    sandbox_kind: str
+
+
+def _prepare_shell_cwd(
+    sandbox: WorkdirSandbox, args: RunShellArgs
+) -> tuple[Path | None, ToolResult | None]:
     if not sandbox.shell_allowed:
-        return ToolResult(
+        return None, ToolResult(
             ok=False,
             payload={"error": "run_shell is disabled: sandbox-only access mode"},
         )
     try:
         cwd = sandbox.resolve(args.cwd or ".")
     except (PathEscapeError, SandboxPolicyError) as exc:
-        return ToolResult(ok=False, payload={"error": str(exc)})
+        return None, ToolResult(ok=False, payload={"error": str(exc)})
     if not cwd.exists() or not cwd.is_dir():
-        return ToolResult(ok=False, payload={"error": f"cwd not found: {args.cwd}"})
+        return None, ToolResult(ok=False, payload={"error": f"cwd not found: {args.cwd}"})
     # Check after resolving cwd so relative paths are judged from where the
     # process will actually run (`../.git/hooks/x` from a subdirectory).
     reason = sandbox.check_shell(args.command, cwd=cwd)
     if reason:
-        return ToolResult(ok=False, payload={"error": reason, "command": args.command})
+        return None, ToolResult(ok=False, payload={"error": reason, "command": args.command})
+    return cwd, None
+
+
+def _build_shell_plan(
+    sandbox: WorkdirSandbox,
+    cwd: Path,
+    args: RunShellArgs,
+    max_output_chars: int,
+) -> tuple[_ShellPlan, int, int]:
     output_limit = max(0, int(max_output_chars))
     byte_limit = min(max(0, int(MAX_SHELL_OUTPUT_BYTES)), output_limit * 4)
-    process_kwargs: dict = {
+    process_kwargs: dict[str, Any] = {
         "shell": True,
         "cwd": str(cwd),
         "stdout": subprocess.PIPE,
@@ -181,13 +212,14 @@ def run_shell(
         and not sandbox.unrestricted
         and sandbox.sandbox_mode == "workspace"
     )
+    command_to_run: list[str] | str = args.command
     if os.name != "nt" and in_workspace_mode:
         isolated = bwrap_command(
             str(cwd), args.command, str(sandbox.root), allow_network=allow_network
         )
         if isolated is not None:
             process_kwargs["shell"] = False
-            command_to_run: list[str] = isolated
+            command_to_run = isolated
             network_blocked = not allow_network
             sandbox_kind = "bwrap"
         elif sys.platform == "darwin":
@@ -201,17 +233,9 @@ def run_shell(
                 command_to_run = mac
                 network_blocked = not allow_network
                 sandbox_kind = "sandbox-exec"
-            else:
-                command_to_run = args.command  # type: ignore[assignment]
-        else:
-            command_to_run = args.command  # type: ignore[assignment]
     elif os.name == "nt" and in_workspace_mode:
         # Windows：Job Object 在 Popen 之后挂（见下方 assign），不做命令替换。
-        command_to_run = args.command  # type: ignore[assignment]
         sandbox_kind = "job-object"
-    else:
-        command_to_run = args.command  # type: ignore[assignment]
-        sandbox_kind = ""
 
     if not allow_network and not network_blocked:
         # 配置要求断网但当前平台无法真隔离：必须如实告知，不能假装已断网。
@@ -220,8 +244,24 @@ def run_shell(
             "(bubblewrap unavailable on this platform / access mode); "
             "the command may still reach the network"
         )
+    return (
+        _ShellPlan(
+            command=command_to_run,
+            process_kwargs=process_kwargs,
+            network_blocked=network_blocked,
+            network_note=network_note,
+            sandbox_kind=sandbox_kind,
+        ),
+        output_limit,
+        byte_limit,
+    )
 
-    process = subprocess.Popen(command_to_run, **process_kwargs)  # type: ignore[arg-type]
+
+def _collect_shell_process(
+    plan: _ShellPlan, timeout_sec: int, byte_limit: int
+) -> _ShellOutcome:
+    process = subprocess.Popen(plan.command, **plan.process_kwargs)  # type: ignore[arg-type]
+    sandbox_kind = plan.sandbox_kind
     if sandbox_kind == "job-object":
         from spark.tools.os_sandbox import assign_windows_job
 
@@ -267,40 +307,71 @@ def run_shell(
         release_windows_job(process.pid)
     if timed_out or stdout_thread.is_alive() or stderr_thread.is_alive():
         _close_process_streams(process)
-    if timed_out:
-        return ToolResult(
-            ok=False, payload={"error": "timeout", "command": args.command}
-        )
     stdout_bytes, stdout_was_truncated = (
         stdout_result[0] if stdout_result else (b"", False)
     )
     stderr_bytes, stderr_was_truncated = (
         stderr_result[0] if stderr_result else (b"", False)
     )
-    stdout_text = stdout_bytes.decode("utf-8", errors="replace")
-    stderr_text = stderr_bytes.decode("utf-8", errors="replace")
+    return _ShellOutcome(
+        returncode=process.returncode,
+        stdout_bytes=stdout_bytes,
+        stderr_bytes=stderr_bytes,
+        stdout_truncated=stdout_was_truncated,
+        stderr_truncated=stderr_was_truncated,
+        timed_out=timed_out,
+        sandbox_kind=sandbox_kind,
+    )
+
+
+def _format_shell_result(
+    args: RunShellArgs,
+    plan: _ShellPlan,
+    outcome: _ShellOutcome,
+    output_limit: int,
+) -> ToolResult:
+    if outcome.timed_out:
+        return ToolResult(ok=False, payload={"error": "timeout", "command": args.command})
+    stdout_text = outcome.stdout_bytes.decode("utf-8", errors="replace")
+    stderr_text = outcome.stderr_bytes.decode("utf-8", errors="replace")
     stdout_was_clipped = len(stdout_text) > output_limit
     stderr_was_clipped = len(stderr_text) > output_limit
     stdout = clip_text(stdout_text, output_limit)
     stderr = clip_text(stderr_text, output_limit)
-    stdout_truncated = stdout_was_truncated or stdout_was_clipped
-    stderr_truncated = stderr_was_truncated or stderr_was_clipped
+    stdout_truncated = outcome.stdout_truncated or stdout_was_clipped
+    stderr_truncated = outcome.stderr_truncated or stderr_was_clipped
     payload: dict[str, Any] = {
         "command": args.command,
-        "exit_code": process.returncode,
-        "sandbox": {"kind": sandbox_kind, "network_blocked": network_blocked},
+        "exit_code": outcome.returncode,
+        "sandbox": {
+            "kind": outcome.sandbox_kind,
+            "network_blocked": plan.network_blocked,
+        },
         "stdout": stdout,
         "stderr": stderr,
         "truncated": stdout_truncated or stderr_truncated,
         "stdout_truncated": stdout_truncated,
         "stderr_truncated": stderr_truncated,
     }
-    if network_blocked:
+    if plan.network_blocked:
         payload["network"] = "blocked"
-    if network_note:
-        payload["network_warning"] = network_note
-    return ToolResult(ok=process.returncode == 0, payload=payload)
+    if plan.network_note:
+        payload["network_warning"] = plan.network_note
+    return ToolResult(ok=outcome.returncode == 0, payload=payload)
 
+
+def run_shell(
+    sandbox: WorkdirSandbox, args: RunShellArgs, timeout_sec: int, max_output_chars: int
+) -> ToolResult:
+    cwd, error = _prepare_shell_cwd(sandbox, args)
+    if error is not None:
+        return error
+    assert cwd is not None
+    plan, output_limit, byte_limit = _build_shell_plan(
+        sandbox, cwd, args, max_output_chars
+    )
+    outcome = _collect_shell_process(plan, timeout_sec, byte_limit)
+    return _format_shell_result(args, plan, outcome, output_limit)
 
 def _read_bounded(stream, limit: int) -> tuple[bytes, bool]:
     chunks: list[bytes] = []

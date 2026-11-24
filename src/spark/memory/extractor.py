@@ -110,14 +110,10 @@ async def extract_facts(
     return out[:8]
 
 
-async def resolve_operations(
-    *,
+def _resolve_prompt(
     candidates: list[Candidate],
     similar: dict[int, list[tuple[MemoryRow, float]]],
-    base_url: str,
-    api_key: str,
-    model: str,
-) -> list[Op]:
+) -> str:
     lines = ["新记忆候选："]
     for i, cand in enumerate(candidates):
         lines.append(
@@ -132,62 +128,65 @@ async def resolve_operations(
             lines.append(f"- id={row.id} 相关度={score} [{row.type}] {row.content}")
     if not has_any:
         lines.append("（无）")
+    return "\n".join(lines)
+
+
+def _resolve_op(item: dict | None, cand: Candidate) -> Op:
+    item = item or {}
+    action = str(item.get("action") or "ADD").upper()
+    if action == "UPDATE":
+        target = item.get("target_id")
+        content = str(item.get("content") or "").strip()
+        if target and content:
+            try:
+                importance = float(item.get("importance", cand.importance))
+            except (TypeError, ValueError):
+                importance = cand.importance
+            return Op(
+                action="UPDATE",
+                content=content,
+                type=cand.type,
+                importance=importance,
+                target_id=int(target),
+            )
+        action = "ADD"
+    if action == "ADD":
+        content = str(item.get("content") or cand.content).strip() or cand.content
+        try:
+            importance = float(item.get("importance", cand.importance))
+        except (TypeError, ValueError):
+            importance = cand.importance
+        return Op(action="ADD", content=content, type=cand.type, importance=importance)
+    return Op(action="NOOP")
+
+
+async def resolve_operations(
+    *,
+    candidates: list[Candidate],
+    similar: dict[int, list[tuple[MemoryRow, float]]],
+    base_url: str,
+    api_key: str,
+    model: str,
+) -> list[Op]:
     raw = await chat_complete(
         base_url=base_url,
         api_key=api_key,
         model=model,
         system=RESOLVE_SYSTEM,
-        user="\n".join(lines),
+        user=_resolve_prompt(candidates, similar),
     )
     data = parse_json_object(raw)
-    ops: list[Op] = []
     if not data:
         return [
             Op(action="ADD", content=c.content, type=c.type, importance=c.importance)
             for c in candidates
         ]
     raw_ops = data.get("ops") or []
+    ops: list[Op] = []
     for idx, cand in enumerate(candidates):
-        item = (
-            raw_ops[idx]
-            if idx < len(raw_ops) and isinstance(raw_ops[idx], dict)
-            else None
-        )
-        action = str((item or {}).get("action") or "ADD").upper()
-        if action == "UPDATE":
-            target = (item or {}).get("target_id")
-            content = str((item or {}).get("content") or "").strip()
-            if target and content:
-                try:
-                    importance = float((item or {}).get("importance", cand.importance))
-                except (TypeError, ValueError):
-                    importance = cand.importance
-                ops.append(
-                    Op(
-                        action="UPDATE",
-                        content=content,
-                        type=cand.type,
-                        importance=importance,
-                        target_id=int(target),
-                    )
-                )
-                continue
-            action = "ADD"
-        if action == "ADD":
-            content = (
-                str((item or {}).get("content") or cand.content).strip() or cand.content
-            )
-            try:
-                importance = float((item or {}).get("importance", cand.importance))
-            except (TypeError, ValueError):
-                importance = cand.importance
-            ops.append(
-                Op(action="ADD", content=content, type=cand.type, importance=importance)
-            )
-        else:
-            ops.append(Op(action="NOOP"))
+        item = raw_ops[idx] if idx < len(raw_ops) and isinstance(raw_ops[idx], dict) else None
+        ops.append(_resolve_op(item, cand))
     return ops
-
 
 async def consolidate_group(
     *,
