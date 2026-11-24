@@ -16,7 +16,7 @@
 | 让模型读写文件 | `tools/fs.py`、`edit/` | 模型自行调用；写入受沙箱与审批约束 |
 | 让模型执行命令 | `tools/shell.py` | 命令先过 `sandbox.check_shell`，再按审批档放行 |
 | 让模型跑测试并自我修正 | `tools/gitops.run_tests` + `core/loop.py` | 模型调用 `run_tests`，失败输出自动回灌 |
-| 无人值守编程闭环 | `autopilot.py` + `spark autopilot` | build→repair→audit→done；独立 verifier 跑仓库测试；失败输出回灌；每轮状态落盘、`--resume`；最大轮次/单轮超时/总时限/成本/连续错误/连续无进展熔断；默认 workspace + 无网络 + full-auto，`unrestricted` 需显式确认。真实 MiniCPM5-2B 小仓库 4 轮通过；合成压力矩阵 120/120；边界见 `docs/AUTOPILOT.md` |
+| 无人值守编程闭环 | `autopilot.py` + `spark autopilot` | build→repair→audit→done；独立 verifier 跑仓库测试；失败输出回灌；每轮状态落盘、`--resume`；最大轮次/单轮超时/总时限/成本/连续错误/连续无进展熔断；每轮开始前写 `turn_in_progress`/`active_prompt`/`pid`，恢复时重试中断轮而不是跳过；`--heartbeat-interval` 更新状态文件 mtime；无进展按 diff + 测试输出 + 工具调用三路指纹判断。默认 workspace + 无网络 + full-auto，`unrestricted` 需显式确认。真实 MiniCPM5-2B 小仓库 4 轮通过；合成压力矩阵 120/120；边界见 `docs/AUTOPILOT.md` |
 | 小模型工具调用护栏 | `providers/llama_cpp.py` + `tools/validation.py` + `tools/registry.py` + `core/tool_runner.py` | 12 个核心工具白名单再按任务裁成读/写/执行/联网子集；参数按 JSON Schema 子集校验（必填/类型/enum/范围/未知字段）；未知工具、禁用工具、白名单外工具在审批前降级；参数超 2 MiB 拒绝；非法调用只回传一次修正机会，同一工具第二次非法标 `retry_exhausted`，不执行 handler |
 | 让模型操作 Git | `tools/gitops.py` | status/diff/log/branch/add/commit；push/pull 明确不提供 |
 | 任务即分支（自动提交） | `git_memory.py` | `task_begin` → 绿测后 `task_step_commit` → `task_finish` |

@@ -695,6 +695,13 @@ def autopilot_cmd(
     turn_timeout: int = typer.Option(900, "--turn-timeout", min=30, max=7200),
     task_timeout: int = typer.Option(3600, "--task-timeout", min=60, max=86400),
     test_timeout: int = typer.Option(1800, "--test-timeout", min=30, max=7200),
+    heartbeat_interval: int = typer.Option(
+        30,
+        "--heartbeat-interval",
+        min=5,
+        max=300,
+        help="长轮次期间状态心跳写入间隔（秒）",
+    ),
     max_cost_usd: float = typer.Option(
         0.0, "--max-cost-usd", min=0.0,
         help="单次运行成本上限（USD，0 = 使用 config.agent.max_session_cost_usd）",
@@ -758,9 +765,15 @@ def autopilot_cmd(
                 raise ConfigError("--resume 的 requirement 与状态文件不一致；请省略该参数")
             if not state.session_id or not store.get_session(state.session_id):
                 raise ConfigError("状态文件里的 session 已不存在，无法续跑")
-            state.status = "running"
+            interrupted = state.prepare_resume()
             state.started_at = __import__("time").time()
             state_path = state_path or resume_path
+            if interrupted and not as_json:
+                typer.echo(
+                    f"[autopilot] 检测到中断轮：turn {state.turn} / {state.phase}；"
+                    "已标记为恢复，重试该轮而不是跳过",
+                    err=True,
+                )
         else:
             if not requirement.strip():
                 raise ConfigError("首次运行必须提供初始编程需求")
@@ -779,6 +792,7 @@ def autopilot_cmd(
             turn_timeout_sec=turn_timeout,
             task_timeout_sec=task_timeout,
             max_cost_usd=max_cost_usd or float(cfg.agent.max_session_cost_usd or 0),
+            heartbeat_interval_sec=heartbeat_interval,
         )
         if state_path is None:
             state_path = workdir / ".spark" / "autopilot" / f"{state.run_id}.json"

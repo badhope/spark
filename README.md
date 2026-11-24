@@ -69,7 +69,7 @@ Autopilot runs the same `AgentLoop`, approvals and sandbox as every other entry 
 3. **audit** — after tests are green, re-check requirement coverage and boundaries;
 4. **done** — only when tests pass, a real diff exists, and the audit turn finished.
 
-Each turn is persisted to `.spark/autopilot/<run-id>.json`. `--max-turns`, `--turn-timeout`, `--task-timeout`, `--max-cost-usd` and consecutive no-progress limits stop a runaway run. The default is `full-auto` + workspace sandbox + no tool network; `unrestricted` requires `--allow-unrestricted`. It is not a second black-box agent, and it does not trust the model's "done" claim: tests are executed by the runner itself. See `docs/AUTOPILOT.md` for the state machine, prompt contract and the honest limits.
+Each turn is persisted to `.spark/autopilot/<run-id>.json`; an in-flight turn is marked with `turn_in_progress`, `active_prompt`, `pid` and retried on `--resume` instead of being skipped. `--heartbeat-interval` touches the state file during long model calls, and no-progress uses three fingerprints (diff, test output, tool calls). `--max-turns`, `--turn-timeout`, `--task-timeout`, `--max-cost-usd` and consecutive no-progress limits stop a runaway run. The default is `full-auto` + workspace sandbox + no tool network; `unrestricted` requires `--allow-unrestricted`. It is not a second black-box agent, and it does not trust the model's "done" claim: tests are executed by the runner itself. See `docs/AUTOPILOT.md` for the state machine, prompt contract and the honest limits.
 
 ![Autopilot local run: MiniCPM5-2B, real repo, real pytest, four turns from build to audit](assets/screenshots/31-autopilot-local-run.png)
 

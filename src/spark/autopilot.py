@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from importlib.resources import files
@@ -38,6 +40,7 @@ class AutopilotLimits:
     max_cost_usd: float = 0.0
     no_progress_limit: int = NO_PROGRESS_LIMIT
     max_consecutive_errors: int = MAX_CONSECUTIVE_ERRORS
+    heartbeat_interval_sec: int = 30
     require_change: bool = True
 
     def normalized(self) -> "AutopilotLimits":
@@ -48,6 +51,7 @@ class AutopilotLimits:
             max_cost_usd=max(0.0, float(self.max_cost_usd or 0.0)),
             no_progress_limit=max(1, min(int(self.no_progress_limit), 10)),
             max_consecutive_errors=max(1, min(int(self.max_consecutive_errors), 10)),
+            heartbeat_interval_sec=max(1, min(int(self.heartbeat_interval_sec), 300)),
             require_change=bool(self.require_change),
         )
 
@@ -61,6 +65,7 @@ class AutopilotTurn:
     error: str = ""
     cost_usd: float = 0.0
     tool_calls: int = 0
+    tool_digest: str = ""
 
 
 @dataclass
@@ -108,6 +113,14 @@ class AutopilotState:
     total_cost_usd: float = 0.0
     audit_done: bool = False
     next_prompt: str = ""
+    last_tool_digest: str = ""
+    turn_in_progress: bool = False
+    active_prompt: str = ""
+    turn_started_at: float = 0.0
+    heartbeat_at: float = field(default_factory=time.time)
+    pid: int = 0
+    recovered_interruptions: int = 0
+    last_resume_at: float = 0.0
     history: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -120,12 +133,53 @@ class AutopilotState:
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        self.heartbeat_at = time.time()
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(
             json.dumps(self.to_dict(), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
         tmp.replace(path)
+
+    def prepare_resume(self) -> bool:
+        """Mark a crashed in-flight turn as interrupted and make it retryable.
+
+        The state file is written *before* a model turn starts.  If the process
+        dies while that turn is running, the next ``--resume`` sees
+        ``turn_in_progress=True`` and must not pretend the turn completed.  We
+        keep the original prompt, count the recovery, and force an interrupted
+        audit to run again instead of accepting an audit result that never
+        finished.
+        """
+        now = time.time()
+        interrupted = bool(self.turn_in_progress)
+        if interrupted:
+            self.recovered_interruptions += 1
+            self.next_prompt = self.active_prompt or self.next_prompt
+            if self.phase == "audit":
+                self.audit_done = False
+            self.history.append(
+                {
+                    "turn": self.turn,
+                    "phase": self.phase,
+                    "ok": False,
+                    "error": "interrupted before verification",
+                    "recovered": True,
+                    "at": now,
+                }
+            )
+            self.last_error = (
+                f"上一轮（turn {self.turn} / {self.phase}）在验证前中断；"
+                "恢复后重试该轮，不采信未完成的模型输出"
+            )
+        self.status = "running"
+        self.turn_in_progress = False
+        self.active_prompt = ""
+        self.turn_started_at = 0.0
+        self.pid = os.getpid()
+        self.last_resume_at = now
+        self.heartbeat_at = now
+        return interrupted
 
 
 TurnRunner = Callable[[str], AutopilotTurn]
@@ -316,10 +370,19 @@ def make_agent_turn_runner(loop: Any, *, timeout_sec: int) -> TurnRunner:
         final = ""
         error = ""
         tool_calls = 0
+        tool_trace: list[dict[str, Any]] = []
         try:
             for event in loop.iter_turn_sync(prompt, timeout_sec=timeout_sec):
                 if event.type == "tool_start":
                     tool_calls += 1
+                    call = event.tool_call
+                    if call is not None:
+                        tool_trace.append(
+                            {
+                                "name": getattr(call, "name", ""),
+                                "arguments": getattr(call, "arguments", {}),
+                            }
+                        )
                 elif event.type == "turn_end" and event.text:
                     final = event.text
                 elif event.type == "turn_error":
@@ -331,6 +394,7 @@ def make_agent_turn_runner(loop: Any, *, timeout_sec: int) -> TurnRunner:
                 error=str(exc) or f"turn timed out after {timeout_sec}s",
                 cost_usd=_loop_cost(loop),
                 tool_calls=tool_calls,
+                tool_digest=_tool_trace_digest(tool_trace),
             )
         except Exception as exc:  # noqa: BLE001 - runner boundary
             return AutopilotTurn(
@@ -339,6 +403,7 @@ def make_agent_turn_runner(loop: Any, *, timeout_sec: int) -> TurnRunner:
                 error=f"{type(exc).__name__}: {exc}",
                 cost_usd=_loop_cost(loop),
                 tool_calls=tool_calls,
+                tool_digest=_tool_trace_digest(tool_trace),
             )
         return AutopilotTurn(
             ok=not error,
@@ -346,9 +411,18 @@ def make_agent_turn_runner(loop: Any, *, timeout_sec: int) -> TurnRunner:
             error=error,
             cost_usd=_loop_cost(loop),
             tool_calls=tool_calls,
+            tool_digest=_tool_trace_digest(tool_trace),
         )
 
     return run
+
+
+def _tool_trace_digest(tool_trace: list[dict[str, Any]]) -> str:
+    """Fingerprint the actual tool calls, not just the model's closing text."""
+    if not tool_trace:
+        return ""
+    payload = json.dumps(tool_trace, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _loop_cost(loop: Any) -> float:
@@ -367,6 +441,7 @@ class _TurnSnapshot:
     prev_diff_digest: str
     prev_test_output: str
     prev_summary: str
+    prev_tool_digest: str
 
 
 class AutopilotRunner:
@@ -442,9 +517,15 @@ class AutopilotRunner:
             prev_diff_digest=self.state.last_diff_digest,
             prev_test_output=self.state.last_test_output,
             prev_summary=self.state.last_summary,
+            prev_tool_digest=self.state.last_tool_digest,
         )
         self.state.turn += 1
         self.state.next_prompt = ""
+        self.state.turn_in_progress = True
+        self.state.active_prompt = prompt
+        self.state.turn_started_at = time.time()
+        self.state.pid = os.getpid()
+        self._save()
         self._emit(
             {
                 "type": "turn_start",
@@ -452,7 +533,13 @@ class AutopilotRunner:
                 "phase": self.state.phase,
             }
         )
-        turn = self.turn_runner(prompt)
+        stop_heartbeat = threading.Event()
+        heartbeat = self._start_heartbeat(stop_heartbeat)
+        try:
+            turn = self.turn_runner(prompt)
+        finally:
+            stop_heartbeat.set()
+            heartbeat.join(timeout=1.0)
         self.state.last_summary = turn.summary or self.state.last_summary
         self.state.total_cost_usd += max(0.0, float(turn.cost_usd or 0.0))
         if not turn.ok:
@@ -469,6 +556,10 @@ class AutopilotRunner:
         self.state.last_test_output = test_output
         self.state.last_diff_digest = diff.digest
         self.state.last_diff_summary = diff.summary
+        self.state.last_tool_digest = turn.tool_digest
+        self.state.turn_in_progress = False
+        self.state.active_prompt = ""
+        self.state.turn_started_at = 0.0
         self._record(
             {
                 "turn": self.state.turn,
@@ -478,6 +569,7 @@ class AutopilotRunner:
                 "error": turn.error[:2000],
                 "cost_usd": round(float(turn.cost_usd or 0.0), 6),
                 "tool_calls": turn.tool_calls,
+                "tool_digest": turn.tool_digest,
                 "test_ok": verification.ok,
                 "test_command": verification.command,
                 "test_output": test_output[:4000],
@@ -503,7 +595,34 @@ class AutopilotRunner:
             prev_diff_digest=previous.prev_diff_digest,
             prev_test_output=previous.prev_test_output,
             prev_summary=previous.prev_summary,
+            prev_tool_digest=previous.prev_tool_digest,
         )
+
+    def _start_heartbeat(self, stop: threading.Event) -> threading.Thread:
+        """Keep a durable heartbeat while a long model turn is running.
+
+        The heartbeat only updates the state file's mtime and the in-memory
+        timestamp.  It deliberately does not rewrite the JSON body: a
+        concurrent writer could otherwise overwrite a newer ledger snapshot.
+        """
+
+        def beat() -> None:
+            interval = max(1, int(self.limits.heartbeat_interval_sec))
+            while not stop.wait(interval):
+                self.state.heartbeat_at = time.time()
+                if self.state_path is not None:
+                    try:
+                        os.utime(self.state_path, None)
+                    except OSError:
+                        pass
+
+        thread = threading.Thread(
+            target=beat,
+            name="spark-autopilot-heartbeat",
+            daemon=True,
+        )
+        thread.start()
+        return thread
 
     def _after_turn(self, snapshot: _TurnSnapshot) -> bool:
         """Apply the transition; return True when the run should stop."""
@@ -539,19 +658,29 @@ class AutopilotRunner:
             self.state, self.limits, snapshot.verification, snapshot.diff
         )
         same_diff = snapshot.diff.digest == snapshot.prev_diff_digest
-        same_test = bool(self.state.last_test_output.strip()) and (
-            self.state.last_test_output.strip() == snapshot.prev_test_output.strip()
+        same_test = (
+            self.state.last_test_output.strip()
+            == snapshot.prev_test_output.strip()
         )
         same_summary = bool(snapshot.turn.summary.strip()) and (
             snapshot.turn.summary.strip() == snapshot.prev_summary.strip()
         )
-        if same_diff and (same_test or same_summary):
+        # Three independent fingerprints: worktree, test output, tool calls.
+        # If a turn changed none of them, it is spinning, even when the model
+        # writes a slightly different closing summary.  Older injected runners
+        # may not provide a tool digest; fall back to the summary for them.
+        same_tool = bool(snapshot.turn.tool_digest) and (
+            snapshot.turn.tool_digest == snapshot.prev_tool_digest
+        )
+        if not snapshot.turn.tool_digest:
+            same_tool = same_summary
+        if same_diff and same_test and same_tool:
             self.state.consecutive_no_progress += 1
             if self.state.consecutive_no_progress >= self.limits.no_progress_limit:
                 self._finish(
                     "failed",
                     f"连续 {self.state.consecutive_no_progress} 轮无进展："
-                    "测试仍失败且代码/输出没有变化",
+                    "测试仍失败，且 diff / 测试输出 / 工具调用指纹均未变化",
                 )
                 return True
         else:
@@ -633,6 +762,8 @@ def new_state(
         workdir=str(workdir),
         requirement=requirement,
         started_at=time.time(),
+        heartbeat_at=time.time(),
+        pid=os.getpid(),
     )
 
 

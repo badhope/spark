@@ -10,7 +10,7 @@
 |---|---|
 | 产品 | Spark |
 | 版本 | `0.15.4` |
-| 主分支 | `main`，基线提交 `ff6df5d` |
+| 主分支 | `main`；本文随远程 `main` HEAD 同提交发布，具体哈希用 `git rev-parse --short HEAD` 核对 |
 | 许可 | MIT |
 | 包入口 | `spark` / `python -m spark` |
 | 主要入口 | Web、CLI/TUI、桌面壳、VS Code、JetBrains/Neovim（ACP）、A2A API |
@@ -47,7 +47,7 @@ Spark 是 AI 编程应用，不是通用办公套件，也不是单一 IDE 插�
 
 ### 1.3 当前明确短板
 
-- **无人值守长任务仍是第一版**：`spark autopilot` 已能无人值守跑 build→repair→audit→done，但没有接入任务队列，也没有真实模型 + 外部仓库的 ≥20 回合基准；进程被 `kill -9` 后的自动恢复未验证。
+- **无人值守长任务仍是第一版**：`spark autopilot` 已能无人值守跑 build→repair→audit→done，已有中断轮标记、`--resume` 重试与心跳，但没有接入任务队列，也没有真实模型 + 外部仓库的 ≥20 回合基准；runner 级 POSIX `SIGKILL` 恢复已有测试；真实 CLI+AgentLoop 长跑的外部杀进程恢复仍待实跑验证。
 - **自动化覆盖边界**：现有压力矩阵只覆盖运行器可枚举的失败模式（120 例），不等于 100% 真实编程场景；真实模型行为、超大仓库、并发工作区仍缺证据。
 - **代码质量治理只完成第一轮**：新增代码已不引入 D/E，主链路索引与 Autopilot 已拆；全仓仍有 70 个历史 D/E/F 函数，未做到“全量逐行重构”。
 - **代码向量库已升级但缺召回指标**：符号感知分块、增量索引、混合重排已落地；还没有人工标注的代码检索 recall@k 数据集。
@@ -128,7 +128,7 @@ Spark 是 AI 编程应用，不是通用办公套件，也不是单一 IDE 插�
 
 | 检查 | 结果 |
 |---|---|
-| `tests/test_autopilot.py` | 15 passed |
+| `tests/test_autopilot.py` | 22 passed（含中断轮标记、恢复重试、工具调用指纹、三路无进展） |
 | `tests/test_cli_autopilot.py` | 4 passed |
 | `tests/test_autopilot_e2e.py` | 1 passed（真实 `AgentLoop` + `write_file` + 真实 `pytest` + 独立 verifier） |
 | `tests/test_opencode_compat.py` | 8 passed |
@@ -139,10 +139,10 @@ Spark 是 AI 编程应用，不是通用办公套件，也不是单一 IDE 插�
 | `ruff check src tests scripts` | 通过 |
 | `mypy src/spark --ignore-missing-imports` | 189 files，0 error |
 | `npm run build`（`web/`） | 通过；i18n 1108 keys、1052 calls |
-| 全量 pytest | 1998 项：1982 passed、16 skipped、0 failed，978.48s（2026-11-24 最终执行） |
+| 全量 pytest | 2005 项：1989 passed、16 skipped、0 failed，974.11s（2026-11-24 Autopilot 加固后最终执行） |
 | 五社区发布 | 掘金、CSDN 已发布待审核；知乎、博客园已公开；B 站未登录（链接与状态见 `COMMUNITY_LAUNCH.md`） |
 
-未验证：真实模型 + **外部仓库 ≥20 回合**；`kill -9` 中断恢复；并发工作区；B 站发布。
+未验证：真实模型 + **外部仓库 ≥20 回合**；CLI+AgentLoop 长跑的 `kill -9` 中断恢复；并发工作区；B 站发布。
 
 ## 3. 待开发任务池
 

@@ -67,6 +67,7 @@ nav:
       - Code audit 2026-11-24: reviews/2026-11-24-code-audit.md
       - Autopilot stress 2026-11-24: reviews/2026-11-24-autopilot-stress.md
       - Autopilot local model 2026-11-24: reviews/2026-11-24-autopilot-local-model.md
+      - Autopilot recovery 2026-11-24: reviews/2026-11-24-autopilot-recovery.md
 
 markdown_extensions:
   - admonition

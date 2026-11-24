@@ -11,6 +11,7 @@ def test_autopilot_help_is_registered() -> None:
     assert "无人值守编程" in result.output
     assert "--max-turns" in result.output
     assert "--resume" in result.output
+    assert "--heartbeat-inter" in result.output
 
 
 def test_autopilot_rejects_interactive_approval_mode() -> None:

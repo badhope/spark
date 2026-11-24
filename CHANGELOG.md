@@ -6,7 +6,8 @@
 
 ### Added
 
-- 无人值守编程闭环 `spark autopilot`：`build → repair → audit → done` 状态机，复用现有 `AgentLoop` 与审批/沙箱；独立执行仓库测试，失败输出回灌；每轮状态落盘、`--resume` 可续；最大轮次/单轮超时/总时限/成本/连续错误/连续无进展熔断；默认 workspace + 无网络 + `full-auto`，`unrestricted` 需显式确认。新增 `docs/AUTOPILOT.md`；单测 15 项、CLI 4 项、真实 AgentLoop+工具+测试 E2E 1 项、120 例压力矩阵 120/120；真实 MiniCPM5-2B 小仓库 4 轮通过。
+- 无人值守编程闭环 `spark autopilot`：`build → repair → audit → done` 状态机，复用现有 `AgentLoop` 与审批/沙箱；独立执行仓库测试，失败输出回灌；每轮状态落盘、`--resume` 可续；最大轮次/单轮超时/总时限/成本/连续错误/连续无进展熔断；默认 workspace + 无网络 + `full-auto`，`unrestricted` 需显式确认。新增 `docs/AUTOPILOT.md`；单测 22 项、CLI 4 项、真实 AgentLoop+工具+测试 E2E 1 项、120 例压力矩阵 120/120；真实 MiniCPM5-2B 小仓库 4 轮通过。
+- Autopilot 崩溃恢复与三路无进展：每轮开始前写 `turn_in_progress` / `active_prompt` / `pid`；`--resume` 识别中断轮并重试原提示词，审计轮中断强制重审；长轮次 `--heartbeat-interval` 只更新状态文件 mtime，避免并发重写 JSON；无进展判定升级为 diff + 测试输出 + 工具调用指纹（名称/参数），模型换一句总结不再被当作进展。测试含 POSIX 子进程真实 `SIGKILL` 后恢复并 passed。
 - 工程化 Autopilot 提示词：`autopilot_contract.md` / `autopilot_build.md` / `autopilot_repair.md` / `autopilot_verify.md`，覆盖新功能、Bug、重构、测试、性能、安全、文档配置、环境依赖场景，明确“不跳测试、不放宽断言、不采信模型自述完成”。
 - OpenCode 静态资产兼容层：读取 `opencode.json(c)`、`.opencode/agents/**/*.md`、`.opencode/commands/*.md`；Markdown agent body 作为 Spark 声明式子 Agent 系统提示词；v1 `permission` / v2 `permissions` 的 deny 与 `tools: write/edit/bash:false` 映射为工具禁用清单；`$ARGUMENTS` 替换；新增 `spark opencode` 只读检查。明确不支持插件运行时、provider 注册表、MCP 自动导入与 ``!`command` `` shell 注入。
 - 代码索引升级：`INDEX_VERSION=2`，顶层 `class/function` 符号感知分块，缩进方法归属类；文件内容 SHA256 增量缓存，未变文件复用 chunks；向量 key 改为 `path:start_line` 并丢弃漂移旧向量；BM25 + 向量 + 符号精确匹配混合重排，同 symbol 最多保留 2 个窗口。

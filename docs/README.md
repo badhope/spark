@@ -9,6 +9,7 @@ The English README is the primary entry point; a [Chinese translation](../README
 | Code audit 2026-11-24 | [reviews/2026-11-24-code-audit.md](reviews/2026-11-24-code-audit.md) | [代码审计](reviews/2026-11-24-code-audit.md) |
 | Autopilot stress 2026-11-24 | [reviews/2026-11-24-autopilot-stress.md](reviews/2026-11-24-autopilot-stress.md) | [压力矩阵](reviews/2026-11-24-autopilot-stress.md) |
 | Autopilot local-model run 2026-11-24 | [reviews/2026-11-24-autopilot-local-model.md](reviews/2026-11-24-autopilot-local-model.md) | [真实本地模型验收](reviews/2026-11-24-autopilot-local-model.md) |
+| Autopilot crash recovery 2026-11-24 | [reviews/2026-11-24-autopilot-recovery.md](reviews/2026-11-24-autopilot-recovery.md) | [崩溃恢复与三路指纹](reviews/2026-11-24-autopilot-recovery.md) |
 | Product positioning | [en/PRODUCT_POSITIONING.md](en/PRODUCT_POSITIONING.md) | [PRODUCT_POSITIONING.md](PRODUCT_POSITIONING.md) |
 | Core capability gaps | [CORE_CAPABILITY_GAPS.md](CORE_CAPABILITY_GAPS.md) | [核心能力差距](CORE_CAPABILITY_GAPS.md) |
 | Integration map | [INTEGRATION_MAP.md](INTEGRATION_MAP.md) | [外部集成地图](INTEGRATION_MAP.md) |

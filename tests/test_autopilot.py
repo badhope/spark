@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,7 @@ from spark.autopilot import (
     make_git_diff_probe,
     new_state,
 )
-from spark.models import TurnEvent
+from spark.models import ToolCall, TurnEvent
 
 
 class Sequence:
@@ -289,6 +290,253 @@ def test_state_roundtrip_and_resume(tmp_path: Path) -> None:
     ).run()
     assert result.status == "passed"
     assert result.turn == 4
+
+
+def test_in_flight_turn_is_persisted_before_model_call(tmp_path: Path) -> None:
+    """A crash during the model call must leave a resumable in-flight marker."""
+    state = _state(tmp_path)
+    path = tmp_path / "state.json"
+    seen: list[dict] = []
+
+    def turns(prompt: str) -> AutopilotTurn:
+        seen.append(json.loads(path.read_text(encoding="utf-8")))
+        return AutopilotTurn(ok=True, summary="implemented")
+
+    verifier = Sequence([Verification(ok=True, command="pytest", output="ok")])
+    diff = Sequence(
+        [
+            DiffProbe(changed=False, digest="base"),
+            DiffProbe(changed=True, digest="changed"),
+            DiffProbe(changed=True, digest="changed"),
+        ]
+    )
+    result = AutopilotRunner(
+        state,
+        turn_runner=turns,
+        verifier=verifier,
+        diff_probe=diff,
+        limits=AutopilotLimits(max_turns=2, heartbeat_interval_sec=1),
+        state_path=path,
+    ).run()
+
+    assert result.status == "passed"
+    assert seen[0]["turn_in_progress"] is True
+    assert seen[0]["active_prompt"]
+    assert seen[0]["pid"] > 0
+    final = json.loads(path.read_text(encoding="utf-8"))
+    assert final["turn_in_progress"] is False
+    assert final["active_prompt"] == ""
+
+
+def test_heartbeat_touches_state_file_during_slow_turn(tmp_path: Path) -> None:
+    """A long model call must leave an observable liveness timestamp."""
+    import time
+
+    state = _state(tmp_path)
+    path = tmp_path / "state.json"
+    observed: list[tuple[int, int]] = []
+
+    def turns(prompt: str) -> AutopilotTurn:
+        before = path.stat().st_mtime_ns
+        time.sleep(1.2)
+        after = path.stat().st_mtime_ns
+        observed.append((before, after))
+        return AutopilotTurn(ok=True, summary="implemented")
+
+    result = AutopilotRunner(
+        state,
+        turn_runner=turns,
+        verifier=Sequence([Verification(ok=True, command="pytest", output="ok")]),
+        diff_probe=Sequence(
+            [
+                DiffProbe(changed=False, digest="base"),
+                DiffProbe(changed=True, digest="changed"),
+                DiffProbe(changed=True, digest="changed"),
+            ]
+        ),
+        limits=AutopilotLimits(max_turns=2, heartbeat_interval_sec=1),
+        state_path=path,
+    ).run()
+
+    assert result.status == "passed"
+    assert observed
+    assert observed[0][1] > observed[0][0]
+
+
+def _crash_child(state: AutopilotState, path: Path, started: Path) -> None:
+    """Child process used by the real SIGKILL recovery test."""
+
+    def turns(prompt: str) -> AutopilotTurn:
+        started.write_text(prompt, encoding="utf-8")
+        time.sleep(30)
+        return AutopilotTurn(ok=True, summary="never reached")
+
+    AutopilotRunner(
+        state,
+        turn_runner=turns,
+        verifier=lambda: Verification(ok=False, command="pytest", output="failure"),
+        diff_probe=lambda: DiffProbe(changed=True, digest="base"),
+        limits=AutopilotLimits(max_turns=3, heartbeat_interval_sec=1),
+        state_path=path,
+    ).run()
+
+
+@pytest.mark.skipif(__import__("os").name != "posix", reason="requires POSIX signals")
+def test_kill_9_leaves_recoverable_in_flight_turn(tmp_path: Path) -> None:
+    """Kill a real child process mid-turn, then resume without skipping it."""
+    import multiprocessing
+    import os
+    import signal
+    import time
+
+    state = _state(tmp_path)
+    path = tmp_path / "state.json"
+    started = tmp_path / "turn-started.txt"
+    ctx = multiprocessing.get_context("fork")
+    proc = ctx.Process(target=_crash_child, args=(state, path, started))
+    proc.start()
+    try:
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            if path.exists() and started.exists():
+                break
+            time.sleep(0.05)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert data["turn_in_progress"] is True
+        assert data["active_prompt"]
+        assert data["pid"] == proc.pid
+        os.kill(proc.pid, signal.SIGKILL)
+        proc.join(timeout=5)
+        assert proc.exitcode == -signal.SIGKILL
+    finally:
+        if proc.is_alive():
+            proc.kill()
+            proc.join(timeout=5)
+
+    loaded = AutopilotState.from_dict(json.loads(path.read_text(encoding="utf-8")))
+    assert loaded.turn_in_progress is True
+    assert loaded.active_prompt
+    assert loaded.prepare_resume() is True
+    assert loaded.recovered_interruptions == 1
+    assert loaded.next_prompt == data["active_prompt"]
+
+    result = AutopilotRunner(
+        loaded,
+        turn_runner=Sequence([AutopilotTurn(ok=True, summary="implemented")]),
+        verifier=Sequence([Verification(ok=True, command="pytest", output="ok")]),
+        diff_probe=Sequence(
+            [
+                DiffProbe(changed=True, digest="changed"),
+                DiffProbe(changed=True, digest="changed"),
+            ]
+        ),
+        limits=AutopilotLimits(max_turns=3),
+        state_path=path,
+    ).run()
+    assert result.status == "passed"
+    assert result.recovered_interruptions == 1
+
+
+def test_prepare_resume_marks_interrupted_audit_for_retry(tmp_path: Path) -> None:
+    state = _state(tmp_path)
+    state.turn = 2
+    state.phase = "audit"
+    state.audit_done = True
+    state.turn_in_progress = True
+    state.active_prompt = "audit the diff"
+    state.history.append({"turn": 1, "phase": "build", "ok": True})
+
+    assert state.prepare_resume() is True
+    assert state.recovered_interruptions == 1
+    assert state.turn_in_progress is False
+    assert state.audit_done is False
+    assert state.next_prompt == "audit the diff"
+    assert state.history[-1]["recovered"] is True
+    assert "中断" in state.last_error
+    assert state.status == "running"
+
+
+def test_tool_digest_tracks_arguments_not_only_call_count() -> None:
+    class FakeLoop:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def iter_turn_sync(self, prompt, images=None, timeout_sec=None):
+            yield TurnEvent(
+                type="tool_start",
+                tool_call=ToolCall(
+                    id="call-1",
+                    name="write_file",
+                    arguments={"path": "a.py", "content": self.value},
+                ),
+            )
+            yield TurnEvent(type="turn_end", text="done")
+
+    first = make_agent_turn_runner(FakeLoop("one"), timeout_sec=30)("do it")
+    second = make_agent_turn_runner(FakeLoop("two"), timeout_sec=30)("do it")
+    assert first.tool_calls == second.tool_calls == 1
+    assert first.tool_digest != second.tool_digest
+
+
+def test_three_fingerprints_reset_no_progress_when_tools_change(tmp_path: Path) -> None:
+    state = _state(tmp_path)
+    turns = Sequence(
+        [
+            AutopilotTurn(ok=True, summary="same words", tool_digest="tool-a"),
+            AutopilotTurn(ok=True, summary="same words", tool_digest="tool-b"),
+            AutopilotTurn(ok=True, summary="same words", tool_digest="tool-a"),
+            AutopilotTurn(ok=True, summary="same words", tool_digest="tool-b"),
+        ]
+    )
+    verifier = Sequence([Verification(ok=False, command="pytest", output="same failure")])
+    diff = Sequence(
+        [
+            DiffProbe(changed=False, digest="base"),
+            DiffProbe(changed=True, digest="same"),
+            DiffProbe(changed=True, digest="same"),
+            DiffProbe(changed=True, digest="same"),
+            DiffProbe(changed=True, digest="same"),
+        ]
+    )
+    result = AutopilotRunner(
+        state,
+        turn_runner=turns,
+        verifier=verifier,
+        diff_probe=diff,
+        limits=AutopilotLimits(max_turns=3, no_progress_limit=2),
+    ).run()
+
+    assert result.status == "failed"
+    assert result.turn == 3
+    assert "最大轮次" in result.last_error
+    assert "无进展" not in result.last_error
+
+
+def test_three_fingerprints_stop_when_tools_also_repeat(tmp_path: Path) -> None:
+    state = _state(tmp_path)
+    turns = Sequence(
+        [AutopilotTurn(ok=True, summary="same words", tool_digest="tool-a")]
+    )
+    verifier = Sequence([Verification(ok=False, command="pytest", output="same failure")])
+    diff = Sequence(
+        [
+            DiffProbe(changed=False, digest="base"),
+            DiffProbe(changed=True, digest="same"),
+            DiffProbe(changed=True, digest="same"),
+            DiffProbe(changed=True, digest="same"),
+        ]
+    )
+    result = AutopilotRunner(
+        state,
+        turn_runner=turns,
+        verifier=verifier,
+        diff_probe=diff,
+        limits=AutopilotLimits(max_turns=6, no_progress_limit=2),
+    ).run()
+
+    assert result.status == "failed"
+    assert "无进展" in result.last_error
+    assert "工具调用指纹" in result.last_error
 
 
 def test_agent_turn_runner_captures_text_and_cost() -> None:

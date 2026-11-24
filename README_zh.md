@@ -70,7 +70,7 @@ Autopilot 复用同一个 `AgentLoop`、审批和沙箱，只在外面加状态�
 3. **audit**：测试绿了以后复核需求覆盖与边界；
 4. **done**：测试通过 + 有真实 diff + 复核完成才交付。
 
-每轮状态写入 `.spark/autopilot/<run-id>.json`；`--max-turns`、`--turn-timeout`、`--task-timeout`、`--max-cost-usd` 和连续无进展熔断会停掉失控运行。默认 `full-auto` + workspace 沙箱 + 工具无网络；`unrestricted` 必须显式 `--allow-unrestricted`。测试由运行器自己执行，不采信模型自述“已完成”。边界与未验证项见 `docs/AUTOPILOT.md`。
+每轮状态写入 `.spark/autopilot/<run-id>.json`；进行中的轮次会先写 `turn_in_progress`、`active_prompt`、`pid`，`--resume` 识别为中断轮并重试，不跳过。`--heartbeat-interval` 在长模型调用期间更新状态文件 mtime；无进展按 diff、测试输出、工具调用三路指纹判断。`--max-turns`、`--turn-timeout`、`--task-timeout`、`--max-cost-usd` 和连续无进展熔断会停掉失控运行。默认 `full-auto` + workspace 沙箱 + 工具无网络；`unrestricted` 必须显式 `--allow-unrestricted`。测试由运行器自己执行，不采信模型自述“已完成”。边界与未验证项见 `docs/AUTOPILOT.md`。
 
 ![Autopilot 本地实跑：MiniCPM5-2B、真实仓库、真实 pytest，4 轮从 build 到 audit](assets/screenshots/31-autopilot-local-run.png)
 
