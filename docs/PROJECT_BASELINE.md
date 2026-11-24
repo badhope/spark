@@ -10,7 +10,7 @@
 |---|---|
 | 产品 | Spark |
 | 版本 | `0.15.4` |
-| 主分支 | `main` |
+| 主分支 | `main`，基线提交 `ff6df5d` |
 | 许可 | MIT |
 | 包入口 | `spark` / `python -m spark` |
 | 主要入口 | Web、CLI/TUI、桌面壳、VS Code、JetBrains/Neovim（ACP）、A2A API |
