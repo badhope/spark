@@ -62,7 +62,7 @@ def parse_cron(expr: str) -> dict[str, set[int]]:
     except (CroniterError, ValueError, TypeError) as exc:
         raise CronError(f"invalid cron expression {expr!r}: {exc}") from exc
     parsed: dict[str, set[int]] = {}
-    for name, (low, high), raw in zip(_CRON_KEYS, _CRON_RANGES, expanded):
+    for name, (low, high), raw in zip(_CRON_KEYS, _CRON_RANGES, expanded, strict=True):
         if raw == ["*"] or raw == "*":
             parsed[name] = set(range(low, high + 1))
         else:

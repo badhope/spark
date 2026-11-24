@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spark-agent"
-version = "0.15.5"
+version = "0.15.6"
 description = "Browser-native, cross-platform, open-source AI coding application with auditable guardrails"
 readme = "README.md"
 license = { text = "MIT" }
@@ -168,7 +168,7 @@ spark = ["prompts/*.md", "web/*.html", "web/dist/*", "web/dist/assets/*", "evals
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 # Dump every thread's stack if a single test exceeds 10 min. The plain suite
 # takes ~2.5 min, so this only fires on a genuine deadlock and turns "CI hung
 # with no output" into a stack trace naming the culprit.

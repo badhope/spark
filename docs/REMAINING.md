@@ -12,7 +12,8 @@
 |---|---|---|
 | Autopilot 无人值守闭环（AUT-01/02/03） | ✅ | `src/spark/autopilot.py` + `prompts/autopilot_*.md`：build→repair→audit→done、独立测试、失败回灌、`--resume`、轮次/超时/成本/无进展熔断；`tests/test_autopilot.py` 22 项、`test_cli_autopilot.py` 4 项、`test_autopilot_e2e.py` 1 项真实 AgentLoop 链路；120 例合成矩阵 120/120。**边界**：真实模型外部仓库 20+ 回合未验收 |
 | Autopilot 崩溃恢复与三路指纹 | ✅ | `turn_in_progress`/`active_prompt`/`pid` 每轮开始前落盘；`--resume` 识别中断轮并重试，审计轮中断强制重审；`--heartbeat-interval` 更新状态文件 mtime；diff + 测试输出 + 工具调用指纹三路无进展；`tests/test_cli_autopilot_kill9.py` 真实 CLI 子进程 `kill -9` 后 `--resume` passed，并修复了恢复时基线 diff 误判 |
-| Autopilot 队列接入（AUT-04） | ✅ 第一版 | 队列表新增 `kind` / `options_json`（v8）；`spark queue add --kind autopilot` 与 Web 队列类型选择；`SparkWebState._run_queued_autopilot` 复用真实 `AutopilotRunner`；失败重试归档旧账本、日配额/成本上限/暂停恢复沿用队列；`tests/test_queue_autopilot.py` 2 项、`tests/test_task_queue.py` 1 项 |
+| Autopilot 队列接入（AUT-04） | ✅ 第一版 | 队列表新增 `kind` / `options_json`（v8）；`spark queue add --kind autopilot` 与 Web 队列类型选择；`SparkWebState._run_queued_autopilot` 复用真实 `AutopilotRunner`；失败重试归档旧账本、日配额/成本上限/暂停恢复沿用队列；`tests/test_queue_autopilot.py` 3 项、`tests/test_task_queue.py` 1 项 |
+| 全仓债务清扫（第二轮） | 🟡 | 前端 lint 清零、共享 `CodePreview` 修复跨行高亮、配对/轮询不再因切语言重启、SSE 坏帧跳过；队列 `state_path` 拒绝越界、重试不泄漏空会话、账本不覆盖；`policy.decide` F45 与队列 Autopilot F45 拆分；12 处 `zip(strict=True)`；`_probe_target_allowed` 改精确 origin。**边界**：70 个历史 D/E/F 未全量拆，CODE-02 diff 门禁未接；见 `docs/reviews/2026-11-24-debt-sweep.md` |
 | 跨语言符号图（IDX-02） | ✅ 第一版 | `src/spark/symbol_graph.py`；Python/TS/TSX/JS/Go/Rust 定义与调用边；`spark symbols` 的 callers/callees/impact；`find_symbol` 三种新模式；`repo_map` 同步支持 Go/Rust；`tests/test_symbol_graph.py` 4 项 |
 | 符号感知代码索引 + 增量更新（IDX-01） | ✅ | `semantic_index.py`：`INDEX_VERSION=2`、顶层符号分块、文件 SHA256 复用、向量 key `path:start_line`、BM25+向量+符号重排；`tests/test_semantic_index.py` 5 项 |
 | OpenCode 静态资产兼容（OSS-01） | ✅ | `opencode_compat.py`：`opencode.json(c)`、`.opencode/agents/**/*.md`、`.opencode/commands/*.md`、permission/tools denylist；`agents.py`/`slash.py`/`subagent_runner.py` 接线；`spark opencode` 只读查看；`tests/test_opencode_compat.py` 8 项。**边界**：插件运行时/provider 注册表/MCP 自动导入不支持 |
@@ -93,7 +94,7 @@
 
 | ID | 优先级 | 差距 / 现状 | 接回哪里 | 完成标准 | 成本 / 条件 |
 | --- | --- | --- | --- | --- | --- |
-| AQ-01 | P0 | `KnowledgeBase.search()` 实际只有 BM25；模块头说复用向量、类注释说刻意不用，文档自相矛盾；跨语言/同义改写召回弱 | `knowledge.py`、`config.py`、`memory/store.py` 的 embedding 函数 | BM25 + 向量混合召回（向量可选、BM25 永远兜底）；向量存知识库现有索引的 sidecar，不新建数据库/服务；英文 query 能命中中文规范，同义 query 能命中；补回归测试，统一 docstring | M |
+| AQ-01 | P0 | **✅ 2026-11-22 已完成**。原差距：`KnowledgeBase.search()` 实际只有 BM25，模块头与类注释自相矛盾，跨语言/同义改写召回弱 | `knowledge.py`、`config.py`、`memory/store.py` 的 embedding 函数 | BM25 + 可选向量混合召回（BM25 永远兜底）；向量不新建数据库/服务，只写现有索引的 `vectors.json` sidecar；旧索引可回填；英文 query 命中中文规范、同义 query 命中；`tests/test_knowledge.py` 等 36 项知识库测试通过，docstring 已统一 | M |
 | AQ-02 | P1 | **✅ 2026-11-22 已完成**。原差距：压缩已有 opencode 5 段结构化摘要与 prior-summary 合并，但仍可能丢旧工具输出/文件路径；压缩后的历史不可检索回填，摘要字段也没有硬校验 | `core/compact.py`、`core/context.py`、`core/loop.py` | 摘要字段硬校验（Objective/Details/Work State/Next Move/Files 缺段可检测）；工具输出分层摘要；压缩历史可检索回填；40+ 回合长任务不丢关键路径与未完成项；token 预算不超 | M |
 | AQ-03 | P1 | **✅ 2026-11-22 已完成**。原差距：小模型已有 XML 解析和 1B schema 裁剪，但错误工具选择/长参数仍无强校验与重试 | `providers/llama_cpp.py`、`tools/validation.py`、`tools/registry.py`、`core/tool_runner.py` | JSON schema 校验、未知工具降级、失败只重试一次、按任务裁剪 schema；20 条工具选择回归集；非法参数不执行；1B 算术题不再调 `run_tests`；不出现重试死循环。新增 `tests/test_tool_validation.py` 61 项，工具链 10 文件定向回归 158 项通过 | M |
 | AQ-04 | P2 | 只有 task 并行子代理和 workflow DAG，没有 Qoder Experts/Team Canvas 级 Lead+专家团队 | `core/workflow.py`、`core/subagent_runner.py`、声明式 `agents` | 专家角色复用声明式 agent，Lead 负责拆解/派发/验收；复用现有 workflow 引擎，不写第二套编排器；执行图显示 handoff；带模型/工具白名单与成本上限 | L；需产品决策是否产品化 |
@@ -124,7 +125,7 @@
 | ID | 优先级 | 差距 / 现状 | 接回哪里 | 完成标准 | 成本 |
 | --- | --- | --- | --- | --- | --- |
 | DOC-01 | P0 | **✅ 2026-11-22 已完成**。原差距：竞品矩阵多次漂移，远程/PR/浏览器已修，TUI/i18n/插件/遥测仍是旧判断；没有“文档说 ✅ 但代码没有”的检查 | `docs/competitive-comparison.md`、本文件、CI | 86 个 ✅ 行全部内联代码/测试落点；原 36 个无落点行补齐；逐行核对发现“归档”只有删除、无归档/恢复，已降 ⚠️；矩阵复测日期更新为 2026-11-22 第八轮；核对记录 `docs/reviews/2026-11-22-matrix-audit.md` | S |
-| DOC-02 | P0 | 模块 docstring 与实现矛盾（知识库最典型：头说向量、类说不用） | `knowledge.py` 等源码 docstring | 注释只保留一种事实；与 AQ-01 一起改；review 时把 docstring 漂移当缺陷 | S |
+| DOC-02 | P0 | **✅ 2026-11-22 已完成**。原差距：模块 docstring 与实现矛盾（知识库头说复用向量、类注释说刻意不用） | `knowledge.py` 等源码 docstring | 注释只保留一种事实；与 AQ-01 一起改；`tests/test_knowledge.py` 覆盖混合检索；review 把 docstring 漂移当缺陷 | S |
 
 ### 执行顺序（不并行硬塞）
 

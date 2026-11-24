@@ -2,6 +2,7 @@
 
 > 范围：`src/spark` 全量源文件。目标不是“把指标刷绿”，而是找出 AI 生成代码的典型通病：死代码、无效分支、重复逻辑、复杂度堆积，并把确实有风险的点修掉。
 > 原始输出：`docs/reviews/2026-11-24-vulture.txt`、`docs/reviews/2026-11-24-radon-cc.txt`。
+> 后续更新（同日第二轮债务清扫）：`policy.decide` 已按规则族拆分并保持原决策顺序，队列 Autopilot 与 `_run_queued_task` 也已拆分；详见 [`2026-11-24-debt-sweep.md`](2026-11-24-debt-sweep.md)。
 
 ## 1. 工具结果
 
@@ -45,7 +46,7 @@
 
 | 模块 | 代表函数 | 风险 | 处理策略 |
 |---|---|---|---|
-| `policy.py` | `decide` F(45) | 安全关键，拆错会放行/误拒 | 先补决策表测试，再按规则族拆分；本轮不动 |
+| `policy.py` | `decide` F(45) | 安全关键，拆错会放行/误拒 | ✅ 已按规则族拆分；21 项决策测试通过 |
 | `tools/repo_context.py` | `repo_context` F(60) | 仓库探测入口，影响首轮理解 | 拆“语言/命令/布局/入口”四个采集器；需真实仓库回归 |
 | `web/_handlers_settings.py` | `_handle_settings_locked` F(52) | 设置写入 + 脱敏 + 校验耦合 | 按“解析→校验→落盘→回滚”拆；需 Web 集成测试 |
 | `workflow.py` | `load_workflow` F(43)、`run_workflow` E(34) | DSL 校验与执行耦合 | 抽 validator / scheduler / persistence |

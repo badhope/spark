@@ -49,7 +49,7 @@ Spark 是 AI 编程应用，不是通用办公套件，也不是单一 IDE 插�
 
 - **无人值守长任务仍是第一版**：`spark autopilot` 已能无人值守跑 build→repair→audit→done，已有中断轮标记、`--resume` 重试与心跳；`kind=autopilot` 已接入任务队列，排队、失败重试、日配额/成本上限与暂停/恢复复用同一套机制；真实 CLI + AgentLoop 的 `kill -9` 恢复已验收。仍缺真实模型 + 外部仓库的 ≥20 回合基准。
 - **自动化覆盖边界**：现有压力矩阵只覆盖运行器可枚举的失败模式（120 例），不等于 100% 真实编程场景；真实模型行为、超大仓库、并发工作区仍缺证据。
-- **代码质量治理只完成第一轮**：新增代码已不引入 D/E，主链路索引与 Autopilot 已拆；全仓仍有 70 个历史 D/E/F 函数，未做到“全量逐行重构”。
+- **代码质量治理完成第二轮，仍未清零**：新增代码不引入 D/E；队列 Autopilot、`policy.decide`、索引主链路已拆并有回归；全仓仍有 70 个历史 D/E/F 函数（53 D / 10 E / 7 F），未做到“全量逐行重构”。详见 [`reviews/2026-11-24-debt-sweep.md`](reviews/2026-11-24-debt-sweep.md)。
 - **代码向量库已升级但缺召回指标**：符号感知分块、增量索引、混合重排已落地；还没有人工标注的代码检索 recall@k 数据集。
 - **跨语言符号图只覆盖六种语言**：Python/TS/TSX/JS/Go/Rust 已接入 `spark symbols` 与 `find_symbol` 的 callers/callees/impact；Java/C/C++/C#/Ruby/PHP/Swift 仍缺失；解析是语法级、名字级，不代表完整 LSP。
 - **OpenCode 兼容层只覆盖静态资产**：配置、命令、Agent、权限映射已兼容；插件运行时、provider 注册表、MCP 自动导入明确不支持。
@@ -141,8 +141,8 @@ Spark 是 AI 编程应用，不是通用办公套件，也不是单一 IDE 插�
 | 真实本地模型验收 | MiniCPM5-2B + 真实仓库 + 真实 pytest：首轮 4 轮/11 次工具调用 passed；最终代码干净仓库重跑 4 轮/8 次工具调用 passed（见 `reviews/2026-11-24-autopilot-local-model.md`） |
 | `ruff check src tests scripts` | 通过 |
 | `mypy src/spark --ignore-missing-imports` | 190 files，0 error |
-| `npm run build`（`web/`） | 通过；i18n 1119 keys、1068 calls |
-| 全量 pytest | 2000 passed、13 skipped、0 failed，1184.39s（2026-11-24 0.15.5 收口） |
+| `npm run build`（`web/`） | 通过；i18n 1119 keys、1069 calls |
+| 全量 pytest | 2001 passed、13 skipped、0 failed，14 warnings，1153.21s（2026-11-24 0.15.6 收口） |
 | 四社区发布 | 掘金、CSDN 已发布待审核；知乎、博客园已公开（链接与状态见 `COMMUNITY_LAUNCH.md`） |
 
 未验证：真实模型 + **外部仓库 ≥20 回合**；并发工作区；外部工具副作用下的长跑恢复。
@@ -160,7 +160,7 @@ Spark 是 AI 编程应用，不是通用办公套件，也不是单一 IDE 插�
 | AUT-01 | 全自动编程运行器 | ✅ 第一版 | `spark autopilot` 从初始需求启动；build→repair→audit→done；状态落盘；超时/无进展/预算/成本可停；`--resume` 可恢复 |
 | AUT-02 | 自动化可靠性门禁 | ✅ 第一版 | 120 例合成矩阵 120/120；覆盖首轮成功、一次/两次修复、无进展、最大轮次、模型错误、预算、超时、无变更、错误恢复 |
 | AUT-03 | 工程化提示词体系 | ✅ 第一版 | 契约 + build/repair/verify 四份提示词；场景矩阵含新功能/Bug/重构/测试/性能/安全/文档配置/环境依赖 |
-| CODE-01 | 全仓合规审计 | 🟡 第一轮 | ruff/mypy 通过；vulture 6 条已逐项判定为协议签名；radon 70 个历史 D/E/F 已列清单；新增代码无 D/E |
+| CODE-01 | 全仓合规审计 | 🟡 第二轮 | ruff/mypy 通过；vulture 6 条逐项判定为协议签名；`policy.decide`、队列 Autopilot 已拆；12 处 zip 静默截断改为 strict；新增代码无 D/E |
 | IDX-01 | 代码向量知识库升级 | ✅ 第一版 | 符号感知分块、增量索引、BM25+向量+符号加权重排；索引版本 2；无人工标注 recall 集 |
 | DOC-03 | 行业调研与三项论证 | ✅ | `docs/INDUSTRY_RESEARCH_2026-11-24.md`：两赛道、竞品矩阵、三项基准、公开数据与边界 |
 | OSS-01 | OpenCode 生态兼容层 | ✅ 第一版 | `opencode.json(c)`、`.opencode/agents`、`.opencode/commands`、permission/tools denylist 映射；`spark opencode` 只读查看 |
@@ -172,7 +172,7 @@ Spark 是 AI 编程应用，不是通用办公套件，也不是单一 IDE 插�
 | AUT-04 | 队列接入 Autopilot | ✅ 第一版 | `kind=autopilot` 由 Web 队列 worker 执行；失败重试、日配额、成本上限、暂停/恢复、崩溃续跑复用同一队列；`test_queue_autopilot.py` 覆盖真实链路 |
 | AUT-05 | 真实仓库长任务基准 | 📋 | ≥3 个外部仓库、≥20 回合任务；记录 pass@1、人工介入、恢复成功率、成本 |
 | IDX-02 | 跨语言符号图与调用链 | ✅ 第一版 | Python/TS/TSX/JS/Go/Rust；`spark symbols` 与 `find_symbol` 的 callers/callees/impact；跨文件调用边与置信度；`tests/test_symbol_graph.py` 4 项 |
-| CODE-02 | 重复代码与复杂度门禁 | 📋 | CI 固定跑 ruff/mypy/vulture/radon；新增 D/E 级函数必须解释或拆分 |
+| CODE-02 | 重复代码与复杂度门禁 | 🟡 部分 | 重复代码高亮已合并；radon 70 个历史 D/E/F 已列清单并接入 review；CI 固定跑 ruff/mypy/vulture/radon 与 diff 门禁尚未接入 |
 | REL-01 | 发布门禁与四社区清单 | 🟡 | Release 资产、README 截图、四社区清单与发布记录已可查 |
 | UX-01 | 全链路过渡与异常提示 | 📋 | Web/手机关键路径有加载、空态、错误恢复；截图与交互测试 |
 | DS-01 | Windows Authenticode | ⏸ 需证书 | `signtool verify /pa` 通过 |

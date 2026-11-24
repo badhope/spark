@@ -143,7 +143,7 @@ class MemoryService:
             if not isinstance(scores, (list, tuple)):
                 scores = [scores]
             ranked = sorted(
-                zip(hits[:top], scores), key=lambda x: x[1], reverse=True
+                zip(hits[:top], scores, strict=True), key=lambda x: x[1], reverse=True
             )
             return [(row, float(s)) for (row, _), s in ranked][
                 : (top_k or self.cfg.memory.top_k)
@@ -295,7 +295,7 @@ class MemoryService:
         vecs = self._embed(all_texts) if all_texts else None
         vec_map: dict[str, list[float]] = {}
         if vecs:
-            for text, vec in zip(all_texts, vecs):
+            for text, vec in zip(all_texts, vecs, strict=True):
                 vec_map[text] = vec
         return vec_map
 

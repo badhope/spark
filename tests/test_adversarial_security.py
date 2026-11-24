@@ -200,6 +200,17 @@ def test_settings_endpoint_rejects_test_with_foreign_base_url(tmp_path: Path) ->
     assert not _probe_target_allowed(
         "http://127.0.0.1:8000", "https://api.agnes-ai.cn/v1"
     )
+    # Same hostname is not enough: scheme and port changes are different origins
+    # and must not receive the stored credential.
+    assert not _probe_target_allowed(
+        "http://api.agnes-ai.cn/v1", "https://api.agnes-ai.cn/v1"
+    )
+    assert not _probe_target_allowed(
+        "https://api.agnes-ai.cn:8443/v1", "https://api.agnes-ai.cn/v1"
+    )
+    assert _probe_target_allowed(
+        "https://api.agnes-ai.cn:443/v1", "https://api.agnes-ai.cn/v1"
+    )
 
 
 # ---------- 7. 熔断器窗口必须随阈值增长（回归） ----------

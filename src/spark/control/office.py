@@ -201,7 +201,7 @@ class MeetingMinutes:
             document.add_heading("行动项", level=1)
             table = document.add_table(rows=1, cols=4)
             table.style = "Table Grid"
-            for cell, text in zip(table.rows[0].cells, ("行动", "负责人", "截止", "来源")):
+            for cell, text in zip(table.rows[0].cells, ("行动", "负责人", "截止", "来源"), strict=True):
                 cell.text = text
             for action in self.actions:
                 row = table.add_row().cells

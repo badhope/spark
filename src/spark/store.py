@@ -328,7 +328,7 @@ class SessionStore:
 
     def _migrate_v8(self) -> None:
         """v8: queue rows distinguish plain agent prompts from Autopilot runs."""
-        for column, ddl in (
+        for _column, ddl in (
             ("kind", "ALTER TABLE agent_queue ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent'"),
             (
                 "options_json",

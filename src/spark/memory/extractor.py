@@ -126,7 +126,7 @@ async def resolve_operations(
     lines.append("")
     lines.append("现有相似记忆：")
     has_any = False
-    for i, cand in enumerate(candidates):
+    for i in range(len(candidates)):
         for row, score in similar.get(i, [])[:3]:
             has_any = True
             lines.append(f"- id={row.id} 相关度={score} [{row.type}] {row.content}")

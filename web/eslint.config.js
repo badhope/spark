@@ -11,6 +11,13 @@ export default tseslint.config(
   },
   js.configs.recommended,
   {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      // Node scripts intentionally use console/process; the app sources do not.
+      globals: { console: "readonly", process: "readonly" },
+    },
+  },
+  {
     files: ["public/sw.js"],
     languageOptions: {
       globals: { self: "readonly", URL: "readonly" },

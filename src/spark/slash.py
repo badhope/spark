@@ -318,7 +318,7 @@ def expand_command(workdir: str | Path, text: str) -> str | None:
             candidate = hit
             break
     if candidate is None:
-        for plugin, command, plugin_path in _plugin_command_files(base):
+        for _plugin, command, plugin_path in _plugin_command_files(base):
             if command == name:
                 candidate = plugin_path
                 break

@@ -3557,7 +3557,11 @@ def queue_cmd(
     task_timeout: int = typer.Option(3600, "--task-timeout", min=60, max=86400),
     test_timeout: int = typer.Option(1800, "--test-timeout", min=30, max=7200),
     max_cost_usd: float = typer.Option(0.0, "--max-cost-usd", min=0.0),
-    state_path: str = typer.Option("", "--state-path", help="autopilot 状态文件（默认 .spark/autopilot/queue-<id>.json）"),
+    state_path: str = typer.Option(
+        "",
+        "--state-path",
+        help="autopilot 状态文件名，只能落在 .spark/autopilot（默认 queue-<id>.json）",
+    ),
     as_json: bool = typer.Option(False, "--json", help="输出 JSON"),
 ) -> None:
     import json as _json
@@ -3583,8 +3587,20 @@ def queue_cmd(
                     "test_timeout_sec": test_timeout,
                     "max_cost_usd": max_cost_usd,
                 }
-                if state_path.strip():
-                    options["state_path"] = state_path.strip()
+                raw_state = state_path.strip()
+                if raw_state:
+                    candidate = _Path(raw_state)
+                    if (
+                        candidate.is_absolute()
+                        or candidate.name != raw_state
+                        or not raw_state.endswith(".json")
+                    ):
+                        typer.echo(
+                            "--state-path 只能是 .json 文件名，不能带目录或绝对路径",
+                            err=True,
+                        )
+                        raise typer.Exit(1)
+                    options["state_path"] = raw_state
             task = store.enqueue_agent_task(
                 prompt,
                 title=title,

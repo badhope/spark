@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { claimPairing, isAuthError, setRemoteToken } from "../api"
 import { Button, Spinner } from "./ui"
 import { IconKey, IconSpark } from "./icons"
@@ -56,12 +56,17 @@ export function RemoteUnlock() {
   const [err, setErr] = useState("")
   const [manual, setManual] = useState(false)
 
+  // Language is display-only here: a live locale switch must not restart the
+  // one-time pairing claim and burn the code twice.
+  const langRef = useRef(lang)
+  langRef.current = lang
+
   useEffect(() => {
     if (!autoCode) return
     let cancelled = false
     setBusy(true)
     setErr("")
-    claimPairing(autoCode, deviceName(lang))
+    claimPairing(autoCode, deviceName(langRef.current))
       .then((result) => {
         if (cancelled) return
         setRemoteToken(result.token)

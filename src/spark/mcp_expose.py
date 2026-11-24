@@ -55,7 +55,7 @@ def _make_handler(registry: ToolRegistry, name: str, properties: dict, required:
         f"    return await _exec({call_args})\n"
     )
     async def _exec(*args):
-        kwargs = {p: v for p, v in zip(props, args) if v is not None}
+        kwargs = {p: v for p, v in zip(props, args, strict=True) if v is not None}
         result = await registry.execute(
             ToolCall(id=f"mcp-{name}", name=name, arguments=kwargs)
         )

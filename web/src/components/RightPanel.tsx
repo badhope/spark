@@ -15,9 +15,9 @@ import { WorkbenchPanel } from "./WorkbenchPanel"
 import { IconCheck, IconChevronRight, IconCopy, IconDownload, IconExternal, IconFile, IconFileDiff, IconFolder, IconGlobe, IconLayers, IconRefresh, IconSearch, IconSpark, IconTerminal, IconX } from "./icons"
 import { cls, Spinner } from "./ui"
 import { t } from "../i18n"
+import { CodePreview } from "./CodePreview"
 import { useSessionStore } from "../store/sessionStore"
 import { useUiStore } from "../store/uiStore"
-import hljs from "highlight.js/lib/common"
 
 const Terminal = lazy(() => import("./Terminal").then((m) => ({ default: m.Terminal })))
 const ExecutionGraph = lazy(() => import("./ExecutionGraph").then((m) => ({ default: m.ExecutionGraph })))
@@ -54,6 +54,9 @@ export const RightPanel = () => {
   const shotRev = useRef(-1)
   const homeStarted = useRef(false)
   const shotRef = useRef("")
+  // Polling must survive a locale switch; only the fallback copy reads lang.
+  const langRef = useRef(lang)
+  langRef.current = lang
 
   const visibleEntries = useMemo(() => {
     const q = fileQuery.trim().toLowerCase()
@@ -109,7 +112,7 @@ export const RightPanel = () => {
           try {
             const opened = await browserNavigate("")
             if (!cancelled) {
-              if (!opened.ok) setLiveError(opened.error || t("rightPanel.browserStartFailed", lang))
+              if (!opened.ok) setLiveError(opened.error || t("rightPanel.browserStartFailed", langRef.current))
               else if (opened.url) setBrowseUrlValue(opened.url)
             }
           } finally {
@@ -459,7 +462,7 @@ export const RightPanel = () => {
             ) : file?.binary ? (
               <p className="px-2 py-1 text-[11px] text-ink3">{t("rightPanel.binaryHint", lang)}</p>
             ) : file ? (
-              <CodePreview code={file.content} name={file.name} />
+              <CodePreview code={file.content} name={file.name} compact />
             ) : (
               <p className="px-2 py-1 text-[11px] text-ink3">{t("rightPanel.pickFile", lang)}</p>
             )}
@@ -662,55 +665,4 @@ function downloadFile(name: string, content: string) {
   a.download = name
   a.click()
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-
-/** 行号 + 高亮的精简文件预览（与文件查看器一致） */
-function CodePreview({ code, name }: { code: string; name: string }) {
-  const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : ""
-  let html: string
-  try {
-    const lang = ext && hljs.getLanguage(ext) ? ext : "plaintext"
-    html = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value
-  } catch {
-    html = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-  }
-  const lines = splitHighlightedLines(html)
-  return (
-    <div className="overflow-auto font-mono text-[11.5px] leading-[1.55]">
-      <table className="w-full border-collapse">
-        <tbody>
-          {lines.map((line, i) => (
-            <tr key={i} className="align-top">
-              <td className="w-8 pr-2.5 text-right text-ink3 select-none">{i + 1}</td>
-              <td className="pr-3">
-                <span dangerouslySetInnerHTML={{ __html: line }} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-/** 补齐 highlight.js 行级切分后未闭合的 span（与 FileViewer 同源逻辑） */
-function splitHighlightedLines(html: string): string[] {
-  const rawLines = html.split("\n")
-  const out: string[] = []
-  const openStack: string[] = []
-  for (const rawLine of rawLines) {
-    let prefix = ""
-    const escapedOpen = openStack.length
-    for (const m of rawLine.matchAll(/<span[^>]*>/g)) {
-      openStack.push(m[0])
-      prefix += m[0]
-    }
-    const closeCount = (rawLine.match(/<\/span>/g) ?? []).length
-    for (let i = 0; i < closeCount; i++) {
-      if (openStack.length) openStack.pop()
-      if (i >= escapedOpen) prefix += "</span>"
-    }
-    out.push(prefix + rawLine + "</span>".repeat(openStack.length))
-  }
-  return out
 }

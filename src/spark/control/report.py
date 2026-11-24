@@ -229,7 +229,7 @@ class Report:
         document.add_heading("指标", level=1)
         table = document.add_table(rows=1, cols=5)
         table.style = "Table Grid"
-        for cell, text in zip(table.rows[0].cells, ("指标", "实际", "目标", "达成率", "单位")):
+        for cell, text in zip(table.rows[0].cells, ("指标", "实际", "目标", "达成率", "单位"), strict=True):
             cell.text = text
         for metric in self.metrics:
             row = table.add_row().cells

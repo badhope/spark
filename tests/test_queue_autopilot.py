@@ -13,6 +13,7 @@ from spark.models import ChatDelta, ToolCall
 from spark.proc import run_bounded
 from spark.providers.mock import MockProvider
 from spark.store import SessionStore
+from spark.task_queue import QueueOutcome
 from spark.web.state import SparkWebState
 
 
@@ -162,6 +163,137 @@ def test_terminal_failure_retry_archives_old_ledger(tmp_path: Path, monkeypatch)
         assert outcome.status == "ok", outcome.error
         assert state_path.with_name("queue-task-2.attempt1.json").exists()
         assert '"status": "passed"' in state_path.read_text(encoding="utf-8")
+    finally:
+        state.close()
+        store.close()
+
+
+def test_queue_autopilot_rejects_ledger_escape_and_sanitizes_default(
+    tmp_path: Path,
+) -> None:
+    import json
+
+    from spark.autopilot import AutopilotState
+
+    repo = tmp_path / "repo-path"
+    repo.mkdir()
+    cfg = SparkConfig()
+    cfg.provider.name = "mock"
+    store = SessionStore(tmp_path / "queue-path.db")
+    state = SparkWebState(repo, cfg, store)
+    try:
+        for bad in ("../../escape.json", "/tmp/escape.json", "nested/escape.json"):
+            outcome = state._queued_autopilot_spec(
+                {
+                    "id": "task-path",
+                    "prompt": "do it",
+                    "workdir": str(repo),
+                    "options": {"state_path": bad},
+                }
+            )
+            assert outcome.status == "blocked", bad
+            assert "state_path" in outcome.error
+        assert not (tmp_path / "escape.json").exists()
+
+        spec = state._queued_autopilot_spec(
+            {
+                "id": "../../evil",
+                "prompt": "do it",
+                "workdir": str(repo),
+                "options": {},
+            }
+        )
+        assert not isinstance(spec, QueueOutcome)
+        assert spec.state_path == (
+            repo / ".spark" / "autopilot" / "queue-evil.json"
+        ).resolve()
+
+        spec = state._queued_autopilot_spec(
+            {
+                "id": "task-name",
+                "prompt": "do it",
+                "workdir": str(repo),
+                "options": {"state_path": "ledger.json"},
+            }
+        )
+        assert spec.state_path == (repo / ".spark" / "autopilot" / "ledger.json").resolve()
+
+        ledger = state._queued_autopilot_spec(
+            {
+                "id": "task-first-fail",
+                "prompt": "do it",
+                "workdir": str(repo),
+                "options": {},
+            }
+        ).state_path
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        ledger.write_text(
+            json.dumps(
+                AutopilotState(
+                    run_id="task-first-fail",
+                    session_id="missing",
+                    workdir=str(repo),
+                    requirement="do it",
+                    status="failed",
+                    last_error="first attempt failed",
+                ).to_dict()
+            ),
+            encoding="utf-8",
+        )
+        loaded, failure = state._load_queued_autopilot_state(
+            state._queued_autopilot_spec(
+                {
+                    "id": "task-first-fail",
+                    "prompt": "do it",
+                    "workdir": str(repo),
+                    "options": {},
+                }
+            ),
+            {"attempts": 1},
+        )
+        assert loaded is None
+        assert failure is not None and failure.status == "failed"
+        assert ledger.exists()
+        assert not ledger.with_name("queue-task-first-fail.attempt0.json").exists()
+
+        link_repo = tmp_path / "repo-link"
+        outside = tmp_path / "outside-ledger"
+        link_repo.mkdir()
+        outside.mkdir()
+        (link_repo / ".spark").mkdir()
+        (link_repo / ".spark" / "autopilot").symlink_to(outside, target_is_directory=True)
+        escaped = state._queued_autopilot_spec(
+            {
+                "id": "task-link",
+                "prompt": "do it",
+                "workdir": str(link_repo),
+                "options": {"state_path": "ledger.json"},
+            }
+        )
+        assert escaped.status == "blocked"
+        assert not (outside / "ledger.json").exists()
+
+        bad_cost = state._queued_autopilot_spec(
+            {
+                "id": "task-cost",
+                "prompt": "do it",
+                "workdir": str(repo),
+                "options": {"max_cost_usd": float("nan")},
+            }
+        )
+        assert bad_cost.status == "blocked"
+        assert "finite" in bad_cost.error
+
+        clamped = state._queued_autopilot_spec(
+            {
+                "id": "task-timeout",
+                "prompt": "do it",
+                "workdir": str(repo),
+                "options": {"test_timeout_sec": 999999},
+            }
+        )
+        assert not isinstance(clamped, QueueOutcome)
+        assert clamped.test_timeout_sec == 7200
     finally:
         state.close()
         store.close()

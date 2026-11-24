@@ -118,7 +118,7 @@ def discover_declared_agents(
     ]
     agents: list[DeclaredAgent] = []
     seen: set[str] = set()
-    for d, inside in dirs:
+    for d, _inside in dirs:
         if not d.is_dir():
             continue
         for md in sorted(d.glob("*.md")):

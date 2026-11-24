@@ -709,7 +709,14 @@ export async function followSessionEvents(
           if (!line.startsWith("data: ")) continue
           const payload = line.slice(6)
           if (!payload || payload === "[DONE]") continue
-          const parsed = JSON.parse(payload) as ChatEvent
+          let parsed: ChatEvent
+          try {
+            parsed = JSON.parse(payload) as ChatEvent
+          } catch {
+            // A proxy can inject an HTML error page mid-stream. Skip that
+            // frame instead of tearing down an otherwise live session.
+            continue
+          }
           if ((parsed as { type?: string }).type === "reset_required") {
             throw new Error("session event buffer reset; reload history")
           }

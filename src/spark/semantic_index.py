@@ -387,7 +387,7 @@ class CodeIndex:
                 break
             if vecs is None or len(vecs) != len(batch):
                 break
-            for c, vec in zip(batch, vecs):
+            for c, vec in zip(batch, vecs, strict=True):
                 if vec:
                     vectors[f"{c['path']}:{c['start_line']}"] = vec
             self._save_vectors(vectors)

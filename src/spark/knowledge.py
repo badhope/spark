@@ -57,7 +57,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
     """本地余弦；不 import memory.store，避免知识库为一次点积拉起 chromadb。"""
     if len(a) != len(b):
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))
     if na == 0.0 or nb == 0.0:
@@ -339,7 +339,7 @@ class KnowledgeBase:
             vecs = self._embed([text for _, text in batch])
             if vecs is None:
                 break
-            for (key, _), vec in zip(batch, vecs):
+            for (key, _), vec in zip(batch, vecs, strict=True):
                 if not vec:
                     continue
                 if dim and len(vec) != dim:

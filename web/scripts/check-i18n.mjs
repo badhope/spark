@@ -56,10 +56,6 @@ function objectProperties(obj) {
   return map
 }
 
-function stripCjk(value) {
-  return value.replace(CJK, "")
-}
-
 function readDictionary() {
   const { sf } = parse(I18N)
   let dict = null

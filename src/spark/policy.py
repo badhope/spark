@@ -305,92 +305,75 @@ def _extract_resource(tool: ToolCall) -> str:
 # ---------------------------------------------------------------------------
 
 
-def decide(
+def _scoped_rule_decision(
+    scopes: dict[str, list[PermissionRule]] | None, tool: ToolCall
+) -> tuple[bool, bool]:
+    """Return ``(has_deny, has_allow)`` across user/project/local layers.
+
+    A deny in any layer wins over every allow, including a stale ``allow_always``
+    signature. An empty resource never matches: ``allow **`` must not become a
+    global approval switch for tools whose resource cannot be derived.
+    """
+    if not scopes:
+        return False, False
+    resource = _extract_resource(tool)
+    if not resource:
+        return False, False
+    allow = False
+    for layer in ("user", "project", "local"):
+        for rule in scopes.get(layer) or []:
+            if rule.tool and not _wildcard_match(rule.tool, tool.name):
+                continue
+            if not _wildcard_match(rule.resource, resource):
+                continue
+            if rule.action == "deny":
+                return True, False
+            if rule.action == "allow":
+                allow = True
+    return False, allow
+
+
+def _rule_decision(
+    rules: list[PermissionRule] | None, tool: ToolCall
+) -> PermissionAction:
+    """Evaluate wildcard rules once; callers apply deny before every allow path."""
+    if not rules:
+        return "prompt"
+    return evaluate_permission(rules, tool.name, _extract_resource(tool))
+
+
+def _browser_guard_decision(
+    tool: ToolCall,
+    browser_guard: Literal["allow", "prompt", "deny"] | None,
+) -> DecisionKind | None:
+    """Per-domain browser rules are a hard layer before legacy/scoped allows.
+
+    A page can navigate after approval; the host checked now is the host the
+    action will run on, so this must not be downgraded by ``allow_always``.
+    """
+    if tool.name not in BROWSER_TOOLS:
+        return None
+    if browser_guard == "deny":
+        return "deny"
+    if browser_guard == "prompt":
+        return "prompt"
+    return None
+
+
+def _mode_decision(
     mode: ApprovalMode,
     tool: ToolCall,
-    *,
-    allow_always: set[str],
+    plan_approved: bool,
     readonly_mcp: set[str],
-    rules: list[PermissionRule] | None = None,
-    plan_approved: bool = False,
-    scopes: dict[str, list[PermissionRule]] | None = None,
-    browser_guard: Literal["allow", "prompt", "deny"] | None = None,
 ) -> DecisionKind:
-    # Explicit deny rules stay the highest priority. A browser guard may add
-    # a prompt, but it must never downgrade a user's scoped or wildcard deny.
-    if scopes:
-        resource = _extract_resource(tool)
-        if resource:
-            for layer in ("user", "project", "local"):
-                for rule in scopes.get(layer) or []:
-                    if rule.tool and not _wildcard_match(rule.tool, tool.name):
-                        continue
-                    if rule.action == "deny" and _wildcard_match(
-                        rule.resource, resource
-                    ):
-                        return "deny"
-    if rules:
-        resource = _extract_resource(tool)
-        if resource and evaluate_permission(rules, tool.name, resource) == "deny":
-            return "deny"
-
-    # Per-domain browser rules are a hard safety layer. They run before every
-    # remaining allow path, including a legacy ``allow_always`` signature, a
-    # scoped allow rule, or full-auto. A page can navigate after approval; the
-    # host checked now is the host the action will run on.
-    if tool.name in BROWSER_TOOLS:
-        if browser_guard == "deny":
-            return "deny"
-        if browser_guard == "prompt":
-            return "prompt"
-
-    # H3 多作用域（deny 跨层优先）：任何一层（user/project/local）的 deny
-    # 规则都拒绝——包括压过 allow_always（防过期授权被仓库层 deny 打穿）；
-    # 无 deny 时任何一层的 allow 都放行。空 resource 不参与规则匹配
-    # （防 "allow **" 变成全局放行，见 evaluate_permission 同款约束）。
-    if scopes:
-        resource = _extract_resource(tool)
-        if resource:
-            scoped_allow = False
-            for layer in ("user", "project", "local"):
-                for rule in scopes.get(layer) or []:
-                    if rule.tool and not _wildcard_match(rule.tool, tool.name):
-                        continue
-                    if not _wildcard_match(rule.resource, resource):
-                        continue
-                    if rule.action == "deny":
-                        return "deny"
-                    if rule.action == "allow":
-                        scoped_allow = True
-            if scoped_allow:
-                return "allow"
-
-    # Approvals are bound to the exact (tool, arguments) pair, so approving one
-    # command can never silently authorize a different one later.
-    if call_signature(tool) in allow_always:
-        return "allow"
-
-    # Wildcard rule evaluation
-    if rules:
-        resource = _extract_resource(tool)
-        rule_decision = evaluate_permission(rules, tool.name, resource)
-        if rule_decision == "deny":
-            return "deny"
-        if rule_decision == "allow":
-            return "allow"
-        # rule_decision == "prompt" falls through to the original logic below
-
-    if tool.name in READONLY_TOOLS:
-        return "allow"
-    if tool.name in readonly_mcp:
+    """Final fallback by tool class and approval mode."""
+    if tool.name in READONLY_TOOLS or tool.name in readonly_mcp:
         return "allow"
     if tool.name in BROWSER_TOOLS:
         # Generic browser approval: suggest/manual ask, full-auto runs. The
         # per-domain decision was already applied above.
         return "allow" if mode == "full-auto" else "prompt"
     if tool.name in WRITE_TOOLS:
-        # 写工具：suggest/manual/plan-only 提示；approve-plan 需计划已批准；
-        # auto-edit/full-auto 自动。
         if mode in ("suggest", "manual", "plan-only"):
             return "prompt"
         if mode == "approve-plan":
@@ -403,3 +386,40 @@ def decide(
             return "allow"
         return "prompt"
     return "prompt"
+
+
+def decide(
+    mode: ApprovalMode,
+    tool: ToolCall,
+    *,
+    allow_always: set[str],
+    readonly_mcp: set[str],
+    rules: list[PermissionRule] | None = None,
+    plan_approved: bool = False,
+    scopes: dict[str, list[PermissionRule]] | None = None,
+    browser_guard: Literal["allow", "prompt", "deny"] | None = None,
+) -> DecisionKind:
+    # Deny is the highest-priority signal regardless of which layer or rule set
+    # produced it; a browser guard can only add a prompt, never downgrade it.
+    scoped_deny, scoped_allow = _scoped_rule_decision(scopes, tool)
+    if scoped_deny:
+        return "deny"
+    rule_decision = _rule_decision(rules, tool)
+    if rule_decision == "deny":
+        return "deny"
+
+    browser = _browser_guard_decision(tool, browser_guard)
+    if browser is not None:
+        return browser
+
+    # Scoped allow is intentionally before allow_always: a project rule can
+    # grant a tool, but deny already ran first and still wins.
+    if scoped_allow:
+        return "allow"
+    # Approvals are bound to the exact (tool, arguments) pair, so approving one
+    # command can never silently authorize a different one later.
+    if call_signature(tool) in allow_always:
+        return "allow"
+    if rule_decision == "allow":
+        return "allow"
+    return _mode_decision(mode, tool, plan_approved, readonly_mcp)

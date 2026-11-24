@@ -377,18 +377,31 @@ def _safe_agents_md_name(filename: str) -> str | None:
 
 
 def _probe_target_allowed(base_url: str, trusted_base_url: str) -> bool:
-    """Only probe the same origin the user already configured; never let a request
-    send the stored credential to an arbitrary host."""
+    """Only probe the exact origin the user already configured.
 
-    def host_of(value: str) -> str:
+    Hostname-only comparison leaked credentials to the same host on a different
+    scheme or port: ``https://api.example`` -> ``http://api.example:8080`` would
+    still receive the saved key, and a local endpoint could hand it to an
+    unrelated service on another port.
+    """
+
+    def origin_of(value: str) -> tuple[str, str, int] | None:
         try:
-            return (urlparse(value).hostname or "").lower()
+            parsed = urlparse(value)
+            scheme = parsed.scheme.lower()
+            host = (parsed.hostname or "").lower()
+            if scheme not in {"http", "https"} or not host:
+                return None
+            port = parsed.port
+            if port is None:
+                port = 443 if scheme == "https" else 80
+            return scheme, host, int(port)
         except ValueError:
-            return ""
+            return None
 
-    target = host_of(base_url)
-    trusted = host_of(trusted_base_url)
-    if not target or not trusted:
+    target = origin_of(base_url)
+    trusted = origin_of(trusted_base_url)
+    if target is None or trusted is None:
         return False
     return target == trusted
 

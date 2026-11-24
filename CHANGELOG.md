@@ -2,6 +2,32 @@
 
 本项目遵循语义化版本。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [0.15.6] - 2026-11-24
+
+### Fixed
+
+- 队列 Autopilot `state_path` 越界写：CLI 与服务端双层限制为 `.spark/autopilot` 下的 `.json` 文件名，拒绝绝对路径、目录、`..` 与软链逃逸；`state_path` 解析失败转 blocked，不再变成可重试异常。
+- 队列重试泄漏空会话：普通任务 turn lock 争抢失败时 drop runtime + delete session，requeue 不再带 `session_id`；Autopilot 首次状态在等锁前落盘，重试复用同一 session。
+- 失败账本覆盖：同名 `.attemptN.json` 已存在时追加短 uuid；首次失败保留原账本。
+- 同主机跨端口 API Key 泄露：`_probe_target_allowed` 改为精确 origin `(scheme, host, port)`，`https://host` 与 `https://host:443` 归一；不同 scheme/port 必须显式带 key。
+- 前端代码高亮：`FileViewer` / `RightPanel` 合并为共享 `CodePreview`，修复右侧面板跨行块注释/多行字符串丢色；`compact` 保持原字号。
+- 配对码重复消费：`RemoteUnlock` 的自动配对 effect 改用 `langRef`，语言切换不再重启 `claimPairing`。
+- 截图轮询重启：`RightPanel` 轮询 effect 改用 `langRef`，语言切换不再重建 interval。
+- SSE 坏帧：`followSessionEvents` 逐帧 `JSON.parse`，代理注入的非 JSON 帧只跳过该帧，不再断掉整条流。
+- `AutopilotLimits`：`max_cost_usd` 拒绝 `NaN/Inf`；`test_timeout_sec` 钳制 30–7200；`queue add` 的成本/超时同样先校验再入队。
+
+### Changed
+
+- `policy.decide` 从 F(45) 拆为 `_scoped_rule_decision` / `_rule_decision` / `_browser_guard_decision` / `_mode_decision`，保持 deny 优先级与模式兜底顺序。
+- 队列 `_run_queued_autopilot` F(45) 与 `_run_queued_task` D(27) 拆分；`web/state.py` 新增函数均在 C 及以下。
+- 12 处向量/映射 `zip()` 补 `strict=True`，长度不一致立即报错，不再静默截断。
+- `.venv/bin/pytest` 可直接收集 UI 测试：`pyproject.toml` 的 `pythonpath` 改为 `["src", "."]`。
+- 前端 ESLint 为 `scripts/**/*.mjs` 声明 Node globals；删除未使用 `stripCjk`。
+
+### Docs
+
+- 新增 `docs/reviews/2026-11-24-debt-sweep.md`；`PROJECT_BASELINE`、`REMAINING` 与代码审计记录同步到第二轮结果，未清零的 70 个 D/E/F 与未接入的 diff 门禁明确保留。
+
 ## [0.15.5] - 2026-11-24
 
 ### Added
