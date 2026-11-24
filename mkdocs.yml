@@ -26,7 +26,11 @@ theme:
 nav:
   - Home: index.md
   - Product:
+      - Project baseline: PROJECT_BASELINE.md
       - Positioning: PRODUCT_POSITIONING.md
+      - Industry research: INDUSTRY_RESEARCH_2026-11-24.md
+      - Autopilot: AUTOPILOT.md
+      - OpenCode compatibility: OPENCODE_COMPAT.md
       - Core capability gaps: CORE_CAPABILITY_GAPS.md
       - Integration map: INTEGRATION_MAP.md
       - Competitive comparison: competitive-comparison.md
@@ -60,6 +64,9 @@ nav:
       - Master plan: reviews/2026-10-17-master-plan.md
       - Audit and direction: reviews/2026-10-17-audit-and-direction.md
       - Session digest: reviews/2026-10-17-session-digest.md
+      - Code audit 2026-11-24: reviews/2026-11-24-code-audit.md
+      - Autopilot stress 2026-11-24: reviews/2026-11-24-autopilot-stress.md
+      - Autopilot local model 2026-11-24: reviews/2026-11-24-autopilot-local-model.md
 
 markdown_extensions:
   - admonition

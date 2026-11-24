@@ -1,0 +1,10 @@
+{"type": "turn_start", "turn": 1, "phase": "build"}
+{"type": "turn_end", "turn": 1, "ok": true, "test_ok": false, "diff_changed": false, "cost_usd": 0.0}
+{"type": "turn_start", "turn": 2, "phase": "repair"}
+{"type": "turn_end", "turn": 2, "ok": true, "test_ok": false, "diff_changed": false, "cost_usd": 0.0}
+{"type": "turn_start", "turn": 3, "phase": "repair"}
+{"type": "turn_end", "turn": 3, "ok": true, "test_ok": true, "diff_changed": true, "cost_usd": 0.0}
+{"type": "turn_start", "turn": 4, "phase": "audit"}
+{"type": "turn_end", "turn": 4, "ok": true, "test_ok": true, "diff_changed": true, "cost_usd": 0.0}
+{"type": "run_end", "status": "passed", "message": "独立测试通过，交付复核完成"}
+{"type": "autopilot_result", "status": "passed", "turns": 4, "test_ok": true, "test_command": "python -m pytest -q", "state_path": "/home/user/Doubao/autopilot-demo-local-2b/.spark/autopilot/d64ac856ebe0.json", "cost_usd": 0.0}

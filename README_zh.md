@@ -28,6 +28,7 @@ spark web     # 打开浏览器界面
 - **执行可审计。** 写入和命令执行前先过审批与沙箱；通配规则覆盖 user / project / local 三个作用域，`deny` 始终优先。凭据路径保护与 shell token 检查保持开启。
 - **失败可回滚。** 每个回合快照工作区，文件与对话可一起恢复，非 git 目录同样有效。
 - **任务即分支。** 开始任务、逐步提交、绿测后收尾；失败的运行会放弃分支，不把改动泄漏到主工作区。
+- **无人值守闭环。** `spark autopilot` 从初始需求启动：计划→编码→独立测试→失败回灌→复核；每轮状态落盘，超时、成本、连续无进展可熔断，`--resume` 可继续。它复用同一条 Agent 循环与审批/沙箱，不是第二个黑盒 Agent。详见 `docs/AUTOPILOT.md`。
 - **需要时处理真实文件。** 企业控制面可把文档、会议录音和表格变成带来源行号的纪要、行动项、报告与导出；本地 OCR 与转写让原始资料留在机器上。
 - **模型自由。** 任意 OpenAI 兼容端点、fallback 模型链、凭据池，以及独立的小模型承担辅助调用。
 
@@ -53,6 +54,36 @@ spark enterprise --host 127.0.0.1 --port 18800
 ```
 
 `spark exec` 每行输出一个 JSON 事件，最后以 `{"type":"final","text":"…"}` 收尾，可直接接 `jq`。
+
+## 无人值守编程闭环
+
+```bash
+spark autopilot "给 auth 模块加请求频率限制，并补回归测试" --workdir .
+spark autopilot --resume .spark/autopilot/<run-id>.json --workdir .   # 中断后继续
+spark autopilot "重构 parser" --workdir . --json                      # 给 CI/队列的 NDJSON
+```
+
+Autopilot 复用同一个 `AgentLoop`、审批和沙箱，只在外面加状态机：
+
+1. **build**：读仓库、判断场景、给计划、开始实现；
+2. **repair**：把独立测试的失败输出原样回灌，按根因修；
+3. **audit**：测试绿了以后复核需求覆盖与边界；
+4. **done**：测试通过 + 有真实 diff + 复核完成才交付。
+
+每轮状态写入 `.spark/autopilot/<run-id>.json`；`--max-turns`、`--turn-timeout`、`--task-timeout`、`--max-cost-usd` 和连续无进展熔断会停掉失控运行。默认 `full-auto` + workspace 沙箱 + 工具无网络；`unrestricted` 必须显式 `--allow-unrestricted`。测试由运行器自己执行，不采信模型自述“已完成”。边界与未验证项见 `docs/AUTOPILOT.md`。
+
+![Autopilot 本地实跑：MiniCPM5-2B、真实仓库、真实 pytest，4 轮从 build 到 audit](assets/screenshots/31-autopilot-local-run.png)
+
+*这图由本次运行的真实 NDJSON 日志渲染，不是设计稿。*
+
+## OpenCode 兼容
+
+```bash
+spark opencode --workdir .        # 查看配置、Agent、命令、MCP 与解析错误
+spark opencode --workdir . --json # 机器可读
+```
+
+已兼容 `opencode.json(c)`、`.opencode/agents/**/*.md`、`.opencode/commands/*.md` 与内联 `command`；`permission`/`permissions` 的 deny 会映射为工具禁用清单。不支持插件运行时、provider 注册表、MCP 自动导入与 ``!`command` `` shell 注入，不伪装支持。详见 `docs/OPENCODE_COMPAT.md`。
 
 ## 界面
 
@@ -95,6 +126,9 @@ spark enterprise --host 127.0.0.1 --port 18800
 
 | 英文 | 中文 |
 |---|---|
+| [Project baseline](docs/PROJECT_BASELINE.md) | [项目基线](docs/PROJECT_BASELINE.md) |
+| [Autopilot](docs/AUTOPILOT.md) | [Autopilot](docs/AUTOPILOT.md) |
+| [OpenCode compatibility](docs/OPENCODE_COMPAT.md) | [OpenCode 兼容](docs/OPENCODE_COMPAT.md) |
 | [Product positioning](docs/en/PRODUCT_POSITIONING.md) | [产品定位](docs/PRODUCT_POSITIONING.md) |
 | [Core capability gaps](docs/CORE_CAPABILITY_GAPS.md) | [核心能力差距](docs/CORE_CAPABILITY_GAPS.md) |
 | [Integration map](docs/INTEGRATION_MAP.md) | [外部集成地图](docs/INTEGRATION_MAP.md) |

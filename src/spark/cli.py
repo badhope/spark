@@ -661,6 +661,271 @@ async def _workflow_run_async(
         store.close()
 
 
+@app.command("autopilot", help="无人值守编程：需求→计划→编码→独立测试→失败回灌→复核")
+def autopilot_cmd(
+    requirement: str = typer.Argument(
+        "",
+        help="初始编程需求；配合 --resume 时可省略",
+    ),
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    approval: str = typer.Option(
+        "full-auto",
+        "--approval",
+        help="无人值守只允许 full-auto；其他模式会等待人工，违反本命令语义",
+    ),
+    model: str | None = typer.Option(None, "--model"),
+    provider: str | None = typer.Option(None, "--provider"),
+    config: Path | None = typer.Option(None, "--config"),
+    sandbox_mode: str = typer.Option(
+        "workspace",
+        "--sandbox-mode",
+        help="默认 workspace；unrestricted 需显式 --allow-unrestricted",
+    ),
+    allow_unrestricted: bool = typer.Option(
+        False,
+        "--allow-unrestricted",
+        help="允许 unrestricted 沙箱；仅限一次性、隔离环境",
+    ),
+    network: bool = typer.Option(
+        False,
+        "--network/--no-network",
+        help="是否允许工具访问网络；默认关闭",
+    ),
+    max_turns: int = typer.Option(8, "--max-turns", min=1, max=50),
+    turn_timeout: int = typer.Option(900, "--turn-timeout", min=30, max=7200),
+    task_timeout: int = typer.Option(3600, "--task-timeout", min=60, max=86400),
+    test_timeout: int = typer.Option(1800, "--test-timeout", min=30, max=7200),
+    max_cost_usd: float = typer.Option(
+        0.0, "--max-cost-usd", min=0.0,
+        help="单次运行成本上限（USD，0 = 使用 config.agent.max_session_cost_usd）",
+    ),
+    resume: Path | None = typer.Option(
+        None, "--resume", help="从 autopilot 状态 JSON 继续",
+    ),
+    state_out: Path | None = typer.Option(
+        None, "--state-out", help="状态文件路径；默认 .spark/autopilot/<run-id>.json",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="输出 NDJSON 运行事件"),
+) -> None:
+    """Run the autonomous coding state machine against a real repository."""
+    import json as _json
+
+    from spark.autopilot import (
+        AutopilotLimits,
+        AutopilotRunner,
+        AutopilotState,
+        make_agent_turn_runner,
+        make_git_diff_probe,
+        make_test_verifier,
+        new_state,
+    )
+    from spark.providers.factory import create_provider
+    from spark.tools import goal as goal_tools
+    from spark.tools.registry import ToolContext, ToolRegistry
+
+    if approval != "full-auto":
+        typer.echo(
+            "spark autopilot 只在 full-auto 下运行；需要人工审批请用 spark exec / spark web",
+            err=True,
+        )
+        raise typer.Exit(2)
+    if sandbox_mode == "unrestricted" and not allow_unrestricted:
+        typer.echo(
+            "拒绝 unrestricted 沙箱：请显式 --allow-unrestricted 并确认是隔离环境",
+            err=True,
+        )
+        raise typer.Exit(2)
+    try:
+        workdir = workdir.resolve()
+        cfg = _common_cfg(
+            workdir, config, approval, model, provider, sandbox_mode=sandbox_mode
+        )
+        cfg.agent.network_access = bool(network)
+        store = _store()
+
+        state_path = state_out
+        if state_path is not None:
+            state_path = state_path if state_path.is_absolute() else workdir / state_path
+        if resume is not None:
+            resume_path = resume if resume.is_absolute() else workdir / resume
+            try:
+                state = AutopilotState.from_dict(
+                    _json.loads(resume_path.read_text(encoding="utf-8"))
+                )
+            except (OSError, ValueError) as exc:
+                raise ConfigError(f"无法读取 autopilot 状态 {resume_path}: {exc}") from exc
+            if requirement.strip() and requirement.strip() != state.requirement.strip():
+                raise ConfigError("--resume 的 requirement 与状态文件不一致；请省略该参数")
+            if not state.session_id or not store.get_session(state.session_id):
+                raise ConfigError("状态文件里的 session 已不存在，无法续跑")
+            state.status = "running"
+            state.started_at = __import__("time").time()
+            state_path = state_path or resume_path
+        else:
+            if not requirement.strip():
+                raise ConfigError("首次运行必须提供初始编程需求")
+            session_id = store.create_session(
+                workdir, cfg.provider.model, title=f"autopilot: {requirement[:60]}"
+            )
+            state = new_state(
+                run_id=session_id,
+                session_id=session_id,
+                workdir=workdir,
+                requirement=requirement.strip(),
+            )
+
+        limits = AutopilotLimits(
+            max_turns=max_turns,
+            turn_timeout_sec=turn_timeout,
+            task_timeout_sec=task_timeout,
+            max_cost_usd=max_cost_usd or float(cfg.agent.max_session_cost_usd or 0),
+        )
+        if state_path is None:
+            state_path = workdir / ".spark" / "autopilot" / f"{state.run_id}.json"
+
+        prov = create_provider(cfg)
+        sandbox = WorkdirSandbox(workdir, cfg)
+        tool_ctx = ToolContext(sandbox=sandbox, config=cfg)
+        registry = ToolRegistry(tool_ctx)
+        bridge = asyncio.run(_boot_mcp(cfg, registry))
+        tool_ctx.mcp_call = bridge.call
+        tool_ctx.mcp_bridge = bridge
+        bridge.set_sampling_handler(prov)
+        goal_tools.attach_bridges(store, lambda: state.session_id)
+
+        loop = _agent_loop()(
+            workdir=workdir,
+            cfg=cfg,
+            provider=prov,
+            registry=registry,
+            store=store,
+            session_id=state.session_id,
+            approver=None,
+        )
+
+        def emit(payload: dict) -> None:
+            if as_json:
+                typer.echo(_json.dumps(payload, ensure_ascii=False))
+                return
+            kind = payload.get("type")
+            if kind == "turn_start":
+                typer.echo(
+                    f"[autopilot] turn {payload.get('turn')} · {payload.get('phase')}",
+                    err=True,
+                )
+            elif kind == "turn_end":
+                test = "PASS" if payload.get("test_ok") else "FAIL"
+                typer.echo(
+                    f"[autopilot] turn {payload.get('turn')} done · tests {test} · "
+                    f"cost ${float(payload.get('cost_usd') or 0):.4f}",
+                    err=True,
+                )
+            elif kind == "run_end":
+                typer.echo(
+                    f"[autopilot] {payload.get('status')}: {payload.get('message')}",
+                    err=True,
+                )
+
+        runner = AutopilotRunner(
+            state,
+            turn_runner=make_agent_turn_runner(loop, timeout_sec=turn_timeout),
+            verifier=make_test_verifier(sandbox, timeout_sec=test_timeout),
+            diff_probe=make_git_diff_probe(workdir),
+            limits=limits,
+            state_path=state_path,
+            on_event=emit,
+        )
+        try:
+            result = runner.run()
+        finally:
+            try:
+                asyncio.run(bridge.close())
+            except Exception:
+                pass
+            store.close()
+
+        if as_json:
+            typer.echo(
+                _json.dumps(
+                    {
+                        "type": "autopilot_result",
+                        "status": result.status,
+                        "turns": result.turn,
+                        "test_ok": result.last_test_ok,
+                        "test_command": result.last_test_command,
+                        "state_path": str(state_path),
+                        "cost_usd": round(result.total_cost_usd, 6),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        else:
+            typer.echo(f"status: {result.status}")
+            typer.echo(f"turns: {result.turn}")
+            typer.echo(f"tests: {'PASS' if result.last_test_ok else 'FAIL'} · {result.last_test_command or 'no command'}")
+            typer.echo(f"state: {state_path}")
+            if result.last_error:
+                typer.echo(f"note: {result.last_error}", err=True)
+        if result.status != "passed":
+            raise typer.Exit(1)
+    except SparkError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(exc.exit_code) from exc
+
+
+@app.command("opencode", help="读取 OpenCode 项目的 agents/commands/MCP 兼容资产")
+def opencode_cmd(
+    workdir: Path = typer.Option(Path("."), "--workdir"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Inspect OpenCode compatibility without starting a model turn."""
+    import json as _json
+
+    from spark.opencode_compat import load_project
+
+    project = load_project(workdir.resolve())
+    payload: dict[str, Any] = {
+        "root": str(project.root),
+        "config": str(project.config_path) if project.config_path else None,
+        "model": project.model,
+        "default_agent": project.default_agent,
+        "agents": [
+            {
+                "name": agent.name,
+                "description": agent.description,
+                "mode": agent.mode,
+                "model": agent.model,
+                "denied_tools": agent.denied_tools,
+            }
+            for agent in project.agents
+        ],
+        "commands": [
+            {"name": command.name, "description": command.description}
+            for command in project.commands
+        ],
+        "mcp_servers": sorted(project.mcp_servers),
+        "instructions": project.instructions,
+        "errors": project.errors,
+    }
+    if as_json:
+        typer.echo(_json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        typer.echo(f"root: {payload['root']}")
+        typer.echo(f"config: {payload['config'] or 'none'}")
+        typer.echo(f"agents: {len(payload['agents'])}")
+        for agent in payload["agents"]:
+            deny = f" deny={','.join(agent['denied_tools'])}" if agent["denied_tools"] else ""
+            typer.echo(f"  - {agent['name']}{deny}")
+        typer.echo(f"commands: {len(payload['commands'])}")
+        for command in payload["commands"]:
+            typer.echo(f"  - /{command['name']}")
+        typer.echo(f"mcp: {', '.join(payload['mcp_servers']) or 'none'}")
+    if project.errors:
+        for error in project.errors:
+            typer.echo(error, err=True)
+        raise typer.Exit(1)
+
+
 @app.command("route", help="预览模型路由决策（不发起模型请求）")
 def route_cmd(
     workdir: Path = typer.Option(Path("."), "--workdir"),

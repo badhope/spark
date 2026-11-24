@@ -499,7 +499,7 @@ def test_workbench_five_tabs_and_file_actions(ui, tmp_path: Path) -> None:
     terminal_text = wb.inner_text()
     if "不支持伪终端" not in terminal_text:
         textarea = wb.locator('textarea[aria-label="Terminal input"]')
-        assert textarea.is_visible()
+        textarea.wait_for(state="visible", timeout=5000)
         assert wb.get_by_title("清屏").is_visible()
         assert wb.get_by_title("重启 shell").is_visible()
         # PTY 的输入/回显由 test_web_terminal 覆盖；这里只验证工作台终端页签

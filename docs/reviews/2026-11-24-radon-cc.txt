@@ -1,0 +1,114 @@
+src/spark/acp_server.py
+    F 336:0 stream_turn - D (22)
+src/spark/browser_policy.py
+    F 196:0 guard - D (27)
+src/spark/cli.py
+    F 408:0 _exec_async - D (30)
+    F 521:0 _workflow_run_async - D (25)
+    F 665:0 autopilot_cmd - D (25)
+    F 1788:0 replay_cmd - D (25)
+    F 2111:0 doctor_cmd - D (25)
+    F 2444:0 mcp_add_cmd - D (24)
+src/spark/knowledge.py
+    M 449:4 KnowledgeBase.search - E (32)
+    M 311:4 KnowledgeBase.ensure_embeddings - D (21)
+src/spark/mcp_registry.py
+    F 165:0 parse_registry_servers - D (29)
+src/spark/opencode_compat.py
+    F 110:0 _strip_jsonc - D (30)
+    F 396:0 load_project - D (27)
+src/spark/policy.py
+    F 308:0 decide - F (45)
+src/spark/pr.py
+    F 367:0 build_context - F (41)
+    F 461:0 review_brief - E (37)
+src/spark/relay.py
+    M 577:4 _RelayHandler.do_POST - D (24)
+src/spark/review.py
+    F 231:0 parse_review - D (24)
+src/spark/selfheal.py
+    F 117:0 diagnose - D (23)
+src/spark/semantic_index.py
+    M 399:4 CodeIndex._score_chunks - D (21)
+src/spark/wiki.py
+    F 356:0 build_wiki - D (25)
+src/spark/workbench.py
+    F 261:0 delivery_markdown - E (32)
+    F 188:0 build_delivery - D (24)
+src/spark/workflow.py
+    F 141:0 load_workflow - F (43)
+    F 437:0 run_workflow - E (34)
+    M 347:4 WorkflowRun.from_state - D (24)
+src/spark/control/office.py
+    C 286:0 MeetingMinutesService - D (25)
+    M 287:4 MeetingMinutesService.build - D (24)
+src/spark/control/report.py
+    C 311:0 ReportService - D (27)
+    M 314:4 ReportService.build - D (26)
+src/spark/core/loop.py
+    M 818:4 AgentLoop._llm_round - E (36)
+src/spark/core/replay.py
+    M 119:4 TurnReplayRecorder.observe - D (27)
+src/spark/core/subagent_runner.py
+    M 115:4 SubagentRunnerMixin.spawn_subtasks_parallel - E (32)
+    C 23:0 SubagentRunnerMixin - D (25)
+    M 240:4 SubagentRunnerMixin._collect_subtask_events - D (23)
+src/spark/core/tool_runner.py
+    M 365:4 ToolRunnerMixin._run_tool_body - D (26)
+src/spark/lsp/impact.py
+    F 263:0 analyze_impact - D (22)
+src/spark/memory/extractor.py
+    F 113:0 resolve_operations - D (27)
+src/spark/memory/service.py
+    M 384:4 MemoryService._similarity_clusters - D (23)
+src/spark/memory/store.py
+    M 766:4 MemoryStore.search - D (28)
+    M 304:4 MemoryStore._restore_snapshot - D (27)
+src/spark/providers/errors.py
+    F 238:0 classify_provider_error - F (52)
+src/spark/providers/llama_cpp.py
+    M 447:4 LlamaCppProvider.stream - D (24)
+    M 355:4 LlamaCppProvider._generate - D (21)
+src/spark/providers/openai_compat.py
+    M 481:4 OpenAICompatProvider._stream_impl - D (27)
+src/spark/providers/probe.py
+    F 78:0 _extract_message_content - D (23)
+src/spark/tools/repo_context.py
+    F 261:0 repo_context - F (60)
+    F 197:0 _commands_for - D (30)
+src/spark/tools/search.py
+    F 189:0 grep_tool - D (22)
+src/spark/tools/shell.py
+    F 140:0 run_shell - E (36)
+src/spark/tools/validation.py
+    F 72:0 validate_arguments - D (25)
+src/spark/tui/app.py
+    M 535:4 SparkApp._render - E (31)
+src/spark/web/_handlers_chat.py
+    F 601:0 _handle_chat_stream - F (42)
+src/spark/web/_handlers_content.py
+    F 313:0 _handle_plugins - D (30)
+    F 467:0 _handle_knowledge - D (27)
+    F 124:0 _handle_skills - D (23)
+    F 216:0 _handle_prompts - D (23)
+src/spark/web/_handlers_models.py
+    F 34:0 _handle_models_save_locked - E (33)
+src/spark/web/_handlers_sessions.py
+    F 266:0 _history_messages - D (29)
+    F 601:0 _handle_session_lease - D (22)
+src/spark/web/_handlers_settings.py
+    F 650:0 _handle_settings_locked - F (52)
+    F 298:0 _restore_redacted_mcp_headers - F (43)
+    F 530:0 _apply_validated_settings - E (38)
+    F 432:0 _extract_request_fields - D (26)
+    F 63:0 _resolve_provider_fields - D (22)
+src/spark/web/_handlers_wiki.py
+    F 51:0 _handle_wiki - D (21)
+src/spark/web/session_stream.py
+    F 20:0 serve_session_events - D (24)
+src/spark/web/sse.py
+    M 159:4 _SSESession._run - D (22)
+src/spark/web/state.py
+    M 896:4 SparkWebState._run_queued_task - D (25)
+src/spark/web/utils.py
+    F 304:0 parse_mcp_servers - D (29)

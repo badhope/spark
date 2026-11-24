@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio as _asyncio
+import fnmatch
 import logging
 from typing import Any
 
@@ -26,6 +27,7 @@ class SubagentRunnerMixin:
         *,
         system_extra: str = "",
         tools_allowlist: list[str] | None = None,
+        denied_tools: list[str] | None = None,
         model: str = "",
     ):
         """Run a self-contained sub-agent with a fresh context; yield its events, final turn_end carries the summary.
@@ -43,8 +45,20 @@ class SubagentRunnerMixin:
         sub_ctx = self._make_sub_context()
         sub_registry = ToolRegistry(sub_ctx)
         self._inherit_registry(sub_registry)
-        if tools_allowlist:
-            sub_registry.tool_allowlist = set(tools_allowlist)
+        if tools_allowlist is not None or denied_tools:
+            all_names = {
+                str(schema.get("function", {}).get("name") or "")
+                for schema in sub_registry.schemas()
+            }
+            allowed = set(all_names)
+            if tools_allowlist is not None:
+                allowed &= set(tools_allowlist)
+            for pattern in denied_tools or []:
+                allowed = {
+                    name for name in allowed
+                    if not fnmatch.fnmatch(name, pattern)
+                }
+            sub_registry.tool_allowlist = allowed
         sub_cfg = sub_ctx.config
         provider = self.provider
         if model and model != sub_cfg.provider.model:
@@ -104,6 +118,7 @@ class SubagentRunnerMixin:
         *,
         system_extras: list[str] | None = None,
         tools_allowlists: list[list[str] | None] | None = None,
+        denied_tool_lists: list[list[str] | None] | None = None,
         models: list[str] | None = None,
         agent_names: list[str] | None = None,
     ):
@@ -123,11 +138,14 @@ class SubagentRunnerMixin:
             tools_allowlists = [None] * len(prompts)
         if models is None:
             models = [""] * len(prompts)
+        if denied_tool_lists is None:
+            denied_tool_lists = [[] for _ in prompts]
         if len(prompts) == 1:
             async for event in self.spawn_subtask(
                 prompts[0],
                 system_extra=system_extras[0],
                 tools_allowlist=tools_allowlists[0],
+                denied_tools=denied_tool_lists[0] if denied_tool_lists else None,
                 model=models[0] if models else "",
             ):
                 yield event
@@ -144,6 +162,11 @@ class SubagentRunnerMixin:
                     queue,
                     system_extra=system_extras[index],
                     tools_allowlist=tools_allowlists[index],
+                    denied_tools=(
+                        denied_tool_lists[index]
+                        if index < len(denied_tool_lists)
+                        else None
+                    ),
                     model=models[index] if index < len(models) else "",
                 )
                 return index, summary
@@ -222,6 +245,7 @@ class SubagentRunnerMixin:
         *,
         system_extra: str = "",
         tools_allowlist: list[str] | None = None,
+        denied_tools: list[str] | None = None,
         model: str = "",
     ) -> str:
         """Run one subtask; stream its tool events into the queue tagged by index; return summary."""
@@ -230,8 +254,20 @@ class SubagentRunnerMixin:
         sub_ctx = self._make_sub_context()
         sub_registry = ToolRegistry(sub_ctx)
         self._inherit_registry(sub_registry)
-        if tools_allowlist:
-            sub_registry.tool_allowlist = set(tools_allowlist)
+        if tools_allowlist is not None or denied_tools:
+            all_names = {
+                str(schema.get("function", {}).get("name") or "")
+                for schema in sub_registry.schemas()
+            }
+            allowed = set(all_names)
+            if tools_allowlist is not None:
+                allowed &= set(tools_allowlist)
+            for pattern in denied_tools or []:
+                allowed = {
+                    name for name in allowed
+                    if not fnmatch.fnmatch(name, pattern)
+                }
+            sub_registry.tool_allowlist = allowed
         sub_cfg = sub_ctx.config
         provider = self.provider
         if model and model != sub_cfg.provider.model:

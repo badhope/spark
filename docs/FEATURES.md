@@ -16,6 +16,7 @@
 | 让模型读写文件 | `tools/fs.py`、`edit/` | 模型自行调用；写入受沙箱与审批约束 |
 | 让模型执行命令 | `tools/shell.py` | 命令先过 `sandbox.check_shell`，再按审批档放行 |
 | 让模型跑测试并自我修正 | `tools/gitops.run_tests` + `core/loop.py` | 模型调用 `run_tests`，失败输出自动回灌 |
+| 无人值守编程闭环 | `autopilot.py` + `spark autopilot` | build→repair→audit→done；独立 verifier 跑仓库测试；失败输出回灌；每轮状态落盘、`--resume`；最大轮次/单轮超时/总时限/成本/连续错误/连续无进展熔断；默认 workspace + 无网络 + full-auto，`unrestricted` 需显式确认。真实 MiniCPM5-2B 小仓库 4 轮通过；合成压力矩阵 120/120；边界见 `docs/AUTOPILOT.md` |
 | 小模型工具调用护栏 | `providers/llama_cpp.py` + `tools/validation.py` + `tools/registry.py` + `core/tool_runner.py` | 12 个核心工具白名单再按任务裁成读/写/执行/联网子集；参数按 JSON Schema 子集校验（必填/类型/enum/范围/未知字段）；未知工具、禁用工具、白名单外工具在审批前降级；参数超 2 MiB 拒绝；非法调用只回传一次修正机会，同一工具第二次非法标 `retry_exhausted`，不执行 handler |
 | 让模型操作 Git | `tools/gitops.py` | status/diff/log/branch/add/commit；push/pull 明确不提供 |
 | 任务即分支（自动提交） | `git_memory.py` | `task_begin` → 绿测后 `task_step_commit` → `task_finish` |
@@ -26,6 +27,7 @@
 | 多 Agent 工作流 | `workflow.py` + `spark workflow` | YAML roles/steps/DAG 校验、拓扑顺序、`workflow graph`；`WorkspaceLocks` 跨进程路径锁；`run_workflow` 有界并发、重试、失败阻断与取消；`AgentWorkflowRunner` + `spark workflow run` 已接 AgentLoop 子代理；状态 JSON、暂停续跑、单节点重跑、Web 执行图读取最近运行；子代理 usage/cost 回传、`--max-cost-usd` 成本上限；`--isolate-worktree` 整次运行隔离到任务分支 |
 | 子代理并行 | `core/loop.py:spawn_subtasks_parallel` | 模型调用 `task`，最多 4 路并行 |
 | 声明式专家代理 | `agents.py` + `.claude/agents/*.md` | 放一个 md 文件即多一个可委派的专家 |
+| OpenCode 静态资产兼容 | `opencode_compat.py` + `spark opencode` | 读 `opencode.json(c)`、`.opencode/agents/**/*.md`、`.opencode/commands/*.md`；agent body 变系统提示词，permission deny 变工具 denylist；`$ARGUMENTS` 替换；不支持插件运行时/provider 注册表/MCP 自动导入，见 `docs/OPENCODE_COMPAT.md` |
 | 项目技能 | `skills.py` + `.spark/skills/*.md` | 放文件即生效，模型按需 `load_skill`；设置→技能可增删改 |
 | 自定义斜杠命令 | `slash.py` + `.spark/commands/*.md` | `/name 参数` 展开为提示词；设置→提示词可管理 |
 | 工作区插件 | `plugins.py` + `spark plugins` | `spark-plugin.json` 校验（permissions/tools/commands/hooks）、本地/git 安装、卸载/备份、Web 本机 enable/disable（远程只读）；`[plugins].enabled` + 对应权限双重 opt-in 后，hook/tool 走独立子进程（超时/无 stdin/环境变量清洗），插件工具以 `plugin__<plugin>__<tool>` 命名空间注册进 ToolRegistry 并走正常审批；插件命令、市场索引、版本检查/升级、`official` bundle 一次装全（成员仍可单独 disable）已接，仓库内 `review-checklist` / `ship-checklist` 为无 hook/tool 权限的官方命令示例 |

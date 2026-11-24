@@ -54,6 +54,42 @@ spark enterprise --host 127.0.0.1 --port 18800
 
 `spark exec` emits one JSON object per line and ends with `{"type":"final","text":"…"}`, so it pipes directly into `jq`.
 
+## Unattended coding loop
+
+```bash
+spark autopilot "add rate limiting to the auth module, with regression tests" --workdir .
+spark autopilot --resume .spark/autopilot/<run-id>.json --workdir .   # continue after a stop
+spark autopilot "refactor the parser" --workdir . --json              # NDJSON for CI/queues
+```
+
+Autopilot runs the same `AgentLoop`, approvals and sandbox as every other entry point. It adds a state machine around them:
+
+1. **build** — read the repository, classify the task, plan, implement;
+2. **repair** — feed the independent test failure back, classify the root cause, fix it;
+3. **audit** — after tests are green, re-check requirement coverage and boundaries;
+4. **done** — only when tests pass, a real diff exists, and the audit turn finished.
+
+Each turn is persisted to `.spark/autopilot/<run-id>.json`. `--max-turns`, `--turn-timeout`, `--task-timeout`, `--max-cost-usd` and consecutive no-progress limits stop a runaway run. The default is `full-auto` + workspace sandbox + no tool network; `unrestricted` requires `--allow-unrestricted`. It is not a second black-box agent, and it does not trust the model's "done" claim: tests are executed by the runner itself. See `docs/AUTOPILOT.md` for the state machine, prompt contract and the honest limits.
+
+![Autopilot local run: MiniCPM5-2B, real repo, real pytest, four turns from build to audit](assets/screenshots/31-autopilot-local-run.png)
+
+*The image is rendered from the actual NDJSON log of the run, not a mockup.*
+
+## OpenCode compatibility
+
+Spark reads the static assets an OpenCode project already has:
+
+```bash
+spark opencode --workdir .        # inspect config, agents, commands, MCP and parse errors
+spark opencode --workdir . --json # machine-readable
+```
+
+- `opencode.json` / `opencode.jsonc` (comments and trailing commas accepted);
+- `.opencode/agents/**/*.md` → declared sub-agents, with `permission` / `permissions` deny mapped to tool denylists;
+- `.opencode/commands/*.md` and inline `command` entries → slash commands, with `$ARGUMENTS` substitution.
+
+It does not implement the OpenCode plugin runtime, provider registry, automatic MCP import, or ``!`command` `` shell injection; those are not silently faked. See `docs/OPENCODE_COMPAT.md`.
+
 ## Interfaces
 
 | Interface | Command | Use it for |
@@ -95,6 +131,9 @@ OS-level isolation is used where available: bwrap on Linux, Job Objects on Windo
 
 | Doc | 中文 |
 |---|---|
+| [Project baseline](docs/PROJECT_BASELINE.md) | [项目基线](docs/PROJECT_BASELINE.md) |
+| [Autopilot](docs/AUTOPILOT.md) | [Autopilot](docs/AUTOPILOT.md) |
+| [OpenCode compatibility](docs/OPENCODE_COMPAT.md) | [OpenCode 兼容](docs/OPENCODE_COMPAT.md) |
 | [Product positioning](docs/en/PRODUCT_POSITIONING.md) | [产品定位](docs/PRODUCT_POSITIONING.md) |
 | [Core capability gaps](docs/CORE_CAPABILITY_GAPS.md) | [核心能力差距](docs/CORE_CAPABILITY_GAPS.md) |
 | [Integration map](docs/INTEGRATION_MAP.md) | [外部集成地图](docs/INTEGRATION_MAP.md) |

@@ -394,14 +394,14 @@ def test_task_params_carry_the_agent_model(tmp_path: Path) -> None:
     agent = get_declared_agent(tmp_path, "cheap", global_dir=tmp_path / "nope")
 
     single = AgentLoop._single_task_params(("do it", agent))
-    assert single[3] == "tiny-model"
+    assert single[4] == "tiny-model"
 
-    _p, _s, _a, models = AgentLoop._parallel_task_params([("do it", agent)])
+    _p, _s, _a, _d, models = AgentLoop._parallel_task_params([("do it", agent)])
     assert models == ["tiny-model"]
 
     plain_path = _write_agent(tmp_path, "plain")
     plain = parse_agent_file(plain_path)
-    assert AgentLoop._single_task_params(("do it", plain))[3] == ""
+    assert AgentLoop._single_task_params(("do it", plain))[4] == ""
 
 
 def test_spawn_subtask_switches_provider_for_declared_model(tmp_path: Path, monkeypatch) -> None:

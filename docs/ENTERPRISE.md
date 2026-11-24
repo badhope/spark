@@ -226,7 +226,7 @@ python -c "from faster_whisper import WhisperModel; WhisperModel('small', downlo
 | GET/POST | `/api/v1/tasks/{id}/artifacts` | 成果物 |
 | GET | `/api/v1/audit` | 审计事件（admin） |
 
-## 7. 办公工作台：会议纪要与行动项
+## 7. 文档与会议工作流：纪要与行动项
 
 打开 `http://127.0.0.1:18800/office`（dev 模式；OIDC 模式在页面右上角填 Bearer Token）。
 

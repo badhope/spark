@@ -65,3 +65,82 @@ def test_index_is_reused_until_sources_change(tmp_path: Path) -> None:
     third = index.refresh()
     assert third.files == 2
     assert third.built_at > first.built_at
+
+
+def test_chunks_split_on_top_level_symbols_not_indented_methods(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    _write(
+        root,
+        "guard.py",
+        """class SessionGuard:
+    def check(self, token):
+        return token.expires_at >= now()
+
+def standalone(value):
+    return value + 1
+""",
+    )
+    index = CodeIndex(root, tmp_path / "home")
+    index.refresh()
+    chunks = index._load()["chunks"]
+    guard = [c for c in chunks if c["path"] == "guard.py" and c["symbol"] == "SessionGuard"]
+    assert guard
+    assert "def check" in guard[0]["text"]
+    assert [c["symbol"] for c in chunks if c["path"] == "guard.py"] == [
+        "SessionGuard",
+        "standalone",
+    ]
+
+
+def test_incremental_refresh_reuses_unchanged_chunks_and_vectors(tmp_path: Path) -> None:
+    class FakeEmbedder:
+        model = "fake-v1"
+
+        def __init__(self) -> None:
+            self.texts: list[str] = []
+
+        def __call__(self, texts: list[str]) -> list[list[float]]:
+            self.texts.extend(texts)
+            return [[1.0, 0.0] for _ in texts]
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    _write(root, "a.py", "def alpha():\n    return 1\n")
+    embedder = FakeEmbedder()
+    index = CodeIndex(root, tmp_path / "home", embedder=embedder, embedding_model="fake-v1")
+    index.refresh(force=True)
+    first_texts = list(embedder.texts)
+    assert any("alpha" in text for text in first_texts)
+
+    _write(root, "b.py", "def beta():\n    return 2\n")
+    status = index.refresh()
+    assert status.files == 2
+    new_texts = embedder.texts[len(first_texts) :]
+    assert new_texts
+    assert all("alpha" not in text for text in new_texts)
+    assert any("beta" in text for text in new_texts)
+
+    data = index._load()
+    assert set(data["file_hashes"]) == {"a.py", "b.py"}
+    assert len(index._load_vectors()) == len(data["chunks"])
+
+
+def test_method_query_ranks_owner_class_chunk(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    _write(
+        root,
+        "guard.py",
+        """class SessionGuard:
+    def check(self, token):
+        if token.expires_at < now():
+            raise ExpiredError("expired")
+        return True
+""",
+    )
+    index = CodeIndex(root, tmp_path / "home")
+    index.refresh()
+    hits = index.search("check expired token")
+    assert hits
+    assert hits[0]["symbol"] == "SessionGuard"

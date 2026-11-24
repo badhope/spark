@@ -234,7 +234,12 @@ def discover_commands(workdir: str | Path) -> list[CommandInfo]:
     base = Path(workdir)
     commands: list[CommandInfo] = []
     seen_names: set[str] = set()
-    roots = [base / COMMANDS_DIR, base / CLAUDE_COMMANDS_DIR, Path.home() / ".claude" / "commands"]
+    roots = [
+        base / COMMANDS_DIR,
+        base / CLAUDE_COMMANDS_DIR,
+        base / ".opencode" / "commands",
+        Path.home() / ".claude" / "commands",
+    ]
     for commands_dir in roots:
         if not commands_dir.is_dir():
             continue
@@ -245,6 +250,29 @@ def discover_commands(workdir: str | Path) -> list[CommandInfo]:
             if item is not None and item.name not in seen_names:
                 commands.append(item)
                 seen_names.add(item.name)
+    # OpenCode inline commands live in opencode.json(c); they are merged after
+    # file commands so a checked-in .opencode/commands file always wins.
+    try:
+        from spark.opencode_compat import load_project
+        project = load_project(base)
+        for oc_item in project.commands:
+            if project.config_path is None or oc_item.path != project.config_path:
+                continue
+            name = oc_item.name.strip().lower()
+            if not name or name in seen_names or name in KNOWN_COMMANDS:
+                continue
+            commands.append(
+                CommandInfo(
+                    name=name,
+                    description=oc_item.description,
+                    body=oc_item.body,
+                    path=oc_item.path,
+                )
+            )
+            seen_names.add(name)
+    except Exception:
+        # A broken OpenCode config must not take down all slash commands.
+        pass
     seen = set(seen_names)
     for plugin, command, path in _plugin_command_files(base):
         if command in seen:
@@ -279,7 +307,12 @@ def expand_command(workdir: str | Path, text: str) -> str | None:
         return None
     base = Path(workdir)
     candidate: Path | None = None
-    for root in (base / COMMANDS_DIR, base / CLAUDE_COMMANDS_DIR, Path.home() / ".claude" / "commands"):
+    for root in (
+        base / COMMANDS_DIR,
+        base / CLAUDE_COMMANDS_DIR,
+        base / ".opencode" / "commands",
+        Path.home() / ".claude" / "commands",
+    ):
         hit = root / f"{name}.md"
         if hit.is_file():
             candidate = hit
@@ -290,6 +323,17 @@ def expand_command(workdir: str | Path, text: str) -> str | None:
                 candidate = plugin_path
                 break
         else:
+            # OpenCode inline command: same template semantics ($ARGUMENTS),
+            # no file to read, and therefore no shell evaluation.
+            try:
+                from spark.opencode_compat import load_project
+                project = load_project(base)
+            except Exception:
+                return None
+            for item in project.commands:
+                if project.config_path is not None and item.path == project.config_path:
+                    if item.name.strip().lower() == name:
+                        return item.body.replace("$ARGUMENTS", rest.strip()).strip()
             return None
     try:
         raw = candidate.read_text(encoding="utf-8", errors="replace")

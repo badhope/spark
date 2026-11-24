@@ -8,6 +8,6 @@ Spark runs where you choose â€” your laptop, a server, or a self-hosted relay â€
 
 - Install: `uvx spark-agent` or the [platform installer](en/INSTALL.md)
 - Start: `spark web`
-- Read next: [features](FEATURES.md), [architecture](en/ARCHITECTURE.md), [API](en/API.md)
+- Read next: [project baseline](PROJECT_BASELINE.md), [features](FEATURES.md), [architecture](en/ARCHITECTURE.md), [API](en/API.md)
 
 Use the navigation on the left. Detailed reference pages are maintained in Chinese and English where both versions exist.

@@ -28,11 +28,10 @@ from typing import Any, Iterable
 from spark.knowledge import EMBED_BATCH, Embedder, _cosine
 from spark.textutil import tokenize
 
-INDEX_VERSION = 1
+INDEX_VERSION = 2
 MAX_FILES = 2500
 MAX_FILE_BYTES = 256 * 1024
 CHUNK_CHARS = 1100
-CHUNK_OVERLAP = 120
 BM25_WEIGHT = 0.62
 VECTOR_WEIGHT = 0.38
 DEFAULT_TOP_K = 8
@@ -73,6 +72,14 @@ def _decode(path: Path) -> str | None:
     return None
 
 
+def _file_digest(path: Path) -> str:
+    try:
+        raw = path.read_bytes()[:MAX_FILE_BYTES]
+    except OSError:
+        return ""
+    return hashlib.sha256(raw).hexdigest()
+
+
 def _project_key(root: Path) -> str:
     return hashlib.sha256(str(root.resolve()).encode("utf-8")).hexdigest()[:16]
 
@@ -89,47 +96,69 @@ def _symbol_for(text: str) -> str:
     return ""
 
 
-def _chunks(path: Path, rel: str) -> list[dict]:
-    text = _decode(path)
-    if not text:
-        return []
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
+def _is_symbol_start(line: str) -> bool:
+    """Top-level declaration only; indented methods belong to their class chunk."""
+    if not line or line[0].isspace():
+        return False
+    return bool(_SYMBOL_RE.match(line) or _TS_SYMBOL_RE.match(line))
+
+
+def _symbol_chunks(lines: list[str], rel: str) -> list[dict]:
+    """Split on top-level symbols, then on the character budget.
+
+    A class/function chunk keeps its symbol even when the body is longer than
+    CHUNK_CHARS and has to continue on the next window.  This is the difference
+    between "a random 80-line window" and "a retrievable unit of code".
+    """
     pieces: list[dict] = []
-    lines = text.splitlines()
     buf: list[str] = []
     buf_start = 1
+    buf_symbol = ""
 
     def flush() -> None:
-        nonlocal buf, buf_start
-        if not buf:
-            return
+        nonlocal buf, buf_start, buf_symbol
         raw = "\n".join(buf).strip()
         if raw:
-            symbol = _symbol_for(raw)
-            piece = raw[:CHUNK_CHARS]
+            symbol = buf_symbol or _symbol_for(raw)
             pieces.append(
                 {
                     "path": rel,
                     "start_line": buf_start,
                     "end_line": buf_start + len(buf) - 1,
                     "symbol": symbol,
-                    "text": piece,
+                    "text": raw[:CHUNK_CHARS],
                 }
             )
         buf = []
 
     for i, line in enumerate(lines, 1):
-        if len(buf) == 0:
+        if _is_symbol_start(line) and buf:
+            flush()
             buf_start = i
+            buf_symbol = _symbol_for(line.strip())
+        elif not buf:
+            buf_start = i
+            buf_symbol = _symbol_for(line.strip()) if _is_symbol_start(line) else ""
         if len("\n".join(buf)) + len(line) + 1 > CHUNK_CHARS and buf:
             flush()
-            buf_start = max(1, i - 2)
+            buf_start = i
         buf.append(line)
         if len(buf) >= 80:
             flush()
             buf_start = i + 1
+            buf_symbol = ""
     flush()
     return pieces
+
+
+def _chunks(path: Path, rel: str) -> list[dict]:
+    text = _decode(path)
+    if not text:
+        return []
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return _symbol_chunks(text.splitlines(), rel)
+
+
 
 
 @dataclass
@@ -236,54 +265,122 @@ class CodeIndex:
     def exists(self) -> bool:
         return self._load() != {}
 
-    def refresh(self, *, force: bool = False) -> IndexStatus:
-        """Rebuild if the source tree changed; otherwise return cached status."""
-        files = self._files()
-        pairs: list[tuple[Path, str]] = []
-        for path in files:
+    def _file_pairs(self) -> list[tuple[Path, str, str]]:
+        pairs: list[tuple[Path, str, str]] = []
+        for path in self._files():
             try:
-                pairs.append((path, path.relative_to(self.root).as_posix()))
+                rel = path.relative_to(self.root).as_posix()
             except ValueError:
                 continue
-        data = self._load()
-        if data and not force:
-            try:
-                if set(data.get("files") or []) == {rel for _, rel in pairs}:
-                    if float(data.get("built_at") or 0) >= self._newest_mtime(files):
-                        return self.status()
-            except OSError:
-                pass
+            pairs.append((path, rel, _file_digest(path)))
+        return pairs
+
+    @staticmethod
+    def _cached_chunks(data: dict[str, Any]) -> dict[str, list[dict]]:
+        cached: dict[str, list[dict]] = {}
+        raw = data.get("chunks") if isinstance(data, dict) else []
+        for chunk in raw if isinstance(raw, list) else []:
+            path = str(chunk.get("path") or "")
+            if path:
+                cached.setdefault(path, []).append(chunk)
+        return cached
+
+    def _cache_is_current(
+        self,
+        data: dict[str, Any],
+        pairs: list[tuple[Path, str, str]],
+        *,
+        force: bool,
+    ) -> bool:
+        if not data or force:
+            return False
+        if set(data.get("files") or []) != {rel for _, rel, _ in pairs}:
+            return False
+        hashes = data.get("file_hashes")
+        if not isinstance(hashes, dict):
+            return False
+        if any(hashes.get(rel) != digest for _, rel, digest in pairs):
+            return False
+        return float(data.get("built_at") or 0) >= self._newest_mtime(
+            [path for path, _, _ in pairs]
+        )
+
+    @staticmethod
+    def _tokenize_piece(rel: str, piece: dict) -> list[str]:
+        return tokenize(f"{rel} {piece.get('symbol', '')} {piece.get('text', '')}")
+
+    def _build_chunks(
+        self,
+        pairs: list[tuple[Path, str, str]],
+        old_hashes: dict[str, str],
+        cached: dict[str, list[dict]],
+        *,
+        force: bool,
+    ) -> tuple[list[dict], dict[str, str]]:
         chunks: list[dict] = []
-        for path, rel in pairs:
+        file_hashes: dict[str, str] = {}
+        for path, rel, digest in pairs:
+            file_hashes[rel] = digest
+            if not force and old_hashes.get(rel) == digest and rel in cached:
+                for piece in cached[rel]:
+                    piece["tokens"] = self._tokenize_piece(rel, piece)
+                    chunks.append(piece)
+                continue
             for piece in _chunks(path, rel):
-                text = f"{rel}\n{piece['text']}"
-                piece["tokens"] = tokenize(text)
+                piece["tokens"] = self._tokenize_piece(rel, piece)
                 chunks.append(piece)
-        built_at = time.time()
+        return chunks, file_hashes
+
+    def _refresh_vectors(self, chunks: list[dict]) -> None:
+        old_vectors = self._load_vectors()
+        valid_keys = {f"{c['path']}:{c['start_line']}" for c in chunks}
+        vectors = {k: v for k, v in old_vectors.items() if k in valid_keys}
+        if self.embedder and chunks:
+            self._embed_chunks(chunks, vectors=vectors)
+        elif vectors:
+            self._save_vectors(vectors)
+
+    def refresh(self, *, force: bool = False) -> IndexStatus:
+        """Incrementally rebuild changed files; reuse unchanged chunks/vectors."""
+        pairs = self._file_pairs()
+        data = self._load()
+        if self._cache_is_current(data, pairs, force=force):
+            return self.status()
+        old_hashes = data.get("file_hashes") if isinstance(data, dict) else {}
+        if not isinstance(old_hashes, dict):
+            old_hashes = {}
+        chunks, file_hashes = self._build_chunks(
+            pairs,
+            old_hashes,
+            self._cached_chunks(data),
+            force=force,
+        )
         self._save(
             {
                 "version": INDEX_VERSION,
                 "root": str(self.root),
-                "built_at": built_at,
-                "files": [rel for _, rel in pairs],
+                "built_at": time.time(),
+                "files": [rel for _, rel, _ in pairs],
+                "file_hashes": file_hashes,
                 "chunks": chunks,
             }
         )
-        # Old vectors are keyed by path:line and may still be valid; simplest
-        # correct move is to drop them when the chunk set changed.
-        if self.vectors_path.exists():
-            try:
-                self.vectors_path.unlink()
-            except OSError:
-                pass
-        if self.embedder and chunks:
-            self._embed_chunks(chunks)
+        self._refresh_vectors(chunks)
         return self.status()
 
-    def _embed_chunks(self, chunks: list[dict]) -> None:
-        vectors: dict[str, list[float]] = {}
-        for start in range(0, len(chunks), EMBED_BATCH):
-            batch = chunks[start : start + EMBED_BATCH]
+    def _embed_chunks(
+        self,
+        chunks: list[dict],
+        *,
+        vectors: dict[str, list[float]] | None = None,
+    ) -> None:
+        vectors = dict(vectors or {})
+        pending = [
+            c for c in chunks
+            if f"{c['path']}:{c['start_line']}" not in vectors
+        ]
+        for start in range(0, len(pending), EMBED_BATCH):
+            batch = pending[start : start + EMBED_BATCH]
             try:
                 vecs = self.embedder([c["text"] for c in batch])  # type: ignore[misc]
             except Exception:
@@ -299,6 +396,109 @@ class CodeIndex:
 
     # -- search ---------------------------------------------------------
 
+    def _score_chunks(
+        self,
+        chunks: list[dict],
+        q_tokens: list[str],
+        query: str,
+    ) -> list[tuple[float, dict]]:
+        q_set = set(q_tokens)
+        q_low = query.lower()
+        n = max(1, len(chunks))
+        avg = sum(len(c.get("tokens") or []) for c in chunks) / n
+        df: dict[str, int] = {}
+        for c in chunks:
+            for token in set(c.get("tokens") or []):
+                df[token] = df.get(token, 0) + 1
+        k1, b = 1.2, 0.75
+        scored: list[tuple[float, dict]] = []
+        for c in chunks:
+            toks = c.get("tokens") or []
+            counts: dict[str, int] = {}
+            for token in toks:
+                counts[token] = counts.get(token, 0) + 1
+            score = 0.0
+            for token in q_set:
+                tf = counts.get(token, 0)
+                if not tf:
+                    continue
+                idf = math.log(1 + (n - df.get(token, 0) + 0.5) / (df.get(token, 0) + 0.5))
+                denom = tf + k1 * (1 - b + b * len(toks) / max(1.0, avg))
+                score += idf * (tf * (k1 + 1)) / denom
+            text_low = str(c.get("text") or "").lower()
+            path_low = str(c.get("path") or "").lower()
+            symbol_low = str(c.get("symbol") or "").lower()
+            if q_low in text_low:
+                score += 2.5
+            if q_low in path_low:
+                score += 2.0
+            if q_low and q_low == symbol_low:
+                score += 4.0
+            elif q_low and q_low in symbol_low:
+                score += 2.0
+            if score > 0:
+                scored.append((score, c))
+        return scored
+
+    def _query_vector(self, query: str) -> list[float]:
+        vectors = self._load_vectors()
+        if not self.embedder or not vectors:
+            return []
+        try:
+            vecs = self.embedder([query])
+        except Exception:
+            return []
+        return vecs[0] if vecs else []
+
+    def _blend_vectors(
+        self,
+        scored: list[tuple[float, dict]],
+        query_vector: list[float],
+    ) -> list[tuple[float, dict]]:
+        if not query_vector or not scored:
+            return scored
+        vectors = self._load_vectors()
+        max_bm25 = max((score for score, _ in scored), default=0.0) or 1.0
+        ranked: list[tuple[float, dict]] = []
+        for score, chunk in scored:
+            key = f"{chunk['path']}:{chunk['start_line']}"
+            vec = vectors.get(key)
+            cosine = max(0.0, _cosine(query_vector, vec)) if vec else 0.0
+            ranked.append(
+                (
+                    BM25_WEIGHT * (score / max_bm25) + VECTOR_WEIGHT * cosine,
+                    chunk,
+                )
+            )
+        return ranked
+
+    def _select_hits(
+        self, scored: list[tuple[float, dict]], top_k: int
+    ) -> list[dict[str, Any]]:
+        scored = sorted(scored, key=lambda item: item[0], reverse=True)
+        out: list[dict[str, Any]] = []
+        kept: dict[tuple[str, str], int] = {}
+        for score, chunk in scored:
+            path = str(chunk["path"])
+            symbol = str(chunk.get("symbol") or "")
+            key = (path, symbol or f"line:{int(chunk['start_line']) // 40}")
+            if kept.get(key, 0) >= 2:
+                continue
+            kept[key] = kept.get(key, 0) + 1
+            out.append(
+                {
+                    "path": path,
+                    "start_line": int(chunk["start_line"]),
+                    "end_line": int(chunk["end_line"]),
+                    "symbol": symbol,
+                    "score": round(float(score), 4),
+                    "text": str(chunk["text"])[:CHUNK_CHARS],
+                }
+            )
+            if len(out) >= max(1, top_k):
+                break
+        return out
+
     def search(self, query: str, top_k: int = DEFAULT_TOP_K) -> list[dict[str, Any]]:
         q = (query or "").strip()
         if not q:
@@ -313,76 +513,10 @@ class CodeIndex:
         q_tokens = tokenize(q)
         if not q_tokens:
             return []
-        q_set = set(q_tokens)
-        n = max(1, len(chunks))
-        avg = sum(len(c.get("tokens") or []) for c in chunks) / n
-        df: dict[str, int] = {}
-        for c in chunks:
-            for t in set(c.get("tokens") or []):
-                df[t] = df.get(t, 0) + 1
-        k1, b = 1.2, 0.75
-        scored: list[tuple[float, dict]] = []
-        for c in chunks:
-            toks = c.get("tokens") or []
-            counts: dict[str, int] = {}
-            for t in toks:
-                counts[t] = counts.get(t, 0) + 1
-            score = 0.0
-            for t in q_set:
-                tf = counts.get(t, 0)
-                if not tf:
-                    continue
-                idf = math.log(1 + (n - df.get(t, 0) + 0.5) / (df.get(t, 0) + 0.5))
-                score += idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * len(toks) / max(1.0, avg)))
-            low = q.lower()
-            if low in str(c.get("text") or "").lower():
-                score += 2.5
-            if low in str(c.get("path") or "").lower() or low in str(c.get("symbol") or "").lower():
-                score += 1.5
-            if score > 0:
-                scored.append((score, c))
-
-        q_vec: list[float] = []
-        vectors = self._load_vectors()
-        if self.embedder and vectors:
-            try:
-                vecs = self.embedder([q])
-                if vecs:
-                    q_vec = vecs[0]
-            except Exception:
-                q_vec = []
-        if q_vec:
-            max_bm25 = max((s for s, _ in scored), default=0.0) or 1.0
-            ranked: list[tuple[float, dict]] = []
-            for score, c in scored:
-                key = f"{c['path']}:{c['start_line']}"
-                vec = vectors.get(key)
-                v = _cosine(q_vec, vec) if vec else 0.0
-                ranked.append((BM25_WEIGHT * (score / max_bm25) + VECTOR_WEIGHT * v, c))
-            scored = ranked
-        # De-duplicate overlapping chunks from the same file: keep the best
-        # window per (path, symbol-or-start bucket).
-        scored.sort(key=lambda x: x[0], reverse=True)
-        out: list[dict[str, Any]] = []
-        seen: set[tuple[str, int]] = set()
-        for score, c in scored:
-            bucket = (str(c["path"]), int(c["start_line"]) // 40)
-            if bucket in seen:
-                continue
-            seen.add(bucket)
-            out.append(
-                {
-                    "path": c["path"],
-                    "start_line": int(c["start_line"]),
-                    "end_line": int(c["end_line"]),
-                    "symbol": c.get("symbol") or "",
-                    "score": round(float(score), 4),
-                    "text": str(c["text"])[:CHUNK_CHARS],
-                }
-            )
-            if len(out) >= max(1, top_k):
-                break
-        return out
+        scored = self._score_chunks(chunks, q_tokens, q)
+        q_vec = self._query_vector(q)
+        ranked = self._blend_vectors(scored, q_vec)
+        return self._select_hits(ranked, top_k)
 
 
 def make_code_index(root: Path, cfg: Any, home: Path) -> CodeIndex:

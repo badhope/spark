@@ -208,20 +208,26 @@ class ToolRunnerMixin:
         return ToolResult(ok=False, payload={"error": "user dismissed the question"})
 
     @staticmethod
-    def _single_task_params(item) -> tuple[str, str, list[str] | None, str]:
-        """单个子任务派发参数：prompt / system_extra / allowlist / model。"""
+    def _single_task_params(
+        item,
+    ) -> tuple[str, str, list[str] | None, list[str] | None, str]:
+        """单个子任务派发参数：prompt / system_extra / allowlist / deny / model."""
         from spark.agents import subagent_system_prompt
 
         prompt, agent = item
         system_extra = subagent_system_prompt(agent) if agent else ""
         allowlist = list(agent.tools) if agent and agent.tools else None
+        denied = list(agent.denied_tools) if agent and agent.denied_tools else None
         model = agent.model if agent and agent.model else ""
-        return prompt, system_extra, allowlist, model
+        return prompt, system_extra, allowlist, denied, model
 
     @staticmethod
     def _parallel_task_params(
         items,
-    ) -> tuple[list[str], list[str], list[list[str] | None], list[str]]:
+    ) -> tuple[
+        list[str], list[str], list[list[str] | None],
+        list[list[str] | None], list[str],
+    ]:
         """并行子任务派发参数（最多 4 路）。"""
         from spark.agents import subagent_system_prompt
 
@@ -234,8 +240,11 @@ class ToolRunnerMixin:
         allowlists = [
             list(a.tools) if a and a.tools else None for _, a in items
         ]
+        denylists = [
+            list(a.denied_tools) if a and a.denied_tools else None for _, a in items
+        ]
         models = [a.model if a and a.model else "" for _, a in items]
-        return prompts, system_extras, allowlists, models
+        return prompts, system_extras, allowlists, denylists, models
 
     @staticmethod
     def _single_task_result(summaries: list[str], errors: list[str]) -> ToolResult:
@@ -460,12 +469,15 @@ class ToolRunnerMixin:
             elif not items:
                 result = ToolResult(ok=False, payload={"error": "prompt required"})
             elif len(items) == 1:
-                prompt, system_extra, allowlist, model = self._single_task_params(items[0])
+                prompt, system_extra, allowlist, denied, model = (
+                    self._single_task_params(items[0])
+                )
                 async for sub_event in self._forward_subtask_events(
                     self.spawn_subtask(
                         prompt,
                         system_extra=system_extra,
                         tools_allowlist=allowlist,
+                        denied_tools=denied,
                         model=model,
                     ),
                     summaries,
@@ -474,13 +486,16 @@ class ToolRunnerMixin:
                     yield sub_event
                 result = self._single_task_result(summaries, sub_errors)
             else:
-                prompts, system_extras, allowlists, models = self._parallel_task_params(items)
+                (
+                    prompts, system_extras, allowlists, denylists, models
+                ) = self._parallel_task_params(items)
                 agent_names = [a.name if a else "" for _, a in items[:4]]
                 async for sub_event in self._forward_subtask_events(
                     self.spawn_subtasks_parallel(
                         prompts,
                         system_extras=system_extras,
                         tools_allowlists=allowlists,
+                        denied_tool_lists=denylists,
                         models=models,
                         agent_names=agent_names,
                     ),

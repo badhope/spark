@@ -21,7 +21,7 @@
 | [yamadashy/repomix](https://github.com/yamadashy/repomix) | 仓库打包 MCP | C 代码智能 / 上下文 | MCP 精选 | 把仓库压成 AI 友好文件，Tree-sitter 压缩约 70% token；适合大仓库上手、跨仓库对比。 |
 | [modelcontextprotocol/servers](https://github.com/modelcontextprotocol/servers) | 官方 MCP 集合 | D 工具网关 | 已有 | 已有 Git / Memory / Sequential Thinking；可补 Filesystem、Fetch、Time 等，但避免与原生工具重复。 |
 | [github/github-mcp-server](https://github.com/github/github-mcp-server) | GitHub MCP | D 工具网关 / 协作 | MCP 精选（远程/本地） | Issue、PR、Actions、代码搜索；和现有 `pr_*` 工具互补，先接只读工具。 |
-| [microsoft/markitdown](https://github.com/microsoft/markitdown) | 文档转 Markdown | J 办公/知识 | 本地库/工具 | PDF、Word、PPT、Excel、图片转 Markdown；办公工作台的通用入口。 |
+| [microsoft/markitdown](https://github.com/microsoft/markitdown) | 文档转 Markdown | J 办公/知识 | 本地库/工具 | PDF、Word、PPT、Excel、图片转 Markdown；企业控制面的通用入口。 |
 | [docling-project/docling](https://github.com/docling-project/docling) | 文档版面解析 | J 办公/知识 | 本地库/工具 | PDF 版面、表格、阅读顺序；比纯文本抽取更适合合同/论文/报表。 |
 | [semgrep/semgrep](https://github.com/semgrep/semgrep) | 静态安全扫描 | I 安全 | 本地 CLI/MCP | 规则化扫描，适合接入安全审查 Skill 与 CI；注意 CE 与商业规则边界。 |
 | [google/osv-scanner](https://github.com/google/osv-scanner) | 依赖漏洞扫描 | I 安全 | 本地 CLI | 锁文件漏洞扫描；与 repo-health、发布检查组合。 |

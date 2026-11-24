@@ -48,6 +48,9 @@ class DeclaredAgent:
     path: Path
     when_to_use: str = ""
     tools: list[str] = field(default_factory=list)
+    #: OpenCode-style permission denials, applied by the sub-agent runner as
+    #: glob patterns over actual tool names (e.g. ``write_*``, ``browser_*``).
+    denied_tools: list[str] = field(default_factory=list)
     #: Optional model id for this specialist. Empty means "inherit the main
     #: model". A cheap reviewer or a strong architect can each declare their
     #: own, which is what the competitors' subagent-level model selection does.
@@ -83,6 +86,7 @@ def parse_agent_file(path: Path) -> DeclaredAgent:
         description=(meta.get("description") or "").strip(),
         when_to_use=(meta.get("when_to_use") or "").strip(),
         tools=_parse_tools(meta.get("tools", "")),
+        denied_tools=_parse_tools(meta.get("denied_tools", "")),
         model=(meta.get("model") or "").strip(),
         body=stripped_body,
         path=path,
@@ -131,6 +135,17 @@ def discover_declared_agents(
                 continue  # project level already won this name
             seen.add(agent.name)
             agents.append(agent)
+
+    # OpenCode project agents are read-only compatibility assets: the body is
+    # already a system prompt, and its deny permissions become tool denylists.
+    from spark.opencode_compat import discover_agents as discover_opencode_agents
+
+    for oc_agent in discover_opencode_agents(workdir):
+        declared = oc_agent.to_declared()
+        if declared.name in seen:
+            continue
+        seen.add(declared.name)
+        agents.append(declared)
     return agents
 
 
@@ -157,7 +172,21 @@ def get_declared_agent(
     for path in (workdir / PROJECT_AGENTS_DIR / f"{name}.md", global_dir / f"{name}.md"):
         if path.is_file():
             return parse_agent_file(path)
-    return None
+
+    # OpenCode uses the filename (including nested directories) as the agent
+    # ID. Exact match wins; a unique basename is accepted for convenience.
+    from spark.opencode_compat import discover_agents as discover_opencode_agents
+
+    matches = [
+        agent for agent in discover_opencode_agents(workdir)
+        if agent.name == name
+    ]
+    if not matches:
+        matches = [
+            agent for agent in discover_opencode_agents(workdir)
+            if agent.name.rsplit("/", 1)[-1] == name
+        ]
+    return matches[0].to_declared() if len(matches) == 1 else None
 
 
 def inject_subagents(system_prompt: str, agents: list[DeclaredAgent]) -> str:

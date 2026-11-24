@@ -131,7 +131,7 @@ table td:first-child{word-break:break-word}
       </div>
       <div class="card-b">
         <div class="row">
-          <div><label>会议标题</label><input id="title" type="text" value="产品周会 · 企业办公工作台"></div>
+          <div><label>会议标题</label><input id="title" type="text" value="产品周会 · 企业控制面 · 会议纪要"></div>
           <div><label>项目</label><select id="project"><option value="">自动创建 Office 项目</option></select></div>
         </div>
         <label>会议转写 / 邮件线程</label>
@@ -444,7 +444,7 @@ $("imap-fetch").onclick = async () => {
   } finally { button.disabled = false; }
 };
 $("sample").onclick = () => {
-  $("title").value = "产品周会 · 企业办公工作台";
+  $("title").value = "产品周会 · 企业控制面 · 会议纪要";
   $("transcript").value = [
     "参会：王敏、李哲、陈雪、赵晨",
     "议题：会议纪要试点范围",

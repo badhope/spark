@@ -64,6 +64,9 @@ def _missing_key_server(tmp_path: Path):
     finally:
         server.shutdown()
         server.server_close()
+        # ``daemon_threads`` lets a slow handler outlive server_close(); give
+        # it a moment before closing the DB the handler is still using.
+        time.sleep(0.3)
         state.close()
         store.close()
 

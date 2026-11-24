@@ -6,6 +6,11 @@
 
 ### Added
 
+- 无人值守编程闭环 `spark autopilot`：`build → repair → audit → done` 状态机，复用现有 `AgentLoop` 与审批/沙箱；独立执行仓库测试，失败输出回灌；每轮状态落盘、`--resume` 可续；最大轮次/单轮超时/总时限/成本/连续错误/连续无进展熔断；默认 workspace + 无网络 + `full-auto`，`unrestricted` 需显式确认。新增 `docs/AUTOPILOT.md`；单测 15 项、CLI 4 项、真实 AgentLoop+工具+测试 E2E 1 项、120 例压力矩阵 120/120；真实 MiniCPM5-2B 小仓库 4 轮通过。
+- 工程化 Autopilot 提示词：`autopilot_contract.md` / `autopilot_build.md` / `autopilot_repair.md` / `autopilot_verify.md`，覆盖新功能、Bug、重构、测试、性能、安全、文档配置、环境依赖场景，明确“不跳测试、不放宽断言、不采信模型自述完成”。
+- OpenCode 静态资产兼容层：读取 `opencode.json(c)`、`.opencode/agents/**/*.md`、`.opencode/commands/*.md`；Markdown agent body 作为 Spark 声明式子 Agent 系统提示词；v1 `permission` / v2 `permissions` 的 deny 与 `tools: write/edit/bash:false` 映射为工具禁用清单；`$ARGUMENTS` 替换；新增 `spark opencode` 只读检查。明确不支持插件运行时、provider 注册表、MCP 自动导入与 ``!`command` `` shell 注入。
+- 代码索引升级：`INDEX_VERSION=2`，顶层 `class/function` 符号感知分块，缩进方法归属类；文件内容 SHA256 增量缓存，未变文件复用 chunks；向量 key 改为 `path:start_line` 并丢弃漂移旧向量；BM25 + 向量 + 符号精确匹配混合重排，同 symbol 最多保留 2 个窗口。
+- 项目基线 `docs/PROJECT_BASELINE.md`：当前核心状态、已交付功能、待开发任务池、迭代路线图四模块；行业调研 `docs/INDUSTRY_RESEARCH_2026-11-24.md` 给出通用 AI 应用/开源编程工具两赛道边界、竞品矩阵与可验证自动化路径；代码审计与压力/真实本地模型记录进入 `docs/reviews/`。
 - 浏览器能力层 v1.1（CP-01b）：`agent.browser_site_rules` 按域名授权，语法 `host=allow|read|prompt|deny`，同域取最严；精确主机或 `*.paypal.com` 这类具体子域规则可覆盖内置敏感站点兜底（支付/网银/身份提供方/云控制台默认 `prompt`，写动作二次确认），`*=allow` / `*.com=allow` 不会把敏感写动作降级；旧 `allow_always` 与 scoped allow 都不能绕过 `deny`；`.spark.toml` 项目级禁止设置该字段。
 - 浏览器 trace 与性能指标：`browser_trace_start` / `browser_trace_stop` 把截图、DOM 快照与源码引用写入 `.spark/browser/traces/*.zip`；`browser_metrics` 通过 Chromium CDP `Performance.getMetrics` 返回节点、JS 堆、文档与布局计数，非 Chromium 明确报错。浏览器工具从 21 增至 24，总工具 78。
 - 浏览器扩展桥：设置页新增 Playwright `--extension` 一键预设，直接复用已登录的 Chrome/Edge 标签页；新增 `docs/BROWSER_EXTENSION_BRIDGE.md` / `docs/en/BROWSER_EXTENSION_BRIDGE.md`，含安装、站点规则搭配、验收清单与诚实边界。

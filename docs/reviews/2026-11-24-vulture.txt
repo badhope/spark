@@ -1,0 +1,6 @@
+src/spark/config.py:408: unused variable 'dotenv_settings' (100% confidence, 1 line)
+src/spark/core/compact.py:306: unused variable 'formatted' (100% confidence, 1 line)
+src/spark/core/compact.py:319: unused variable 'formatted' (100% confidence, 1 line)
+src/spark/core/compact.py:330: unused variable 'formatted' (100% confidence, 1 line)
+src/spark/core/compact.py:347: unused variable 'formatted' (100% confidence, 1 line)
+src/spark/providers/mock.py:23: unreachable code after 'raise' (100% confidence, 1 line)
