@@ -79,7 +79,7 @@ lint 清零后继续审阅，发现三处“没有报错但实际会咬人”的
 
 ## 6. 仍未完成（诚实记录）
 
-- 全仓仍有 70 个历史 D/E/F 函数（53 D / 10 E / 7 F），主要集中在 `repo_context`、`_handle_settings_locked`、`classify_provider_error`、`load_workflow`、`_handle_chat_stream`、`build_context` 等。已拆的只是队列、Autopilot、`policy.decide` 与索引主链路；剩余函数需要逐个补回归后再拆。
+- 本轮结束时全仓仍有 70 个历史 D/E/F 函数（53 D / 10 E / 7 F）；2026-11-25 第三轮已降到 58（53 D / 5 E / 0 F），`repo_context`、`_handle_settings_locked`、`classify_provider_error`、`load_workflow`、`_handle_chat_stream`、`build_context` 均已拆，详见 [`2026-11-25-complexity-second-pass.md`](2026-11-25-complexity-second-pass.md)。
 - vulture 6 条作为协议签名保留，没有为了清零删参数。
-- `CODE-02` 的“新增 D/E diff 门禁”尚未接入 CI；当前靠 `radon -n D` 人工审计与本文件记录。
+- `CODE-02` 的“新增 D/E diff 门禁”在本轮尚未接入 CI；2026-11-25 已新增 `scripts/check_complexity.py` 基线门禁，见第三轮评审。
 - Authenticode、macOS 公证需要证书/Apple 账号，不能用代码假装完成。

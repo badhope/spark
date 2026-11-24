@@ -12,6 +12,8 @@ import logging
 import socket
 import threading
 import uuid
+from dataclasses import dataclass
+from typing import Any
 
 from spark.models import ImageRef
 from spark.providers.errors import classify_provider_error
@@ -598,21 +600,29 @@ def _spawn_memory_recorder(
     threading.Thread(target=run_memory, daemon=True).start()
 
 
-def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
-    state = _route_state(handler)
+@dataclass
+class _ChatRequest:
+    prompt: str
+    attachments: list
+    runtime: Any
+    image_refs: list[ImageRef] | None
+    turn_session_id: str
+
+
+def _prepare_chat_request(
+    state, handler: HandlerBase, body: dict
+) -> tuple[_ChatRequest | None, tuple[int, dict] | None]:
+    """Resolve prompt/runtime/lease before opening the SSE stream."""
     prompt = str(body.get("prompt") or "").strip()
     attachments = parse_attachments(body.get("attachments"))
     if not prompt and not body.get("images") and not attachments:
-        handler._json(400, {"error": "prompt required"})
-        return
+        return None, (400, {"error": "prompt required"})
     requested_session = str(body.get("session_id") or "").strip()
     runtime = state.runtime_for(requested_session) if requested_session else state.current_runtime
     if requested_session and runtime is None:
-        handler._json(404, {"error": "unknown session"})
-        return
+        return None, (404, {"error": "unknown session"})
     if runtime is None or runtime.loop is None:
-        handler._json(500, {"error": "agent not ready"})
-        return
+        return None, (500, {"error": "agent not ready"})
     denied = lease_reject(
         handler,
         runtime,
@@ -620,19 +630,116 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
         takeover=bool(body.get("takeover")),
     )
     if denied is not None:
-        handler._json(denied["status"], denied["body"])
-        return
+        return None, (denied["status"], denied["body"])
+
     turn_session_id = runtime.session_id
     attachments = prepare_attachments(state.workdir, turn_session_id, attachments)
-
     images = _parse_image_payloads(body)
-    image_refs = [ImageRef.model_validate(i) for i in images] or None
+    image_refs = [ImageRef.model_validate(item) for item in images] or None
     if not prompt and image_refs:
         prompt = "请分析这些图片。"
+    return (
+        _ChatRequest(
+            prompt=prompt,
+            attachments=attachments,
+            runtime=runtime,
+            image_refs=image_refs,
+            turn_session_id=turn_session_id,
+        ),
+        None,
+    )
 
+
+def _run_goal_auto_turns(
+    state,
+    runtime,
+    stream,
+    turn_loop,
+    collect_event,
+    body: dict,
+    slash_result,
+    memory_collector: dict,
+) -> None:
+    """Continue the same SSE stream while an active goal remains unfinished."""
+    auto_turns = (
+        max(0, min(int(getattr(state.cfg.agent, "goal_auto_turns", 0) or 0), 20))
+        if slash_result is None
+        else 0
+    )
+    auto_turn = 0
+    while (
+        auto_turn < auto_turns
+        and not stream.disconnected
+        and not memory_collector["failed"]
+    ):
+        goal = state.store.get_active_goal(runtime.session_id)
+        if not goal:
+            break
+        auto_turn += 1
+        if not stream.submit_payload(
+            {
+                "type": "goal_auto_continue",
+                "data": {
+                    "turn": auto_turn,
+                    "max": auto_turns,
+                    "goal": {
+                        "id": goal.get("id"),
+                        "objective": goal.get("objective"),
+                    },
+                },
+            }
+        ):
+            break
+        _dispatch_turn(
+            state, runtime, stream, turn_loop, _GOAL_AUTO_PROMPT, None, None,
+            collect_event, bool(body.get("web_search", True)), reset_seq=False,
+        )
+
+
+def _finalize_stream_turn(
+    state,
+    stream,
+    request: _ChatRequest,
+    memory_collector: dict,
+    ledger_since: int,
+) -> None:
+    if not stream.finish():
+        return
+    turn_text = memory_collector["text"]
+    if turn_text:
+        _generate_session_meta_async(
+            state, request.prompt, turn_text, session_id=request.turn_session_id
+        )
+    _spawn_memory_recorder(
+        state,
+        request.prompt,
+        turn_text,
+        " | ".join(memory_collector["tools"]),
+        session_id=request.turn_session_id,
+    )
+    _maybe_auto_ledger(
+        state,
+        request.turn_session_id,
+        request.prompt,
+        turn_text,
+        bool(memory_collector["mutated"]),
+        bool(memory_collector["failed"]),
+        since_id=ledger_since,
+    )
+
+
+def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
+    state = _route_state(handler)
+    request, rejection = _prepare_chat_request(state, handler, body)
+    if rejection is not None:
+        status, payload = rejection
+        handler._json(status, payload)
+        return
+    assert request is not None
     if not _send_sse_headers(handler):
         return
 
+    runtime = request.runtime
     turn_loop = runtime.loop
     approver = runtime.approver
     turn_id = f"turn-{uuid.uuid4().hex[:12]}"
@@ -676,7 +783,7 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
         on_disconnect=cancel_turn,
         close_connection=close_stream,
         secrets=_sse_secrets(),
-        session_id="" if legacy else turn_session_id,
+        session_id="" if legacy else request.turn_session_id,
         turn_id="" if legacy else turn_id,
         start_seq=0 if legacy else runtime.next_seq_start(),
         on_event=None if legacy else runtime.record_event,
@@ -691,10 +798,10 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
         elif event.type == "turn_end":
             if event.text:
                 memory_collector["text"] = event.text
-            _clear_session_error(state, turn_session_id)
+            _clear_session_error(state, request.turn_session_id)
         elif event.type == "turn_error":
             memory_collector["failed"] = True
-            _remember_turn_error(state, turn_session_id, event)
+            _remember_turn_error(state, request.turn_session_id, event)
         elif event.type == "approval_needed" and event.approval is not None:
             # The phone is usually locked when an approval arrives; the SSE
             # connection alone cannot wake it. This is best-effort and never
@@ -720,7 +827,7 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
 
     # P1-3：后端识别原始 "/test ..." 文本（前端最小实现=直接发送原始 slash），
     # 跑仓库测试；失败时把含 traceback 的输出回灌进同一 agent loop 修正。
-    slash = parse_slash(prompt)
+    slash = parse_slash(request.prompt)
     slash_result = None
     if slash is not None and slash.name == "test":
         slash_result, fatal = _run_test_slash(state, stream, slash)
@@ -735,7 +842,7 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
     if slash is None or slash_result is not None:
         issue = state.model_preflight(turn_loop)
         if issue is not None:
-            state.store.set_session_error(turn_session_id, issue.to_dict())
+            state.store.set_session_error(request.turn_session_id, issue.to_dict())
             stream.submit_payload(
                 {
                     "type": "turn_error",
@@ -746,74 +853,22 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
             stream.finish()
             return
 
-    turn_prompt = inject_attachments(_expand_turn_prompt(state, prompt), attachments)
-    ledger_since = state.store.latest_tool_event_id(turn_session_id)
+    turn_prompt = inject_attachments(_expand_turn_prompt(state, request.prompt), request.attachments)
+    ledger_since = state.store.latest_tool_event_id(request.turn_session_id)
 
     try:
         _dispatch_turn(
-            state, runtime, stream, turn_loop, turn_prompt, image_refs, slash_result,
+            state, runtime, stream, turn_loop, turn_prompt, request.image_refs, slash_result,
             collect_event, bool(body.get("web_search", True)),
         )
-        # Goal 自动续跑：同一 SSE 流里继续下一回合，直到目标完成、预算用完
-        # 或任一回合失败。只对普通聊天回合生效；/goal 设立命令在更早分支
-        # 已经 return，不会在这里递归。
-        auto_turns = (
-            max(0, min(int(getattr(state.cfg.agent, "goal_auto_turns", 0) or 0), 20))
-            if slash_result is None
-            else 0
+        _run_goal_auto_turns(
+            state, runtime, stream, turn_loop, collect_event, body, slash_result,
+            memory_collector,
         )
-        auto_turn = 0
-        while (
-            auto_turn < auto_turns
-            and not stream.disconnected
-            and not memory_collector["failed"]
-        ):
-            goal = state.store.get_active_goal(turn_session_id)
-            if not goal:
-                break
-            auto_turn += 1
-            if not stream.submit_payload(
-                {
-                    "type": "goal_auto_continue",
-                    "data": {
-                        "turn": auto_turn,
-                        "max": auto_turns,
-                        "goal": {
-                            "id": goal.get("id"),
-                            "objective": goal.get("objective"),
-                        },
-                    },
-                }
-            ):
-                break
-            _dispatch_turn(
-                state, runtime, stream, turn_loop, _GOAL_AUTO_PROMPT, None, None,
-                collect_event, bool(body.get("web_search", True)), reset_seq=False,
-            )
         if stream.disconnected:
             return
-        if not stream.finish():
-            return
-        turn_text = memory_collector["text"]
-        if turn_text:
-            _generate_session_meta_async(
-                state, prompt, turn_text, session_id=turn_session_id
-            )
-        _spawn_memory_recorder(
-            state,
-            prompt,
-            turn_text,
-            " | ".join(memory_collector["tools"]),
-            session_id=turn_session_id,
-        )
-        _maybe_auto_ledger(
-            state,
-            turn_session_id,
-            prompt,
-            turn_text,
-            bool(memory_collector["mutated"]),
-            bool(memory_collector["failed"]),
-            since_id=ledger_since,
+        _finalize_stream_turn(
+            state, stream, request, memory_collector, ledger_since
         )
     except SSE_DISCONNECT_ERRORS as exc:
         _stream_failure_exit(
@@ -822,7 +877,7 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
             cancel_turn,
             cancel_on_disconnect=True,
             state=state,
-            session_id=turn_session_id,
+            session_id=request.turn_session_id,
             live_provider=turn_loop.provider,
         )
     except Exception as exc:  # aqg: top-level boundary
@@ -832,7 +887,7 @@ def _handle_chat_stream(handler: HandlerBase, body: dict) -> None:
             cancel_turn,
             cancel_on_disconnect=False,
             state=state,
-            session_id=turn_session_id,
+            session_id=request.turn_session_id,
             live_provider=turn_loop.provider,
         )
     finally:

@@ -364,29 +364,24 @@ def _optional_comments(
         return []
 
 
-def build_context(
-    client: GitHubClient,
-    number: int,
-    *,
-    max_diff_chars: int = 20000,
-    max_comments: int = 40,
-) -> dict[str, Any]:
-    """Fetch a compact, model-friendly PR context."""
-    pr = client.pull(number)
-    diff = client.diff(number)
-    files = client.files(number)
-    if not diff:
-        parts: list[str] = []
-        for row in files:
-            if not isinstance(row, dict):
-                continue
-            patch = str(row.get("patch") or "")
-            if patch:
-                parts.append(f"--- a/{row.get('filename', '')}\n+++ b/{row.get('filename', '')}\n{patch}")
-        diff = "\n".join(parts)
-    issue_comments = _optional_comments(client.issue_comments, number)
-    review_comments = _optional_comments(client.review_comments, number)
-    checks = client.checks(number)
+def _diff_from_files(files: list[dict[str, Any]]) -> str:
+    """Reconstruct a unified diff when the forge does not expose one."""
+    parts: list[str] = []
+    for row in files:
+        if not isinstance(row, dict):
+            continue
+        patch = str(row.get("patch") or "")
+        if patch:
+            parts.append(f"--- a/{row.get('filename', '')}\n+++ b/{row.get('filename', '')}\n{patch}")
+    return "\n".join(parts)
+
+
+def _compact_comments(
+    issue_comments: list[dict[str, Any]],
+    review_comments: list[dict[str, Any]],
+    max_comments: int,
+) -> list[dict[str, Any]]:
+    """Flatten issue/review comments into the stable shape the model sees."""
     comments: list[dict[str, Any]] = []
     for row in issue_comments + review_comments:
         if not isinstance(row, dict):
@@ -401,7 +396,18 @@ def build_context(
                 "created_at": str(row.get("created_at") or ""),
             }
         )
-    comments = comments[:max_comments]
+    return comments[:max_comments]
+
+
+def _pr_stats(
+    pr: dict[str, Any], files: list[dict[str, Any]]
+) -> tuple[int, int, int, list[dict[str, Any]]]:
+    """Return changed_files/additions/deletions and the compact file list.
+
+    Some forges omit aggregate counters from the PR payload; when they do and
+    files are available, derive the totals from the per-file rows instead of
+    reporting a misleading zero.
+    """
     changed_files = int(pr.get("changed_files") or 0)
     additions = int(pr.get("additions") or 0)
     deletions = int(pr.get("deletions") or 0)
@@ -409,6 +415,37 @@ def build_context(
         changed_files = len(files)
         additions = sum(int(row.get("additions") or 0) for row in files if isinstance(row, dict))
         deletions = sum(int(row.get("deletions") or 0) for row in files if isinstance(row, dict))
+    compact_files = [
+        {
+            "filename": str(row.get("filename") or ""),
+            "status": str(row.get("status") or ""),
+            "additions": int(row.get("additions") or 0),
+            "deletions": int(row.get("deletions") or 0),
+        }
+        for row in files
+        if isinstance(row, dict)
+    ]
+    return changed_files, additions, deletions, compact_files
+
+
+def build_context(
+    client: GitHubClient,
+    number: int,
+    *,
+    max_diff_chars: int = 20000,
+    max_comments: int = 40,
+) -> dict[str, Any]:
+    """Fetch a compact, model-friendly PR context."""
+    pr = client.pull(number)
+    diff = client.diff(number)
+    files = client.files(number)
+    if not diff:
+        diff = _diff_from_files(files)
+    issue_comments = _optional_comments(client.issue_comments, number)
+    review_comments = _optional_comments(client.review_comments, number)
+    checks = client.checks(number)
+    comments = _compact_comments(issue_comments, review_comments, max_comments)
+    changed_files, additions, deletions, compact_files = _pr_stats(pr, files)
     return {
         "number": number,
         "title": str(pr.get("title") or ""),
@@ -424,16 +461,7 @@ def build_context(
         "changed_files": changed_files,
         "mergeable": pr.get("mergeable"),
         "mergeable_state": str(pr.get("mergeable_state") or ""),
-        "files": [
-            {
-                "filename": str(row.get("filename") or ""),
-                "status": str(row.get("status") or ""),
-                "additions": int(row.get("additions") or 0),
-                "deletions": int(row.get("deletions") or 0),
-            }
-            for row in files
-            if isinstance(row, dict)
-        ],
+        "files": compact_files,
         "diff": diff[:max_diff_chars],
         "diff_truncated": len(diff) > max_diff_chars,
         "comments": comments,
@@ -458,15 +486,10 @@ SECURITY_PATH_HINTS = (
 )
 
 
-def review_brief(context: dict[str, Any]) -> dict[str, Any]:
-    """Deterministic review checklist derived from PR metadata and checks.
-
-    This is not an AI review: it surfaces the facts a reviewer must not miss
-    (CI state, risky paths, test gaps, size) so the model/user can focus on
-    reading the diff. The GitHub text itself stays untrusted.
-    """
-    findings: list[dict[str, str]] = []
-    files = context.get("files") or []
+def _review_scope(
+    files: list[dict[str, Any]],
+) -> tuple[list[str], bool, list[str]]:
+    """Return changed source files, test presence and risky paths."""
     names = [str(row.get("filename") or "") for row in files]
     source_changed = [
         name
@@ -478,65 +501,93 @@ def review_brief(context: dict[str, Any]) -> dict[str, Any]:
         name.startswith("tests/") or "/test_" in name or name.endswith("_test.py")
         for name in names
     )
-    risky = [
-        name
-        for name in names
-        if any(hint in name.lower() for hint in SECURITY_PATH_HINTS)
-    ]
+    risky = [name for name in names if any(hint in name.lower() for hint in SECURITY_PATH_HINTS)]
+    return source_changed, tests_changed, risky
+
+
+def _coverage_finding(source_changed: list[str], tests_changed: bool) -> dict[str, str] | None:
     if source_changed and not tests_changed:
-        findings.append(
-            {
-                "severity": "P1",
-                "title": "源码有改动但没有测试改动",
-                "detail": "至少确认现有测试覆盖；否则要求作者补测试或给出人工验证步骤。",
-            }
-        )
+        return {
+            "severity": "P1",
+            "title": "源码有改动但没有测试改动",
+            "detail": "至少确认现有测试覆盖；否则要求作者补测试或给出人工验证步骤。",
+        }
+    return None
+
+
+def _risky_path_finding(risky: list[str]) -> dict[str, str] | None:
     if risky:
-        findings.append(
-            {
-                "severity": "P1",
-                "title": "触及权限/密钥/构建类路径",
-                "detail": ", ".join(risky[:8]),
-            }
-        )
+        return {
+            "severity": "P1",
+            "title": "触及权限/密钥/构建类路径",
+            "detail": ", ".join(risky[:8]),
+        }
+    return None
+
+
+def _size_finding(context: dict[str, Any]) -> dict[str, str] | None:
     if int(context.get("changed_files") or 0) > 20 or (
         int(context.get("additions") or 0) + int(context.get("deletions") or 0) > 1000
     ):
-        findings.append(
-            {
-                "severity": "P2",
-                "title": "变更面较大",
-                "detail": "建议拆分或按文件分层审查，避免漏掉边界条件。",
-            }
-        )
-    checks = context.get("checks") or {}
+        return {
+            "severity": "P2",
+            "title": "变更面较大",
+            "detail": "建议拆分或按文件分层审查，避免漏掉边界条件。",
+        }
+    return None
+
+
+def _ci_finding(checks: dict[str, Any]) -> dict[str, str] | None:
     failed = [
         row
         for row in (checks.get("check_runs") or [])
         if row.get("conclusion") in {"failure", "cancelled", "timed_out", "action_required"}
     ]
     failed_statuses = [
-        row
-        for row in (checks.get("statuses") or [])
-        if row.get("state") in {"failure", "error"}
+        row for row in (checks.get("statuses") or []) if row.get("state") in {"failure", "error"}
     ]
-    if failed or failed_statuses:
-        names_bad = [str(row.get("name") or row.get("context") or "check") for row in failed + failed_statuses]
-        findings.append(
-            {
-                "severity": "P1",
-                "title": "CI 未通过",
-                "detail": ", ".join(names_bad[:8]),
-            }
-        )
+    if not failed and not failed_statuses:
+        return None
+    names_bad = [
+        str(row.get("name") or row.get("context") or "check")
+        for row in failed + failed_statuses
+    ]
+    return {"severity": "P1", "title": "CI 未通过", "detail": ", ".join(names_bad[:8])}
+
+
+def _draft_finding(context: dict[str, Any]) -> dict[str, str] | None:
     if context.get("draft"):
-        findings.append(
-            {"severity": "P3", "title": "草稿 PR", "detail": "作者尚未标记 ready for review。"}
-        )
+        return {"severity": "P3", "title": "草稿 PR", "detail": "作者尚未标记 ready for review。"}
+    return None
+
+
+def _conflict_finding(context: dict[str, Any]) -> dict[str, str] | None:
     if context.get("mergeable") is False or context.get("mergeable_state") == "dirty":
-        findings.append(
-            {"severity": "P1", "title": "存在合并冲突", "detail": "先解决冲突再审查。"}
+        return {"severity": "P1", "title": "存在合并冲突", "detail": "先解决冲突再审查。"}
+    return None
+
+
+def review_brief(context: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic review checklist derived from PR metadata and checks.
+
+    This is not an AI review: it surfaces the facts a reviewer must not miss
+    (CI state, risky paths, test gaps, size) so the model/user can focus on
+    reading the diff. The GitHub text itself stays untrusted.
+    """
+    files = context.get("files") or []
+    source_changed, tests_changed, risky = _review_scope(files)
+    findings = [
+        finding
+        for finding in (
+            _coverage_finding(source_changed, tests_changed),
+            _risky_path_finding(risky),
+            _size_finding(context),
+            _ci_finding(context.get("checks") or {}),
+            _draft_finding(context),
+            _conflict_finding(context),
         )
+        if finding is not None
+    ]
     checklist = [
         "读 diff，逐文件确认行为变化与边界条件",
         "确认新增/修改逻辑有测试覆盖，失败路径也有断言",

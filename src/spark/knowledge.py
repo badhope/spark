@@ -446,49 +446,74 @@ class KnowledgeBase:
                 continue
         return sorted(out, key=lambda d: d.added_at, reverse=True)
 
+    def _bm25_scores(
+        self, chunks: list[dict[str, Any]], query: str
+    ) -> list[tuple[float, dict[str, Any]]]:
+        """Compute BM25 for every chunk; vector re-ranking is a separate pass."""
+        q_tokens = tokenize(query)
+        q_set = set(q_tokens)
+        n_docs = max(1, len(chunks))
+        avg_len = sum(len(x.get("tokens") or []) for x in chunks) / n_docs
+        df: dict[str, int] = {}
+        for chunk in chunks:
+            for token in set(chunk.get("tokens") or []):
+                df[token] = df.get(token, 0) + 1
+
+        bm25_scores: list[tuple[float, dict[str, Any]]] = []
+        for chunk in chunks:
+            tokens: list[str] = chunk.get("tokens") or []
+            if not tokens:
+                continue
+            counts: dict[str, int] = {}
+            for token in tokens:
+                counts[token] = counts.get(token, 0) + 1
+            k1, b = 1.2, 0.75
+            score = 0.0
+            for token in q_set:
+                tf = counts.get(token, 0)
+                if not tf:
+                    continue
+                idf = math.log(
+                    1 + (n_docs - df.get(token, 0) + 0.5) / (df.get(token, 0) + 0.5)
+                )
+                score += idf * (tf * (k1 + 1)) / (
+                    tf + k1 * (1 - b + b * len(tokens) / max(1.0, avg_len))
+                )
+            # 完整短语命中额外加权：搜 "鉴权流程" 时含原词的块应该压过只含两字的块。
+            if query.lower() in (chunk.get("text") or "").lower():
+                score += 3.0
+            bm25_scores.append((score, chunk))
+        return bm25_scores
+
+    def _hybrid_scores(
+        self,
+        bm25_scores: list[tuple[float, dict[str, Any]]],
+        q_vec: list[float] | None,
+        vectors: dict[str, list[float]],
+    ) -> list[tuple[float, dict[str, Any]]]:
+        """Blend normalized BM25 with cosine; fall back to BM25 when no query vector."""
+        if not q_vec or not vectors:
+            return [(score, chunk) for score, chunk in bm25_scores if score > 0]
+        scored: list[tuple[float, dict[str, Any]]] = []
+        max_bm25 = max((score for score, _ in bm25_scores), default=0.0) or 1.0
+        for bm25, chunk in bm25_scores:
+            key = f"{chunk.get('doc_name')}:{chunk.get('index')}"
+            vec = vectors.get(key)
+            vscore = _cosine(q_vec, vec) if isinstance(vec, list) and vec else 0.0
+            score = BM25_WEIGHT * (bm25 / max_bm25) + VECTOR_WEIGHT * vscore
+            if score > 0:
+                scored.append((score, chunk))
+        return scored
+
     def search(self, query: str, top_k: int = DEFAULT_TOP_K) -> list[dict[str, Any]]:
         q = (query or "").strip()
         if not q:
             return []
-        data = self._load()
-        chunks = data["chunks"]
-        if not chunks:
+        chunks = self._load()["chunks"]
+        if not chunks or not tokenize(q):
             return []
 
-        q_tokens = tokenize(q)
-        if not q_tokens:
-            return []
-        q_set = set(q_tokens)
-
-        n_docs = max(1, len(chunks))
-        avg_len = sum(len(x.get("tokens") or []) for x in chunks) / n_docs
-        df: dict[str, int] = {}
-        for c in chunks:
-            for t in set(c.get("tokens") or []):
-                df[t] = df.get(t, 0) + 1
-
-        # 先算 BM25：即使向量不可用，这条路径也必须保持原有排序。
-        bm25_scores: list[tuple[float, dict[str, Any]]] = []
-        for c in chunks:
-            toks: list[str] = c.get("tokens") or []
-            if not toks:
-                continue
-            counts: dict[str, int] = {}
-            for t in toks:
-                counts[t] = counts.get(t, 0) + 1
-            k1, b = 1.2, 0.75
-            score = 0.0
-            for t in q_set:
-                tf = counts.get(t, 0)
-                if not tf:
-                    continue
-                idf = math.log(1 + (n_docs - df.get(t, 0) + 0.5) / (df.get(t, 0) + 0.5))
-                score += idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * len(toks) / max(1.0, avg_len)))
-            # 完整短语命中额外加权：搜 "鉴权流程" 时含原词的块应该压过只含两字的块。
-            if q.lower() in (c.get("text") or "").lower():
-                score += 3.0
-            bm25_scores.append((score, c))
-
+        bm25_scores = self._bm25_scores(chunks, q)
         q_vec: list[float] | None = None
         vector_data: dict[str, Any] = {}
         if self._embedder:
@@ -497,29 +522,20 @@ class KnowledgeBase:
                 vecs = self._embed([q])
                 if vecs:
                     q_vec = vecs[0]
-
-        if q_vec and vector_data.get("vectors"):
-            scored: list[tuple[float, dict[str, Any]]] = []
-            max_bm25 = max((s for s, _ in bm25_scores), default=0.0) or 1.0
-            for bm25, c in bm25_scores:
-                key = f"{c.get('doc_name')}:{c.get('index')}"
-                vec = vector_data["vectors"].get(key)
-                vscore = _cosine(q_vec, vec) if isinstance(vec, list) and vec else 0.0
-                score = BM25_WEIGHT * (bm25 / max_bm25) + VECTOR_WEIGHT * vscore
-                if score > 0:
-                    scored.append((score, c))
-        else:
-            scored = [(s, c) for s, c in bm25_scores if s > 0]
-
-        scored.sort(key=lambda x: x[0], reverse=True)
+        scored = self._hybrid_scores(
+            bm25_scores,
+            q_vec,
+            vector_data.get("vectors") or {},
+        )
+        scored.sort(key=lambda item: item[0], reverse=True)
         return [
             {
-                "doc_name": c["doc_name"],
-                "index": c["index"],
-                "text": c["text"],
-                "score": round(s, 4),
+                "doc_name": chunk["doc_name"],
+                "index": chunk["index"],
+                "text": chunk["text"],
+                "score": round(score, 4),
             }
-            for s, c in scored[: max(1, top_k)]
+            for score, chunk in scored[: max(1, top_k)]
         ]
 
 

@@ -372,3 +372,20 @@ async def test_agent_adapter_reports_cost() -> None:
     runner = AgentWorkflowRunner(FakeLoop(), spec)
     assert await runner(spec.steps[0], {}) == "done"
     assert runner.total_cost_usd == 0.0123
+
+
+def test_duplicate_step_is_reported_before_field_validation(tmp_path: Path) -> None:
+    path = tmp_path / "duplicate.yaml"
+    path.write_text(
+        """
+name: dup
+roles:
+  r: {agent: lead}
+steps:
+  - {id: a, role: r, prompt: first}
+  - {id: a, role: missing, prompt: second}
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(WorkflowError, match="重复的 step id: a"):
+        load_workflow(path)

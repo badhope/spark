@@ -31,64 +31,119 @@ def _handle_models_save(handler: HandlerBase, body: dict) -> None:
         _handle_models_save_locked(handler, body)
 
 
-def _handle_models_save_locked(handler: HandlerBase, body: dict) -> None:
-    from spark.config import ModelProfile
-
+def _parse_model_request(body: dict) -> tuple[dict[str, str], str | None]:
+    """Validate identity fields shared by create and update."""
     name = str(body.get("name") or "").strip()
     base_url = str(body.get("base_url") or "").strip()
     model = str(body.get("model") or "").strip()
     provider_name = str(body.get("provider") or "openai_compat").strip()
     api_key = str(body.get("api_key") or "").strip()
     if provider_name not in PROVIDER_NAMES:
-        handler._json(400, {"error": f"provider must be one of: {', '.join(PROVIDER_NAMES)}"})
-        return
+        return {}, f"provider must be one of: {', '.join(PROVIDER_NAMES)}"
     native_without_base = provider_name in {"anthropic", "openai", "gemini", "bedrock"}
     if not model or (not base_url and not native_without_base):
-        handler._json(
-            400,
-            {"error": "base_url and model are required (native Anthropic/OpenAI/Gemini/Bedrock omit base_url)"},
+        return {}, (
+            "base_url and model are required "
+            "(native Anthropic/OpenAI/Gemini/Bedrock omit base_url)"
         )
+    return {
+        "name": name,
+        "base_url": base_url,
+        "model": model,
+        "provider_name": provider_name,
+        "api_key": api_key,
+        "id": str(body.get("id") or "").strip(),
+    }, None
+
+
+def _update_model_profile(
+    existing,
+    body: dict,
+    request: dict[str, str],
+    api_keys: list[str],
+    fallback_models: list[str],
+    small_model: str,
+) -> None:
+    provider_name = request["provider_name"]
+    base_url = request["base_url"]
+    same_target = (
+        existing.provider == provider_name
+        and existing.base_url.rstrip("/") == base_url.rstrip("/")
+    )
+    existing.name = request["name"] or existing.name or existing.model
+    existing.provider = cast(ProviderName, provider_name)
+    existing.base_url = base_url
+    existing.model = request["model"]
+    if request["api_key"] or not same_target:
+        existing.api_key = request["api_key"]
+    if "api_key_env" in body or not same_target:
+        existing.api_key_env = str(body.get("api_key_env") or "").strip()
+    if "api_keys" in body or not same_target:
+        existing.api_keys = api_keys
+    if "fallback_models" in body:
+        existing.fallback_models = fallback_models
+    if "small_model" in body:
+        existing.small_model = small_model
+
+
+def _new_model_profile(
+    state,
+    body: dict,
+    request: dict[str, str],
+    api_keys: list[str],
+    fallback_models: list[str],
+    small_model: str,
+):
+    from spark.config import ModelProfile
+
+    api_key = request["api_key"]
+    provider_name = request["provider_name"]
+    base_url = request["base_url"]
+    if (
+        not api_key
+        and not state.cfg.active_profile_id
+        and state.cfg.provider.name == provider_name
+        and state.cfg.provider.base_url.rstrip("/") == base_url.rstrip("/")
+    ):
+        api_key = state.cfg.provider.api_key or ""
+    profile = ModelProfile(
+        id=uuid.uuid4().hex[:8],
+        name=request["name"] or request["model"],
+        provider=cast(ProviderName, provider_name),
+        base_url=base_url,
+        model=request["model"],
+        api_key=api_key,
+        api_key_env=str(body.get("api_key_env") or "").strip(),
+        api_keys=api_keys,
+        fallback_models=fallback_models,
+        small_model=small_model,
+    )
+    state.cfg.model_profiles.append(profile)
+    return profile
+
+
+def _handle_models_save_locked(handler: HandlerBase, body: dict) -> None:
+    request, error = _parse_model_request(body)
+    if error:
+        handler._json(400, {"error": error})
         return
     state = _route_state(handler)
-    pid = str(body.get("id") or "").strip()
     api_keys, fallback_models, small_model = _parse_resilience(body)
     existing = next(
-        (p for p in state.cfg.model_profiles if p.id == pid), None
+        (profile for profile in state.cfg.model_profiles if profile.id == request["id"]),
+        None,
     )
-    if existing:
-        same_target = existing.provider == provider_name and existing.base_url.rstrip("/") == base_url.rstrip("/")
-        existing.name = name or existing.name or existing.model
-        existing.provider = cast(ProviderName, provider_name)
-        existing.base_url = base_url
-        existing.model = model
-        if api_key or not same_target:
-            existing.api_key = api_key
-        if "api_key_env" in body or not same_target:
-            existing.api_key_env = str(body.get("api_key_env") or "").strip()
-        if "api_keys" in body or not same_target:
-            existing.api_keys = api_keys
-        if "fallback_models" in body:
-            existing.fallback_models = fallback_models
-        if "small_model" in body:
-            existing.small_model = small_model
-    else:
-        if not api_key and not state.cfg.active_profile_id and state.cfg.provider.name == provider_name and state.cfg.provider.base_url.rstrip("/") == base_url.rstrip("/"):
-            api_key = state.cfg.provider.api_key or ""
-        existing = ModelProfile(
-            id=uuid.uuid4().hex[:8],
-            name=name or model,
-            provider=cast(ProviderName, provider_name),
-            base_url=base_url,
-            model=model,
-            api_key=api_key,
-            api_key_env=str(body.get("api_key_env") or "").strip(),
-            api_keys=api_keys,
-            fallback_models=fallback_models,
-            small_model=small_model,
+    if existing is not None:
+        _update_model_profile(
+            existing, body, request, api_keys, fallback_models, small_model
         )
-        state.cfg.model_profiles.append(existing)
+        profile = existing
+    else:
+        profile = _new_model_profile(
+            state, body, request, api_keys, fallback_models, small_model
+        )
     _save_config(state.cfg)
-    handler._json(200, {"ok": True, "id": existing.id})
+    handler._json(200, {"ok": True, "id": profile.id})
 
 
 def _handle_models_delete(handler: HandlerBase, body: dict) -> None:

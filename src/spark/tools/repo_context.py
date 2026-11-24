@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -258,51 +259,53 @@ def _commands_for(root: Path, manifests: set[str]) -> dict[str, list[str]]:
     return {k: v for k, v in commands.items() if v}
 
 
-def repo_context(sandbox: WorkdirSandbox, args: RepoContextArgs) -> ToolResult:
-    try:
-        root = sandbox.resolve(args.path)
-    except (SandboxPolicyError, Exception) as exc:  # noqa: BLE001 - policy errors vary
-        return ToolResult(ok=False, payload={"error": str(exc)})
-    if not root.exists() or not root.is_dir():
-        return ToolResult(ok=False, payload={"error": f"Directory not found: {args.path}"})
+@dataclass(frozen=True)
+class _ScanResult:
+    top_level: list[str]
+    entrypoints: list[str]
+    manifests: set[str]
+    languages: list[tuple[str, int]]
+    scanned: int
+    truncated: bool
 
-    max_files = max(100, min(int(args.max_files or 4000), 20000))
+
+def _top_level_entries(root: Path) -> list[str]:
+    try:
+        top_entries = sorted(os.listdir(root))
+    except OSError as exc:
+        raise OSError(f"cannot list directory: {exc}") from exc
+    entries: list[str] = []
+    for name in top_entries:
+        child = root / name
+        if name.startswith("."):
+            continue
+        entries.append(name + "/" if child.is_dir() else name)
+    return entries
+
+
+def _scan_repository(root: Path, sandbox: WorkdirSandbox, max_files: int) -> _ScanResult:
     started = time.monotonic()
     lang_counts: dict[str, int] = {}
-    ext_counts: dict[str, int] = {}
-    top_level: list[str] = []
+    top_level = _top_level_entries(root)
     entrypoints: list[str] = []
     manifests: set[str] = set()
     scanned = 0
     truncated = False
 
-    try:
-        top_entries = sorted(os.listdir(root))
-    except OSError as exc:
-        return ToolResult(ok=False, payload={"error": f"cannot list directory: {exc}"})
-    for name in top_entries:
-        child = root / name
-        if name.startswith("."):
-            continue
-        if child.is_dir():
-            top_level.append(name + "/")
-        else:
-            top_level.append(name)
-
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         rel_dir = os.path.relpath(dirpath, root)
         # Prune before descending so huge vendor trees never enter the walk.
         kept: list[str] = []
-        for d in dirnames:
-            if d.startswith(".") or d in _SKIP_DIRS:
+        for directory in dirnames:
+            if directory.startswith(".") or directory in _SKIP_DIRS:
                 continue
-            child = Path(dirpath) / d
+            child = Path(dirpath) / directory
             try:
                 if not sandbox.is_path_allowed(child):
                     continue
             except Exception:  # noqa: BLE001 - a policy object without the helper
                 pass
-            kept.append(d)
+            kept.append(directory)
         dirnames[:] = kept
 
         if time.monotonic() - started > 6.0:
@@ -314,9 +317,8 @@ def repo_context(sandbox: WorkdirSandbox, args: RepoContextArgs) -> ToolResult:
                 truncated = True
                 break
             path = Path(dirpath) / filename
-            if filename.startswith("."):
-                if filename not in _MANIFESTS:
-                    continue
+            if filename.startswith(".") and filename not in _MANIFESTS:
+                continue
             try:
                 if not sandbox.is_path_allowed(path):
                     continue
@@ -324,7 +326,6 @@ def repo_context(sandbox: WorkdirSandbox, args: RepoContextArgs) -> ToolResult:
                 pass
             scanned += 1
             ext = path.suffix.lower()
-            ext_counts[ext] = ext_counts.get(ext, 0) + 1
             lang = _LANG_BY_EXT.get(ext)
             if lang:
                 lang_counts[lang] = lang_counts.get(lang, 0) + 1
@@ -336,97 +337,127 @@ def repo_context(sandbox: WorkdirSandbox, args: RepoContextArgs) -> ToolResult:
             break
 
     languages = sorted(lang_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
-    package_manager = ""
-    if manifests & {"package.json"}:
-        package_manager = _node_package_manager(root)
-    elif "uv.lock" in manifests:
-        package_manager = "uv"
-    elif "poetry.lock" in manifests:
-        package_manager = "poetry"
-    elif "Pipfile" in manifests:
-        package_manager = "pipenv"
-    elif manifests & {"pyproject.toml", "requirements.txt"}:
-        package_manager = "pip"
-    elif "go.mod" in manifests:
-        package_manager = "go modules"
-    elif "Cargo.toml" in manifests:
-        package_manager = "cargo"
-    elif "pom.xml" in manifests:
-        package_manager = "maven"
-    elif manifests & {"build.gradle", "build.gradle.kts"}:
-        package_manager = "gradle"
+    return _ScanResult(
+        top_level=top_level,
+        entrypoints=entrypoints,
+        manifests=manifests,
+        languages=languages,
+        scanned=scanned,
+        truncated=truncated,
+    )
 
-    commands = _commands_for(root, manifests)
+
+def _package_manager(root: Path, manifests: set[str]) -> str:
+    if "package.json" in manifests:
+        return _node_package_manager(root)
+    if "uv.lock" in manifests:
+        return "uv"
+    if "poetry.lock" in manifests:
+        return "poetry"
+    if "Pipfile" in manifests:
+        return "pipenv"
+    if manifests & {"pyproject.toml", "requirements.txt"}:
+        return "pip"
+    if "go.mod" in manifests:
+        return "go modules"
+    if "Cargo.toml" in manifests:
+        return "cargo"
+    if "pom.xml" in manifests:
+        return "maven"
+    if manifests & {"build.gradle", "build.gradle.kts"}:
+        return "gradle"
+    return ""
+
+
+def _git_snapshot(root: Path) -> dict[str, Any]:
     branch = _run_git(root, "rev-parse", "--abbrev-ref", "HEAD")
     status = _run_git(root, "status", "--porcelain")
     dirty_all = [line for line in status.splitlines() if line.strip()]
-    dirty = dirty_all[:30]
-    dirty_count = len(dirty_all)
     recent = _run_git(root, "log", "-5", "--pretty=format:%h %s")
-
-    data: dict[str, Any] = {
-        "root": args.path,
-        "languages": [{"name": n, "files": c} for n, c in languages],
-        "package_manager": package_manager,
-        "manifests": sorted(manifests),
-        "commands": commands,
-        "top_level": top_level[:40],
-        "entrypoints": entrypoints,
-        "git": {
-            "branch": branch,
-            "dirty_files": dirty,
-            "dirty_count": dirty_count,
-            "recent_commits": [line for line in recent.splitlines() if line.strip()],
-        },
-        "scanned_files": scanned,
-        "truncated": truncated,
+    return {
+        "branch": branch,
+        "dirty_files": dirty_all[:30],
+        "dirty_count": len(dirty_all),
+        "recent_commits": [line for line in recent.splitlines() if line.strip()],
     }
 
-    lines: list[str] = [f"# 项目上下文: {args.path}", ""]
+
+def _render_repo_context(path_label: str, data: dict[str, Any]) -> str:
+    languages = [(row["name"], row["files"]) for row in data["languages"]]
+    lines: list[str] = [f"# 项目上下文: {path_label}", ""]
     if languages:
-        lines.append("- 语言: " + ", ".join(f"{n} ({c})" for n, c in languages))
-    lines.append(f"- 包管理器: {package_manager or '未识别'}")
+        lines.append("- 语言: " + ", ".join(f"{name} ({count})" for name, count in languages))
+    lines.append(f"- 包管理器: {data['package_manager'] or '未识别'}")
     if data["manifests"]:
         lines.append("- 关键清单: " + ", ".join(data["manifests"][:12]))
-    if commands:
+    if data["commands"]:
         lines.append("")
         lines.append("## 可用命令")
-        for label, values in commands.items():
-            lines.append(f"- {label}: " + "; ".join(f"`{v}`" for v in values))
-    if top_level:
+        for label, values in data["commands"].items():
+            lines.append(f"- {label}: " + "; ".join(f"`{value}`" for value in values))
+    if data["top_level"]:
         lines.append("")
         lines.append("## 顶层结构")
-        lines.append("  ".join(top_level[:30]))
-    if entrypoints:
+        lines.append("  ".join(data["top_level"][:30]))
+    if data["entrypoints"]:
         lines.append("")
         lines.append("## 入口候选")
-        for p in entrypoints[:15]:
-            lines.append(f"- {p}")
-    if branch or dirty:
+        for entrypoint in data["entrypoints"][:15]:
+            lines.append(f"- {entrypoint}")
+    git = data["git"]
+    if git["branch"] or git["dirty_files"]:
         lines.append("")
         lines.append("## Git")
-        lines.append(f"- 分支: {branch or '未知'}")
-        if dirty:
-            lines.append(f"- 未提交: {dirty_count} 项（前 10）")
-            for row in dirty[:10]:
-                lines.append(f"  {row}")
+        lines.append(f"- 分支: {git['branch'] or '未知'}")
+        if git["dirty_files"]:
+            lines.append(f"- 未提交: {git['dirty_count']} 项（前 10）")
+            lines.extend(f"  {row}" for row in git["dirty_files"][:10])
         else:
             lines.append("- 工作区干净")
-    recent_commits = data["git"]["recent_commits"]
-    if recent_commits:
+    if git["recent_commits"]:
         lines.append("- 最近提交:")
-        for row in recent_commits:
-            lines.append(f"  {row}")
-    if truncated:
+        lines.extend(f"  {row}" for row in git["recent_commits"])
+    if data["truncated"]:
         lines.append("")
-        lines.append(f"> 扫描达到上限（{scanned} 个文件），结论是抽样而非全量。")
+        lines.append(f"> 扫描达到上限（{data['scanned_files']} 个文件），结论是抽样而非全量。")
+    return "\n".join(lines)
 
+
+def repo_context(sandbox: WorkdirSandbox, args: RepoContextArgs) -> ToolResult:
+    try:
+        root = sandbox.resolve(args.path)
+    except (SandboxPolicyError, Exception) as exc:  # noqa: BLE001 - policy errors vary
+        return ToolResult(ok=False, payload={"error": str(exc)})
+    if not root.exists() or not root.is_dir():
+        return ToolResult(ok=False, payload={"error": f"Directory not found: {args.path}"})
+
+    max_files = max(100, min(int(args.max_files or 4000), 20000))
+    try:
+        scan = _scan_repository(root, sandbox, max_files)
+    except OSError as exc:
+        return ToolResult(ok=False, payload={"error": str(exc)})
+
+    package_manager = _package_manager(root, scan.manifests)
+    commands = _commands_for(root, scan.manifests)
+    data: dict[str, Any] = {
+        "root": args.path,
+        "languages": [{"name": name, "files": count} for name, count in scan.languages],
+        "package_manager": package_manager,
+        "manifests": sorted(scan.manifests),
+        "commands": commands,
+        "top_level": scan.top_level[:40],
+        "entrypoints": scan.entrypoints,
+        "git": _git_snapshot(root),
+        "scanned_files": scan.scanned,
+        "truncated": scan.truncated,
+    }
+    content = _render_repo_context(args.path, data)
     return ToolResult(
         ok=True,
         payload={
-            "content": "\n".join(lines),
+            "content": content,
             "data": data,
-            "scanned_files": scanned,
-            "truncated": truncated,
+            "scanned_files": scan.scanned,
+            "truncated": scan.truncated,
         },
     )

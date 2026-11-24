@@ -10,6 +10,7 @@ import asyncio as _asyncio
 import logging
 import re as _re
 import threading as _threading
+from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from pydantic import TypeAdapter, ValidationError
@@ -295,7 +296,8 @@ _MAX_TEST_MODEL_CHARS = 256
 _MAX_TEST_API_KEY_CHARS = 4096
 
 
-def _restore_redacted_mcp_headers(state, mcp_in: list) -> list:
+def _mcp_http_snapshot(state) -> dict[str, tuple[str, dict[str, str]]]:
+    """Map server name to its saved URL and lowercase header names."""
     existing: dict[str, tuple[str, dict[str, str]]] = {}
     for server in state.cfg.mcp_servers:
         if server.http is not None:
@@ -303,56 +305,98 @@ def _restore_redacted_mcp_headers(state, mcp_in: list) -> list:
                 server.http.url.strip(),
                 {name.lower(): value for name, value in server.http.headers.items()},
             )
+    return existing
+
+
+def _same_mcp_destination(previous_server, item: dict, transport: str, http_data: dict) -> bool:
+    """Whether an edit still points at the same command/URL as the saved server."""
+    if previous_server is None or transport != previous_server.transport:
+        return False
+    if transport == "stdio":
+        return (
+            str(item.get("command") or "").strip() == previous_server.command
+            and item.get("args", []) == previous_server.args
+        )
+    return (
+        previous_server.http is not None
+        and str(http_data.get("url") or "").strip() == previous_server.http.url.strip()
+    )
+
+
+def _restore_mcp_env(
+    item: dict,
+    previous_server,
+    same_destination: bool,
+) -> dict[str, str] | None:
+    """Merge saved env values back into an edited server, rejecting redacted edits."""
+    env = item.get("env")
+    if item.get("env_replace") is not True and previous_server is not None:
+        if not same_destination and previous_server.env:
+            raise ValueError("MCP env requires explicit replacement when changing server")
+        env = {**previous_server.env, **(env if isinstance(env, dict) else {})}
+    if not isinstance(env, dict):
+        return None
+    restored: dict[str, str] = {}
+    for name, value in env.items():
+        if value == MCP_REDACTED_HEADER:
+            if (
+                not same_destination
+                or previous_server is None
+                or name not in previous_server.env
+            ):
+                raise ValueError("redacted MCP env cannot be restored for changed server")
+            restored[name] = previous_server.env[name]
+        else:
+            restored[name] = value
+    return restored
+
+
+def _restore_mcp_headers(
+    item: dict,
+    http: dict,
+    existing: dict[str, tuple[str, dict[str, str]]],
+) -> dict[str, str] | None:
+    """Restore redacted HTTP headers only when the URL still matches the saved one."""
+    headers = http.get("headers")
+    if not isinstance(headers, dict):
+        return None
+    previous_url, previous = existing.get(str(item.get("name") or ""), ("", {}))
+    current_url = str(http.get("url") or "").strip()
+    can_restore = current_url == previous_url
+    restored: dict[str, str] = {}
+    for name, value in headers.items():
+        key = str(name)
+        if value != MCP_REDACTED_HEADER:
+            restored[key] = str(value)
+        elif can_restore and key.lower() in previous:
+            restored[key] = previous[key.lower()]
+    return restored
+
+
+def _restore_redacted_mcp_headers(state, mcp_in: list) -> list:
+    existing = _mcp_http_snapshot(state)
     restored: list = []
     for item in mcp_in:
         if not isinstance(item, dict):
             restored.append(item)
             continue
         copy = dict(item)
-        previous_server = next((server for server in state.cfg.mcp_servers if server.name == str(item.get("name") or "")), None)
-        env = item.get("env")
+        previous_server = next(
+            (server for server in state.cfg.mcp_servers if server.name == str(item.get("name") or "")),
+            None,
+        )
         transport = str(item.get("transport") or "stdio").strip() or "stdio"
         http_data: dict = item["http"] if isinstance(item.get("http"), dict) else {}
-        same_destination = previous_server is not None and transport == previous_server.transport and (
-            (transport == "stdio" and str(item.get("command") or "").strip() == previous_server.command and item.get("args", []) == previous_server.args)
-            or (transport != "stdio" and previous_server.http is not None and str(http_data.get("url") or "").strip() == previous_server.http.url.strip())
-        )
-        if item.get("env_replace") is not True and previous_server is not None:
-            if not same_destination and previous_server.env:
-                raise ValueError("MCP env requires explicit replacement when changing server")
-            env = {**previous_server.env, **(env if isinstance(env, dict) else {})}
-        if isinstance(env, dict):
-            restored_env = {}
-            for name, value in env.items():
-                if value == MCP_REDACTED_HEADER:
-                    if not same_destination or previous_server is None or name not in previous_server.env:
-                        raise ValueError("redacted MCP env cannot be restored for changed server")
-                    restored_env[name] = previous_server.env[name]
-                else:
-                    restored_env[name] = value
-            copy["env"] = restored_env
+        same_destination = _same_mcp_destination(previous_server, item, transport, http_data)
+        env = _restore_mcp_env(item, previous_server, same_destination)
+        if env is not None:
+            copy["env"] = env
         http = item.get("http")
         if isinstance(http, dict):
             http_copy = dict(http)
-            headers = http.get("headers")
-            if isinstance(headers, dict):
-                previous_url, previous = existing.get(
-                    str(item.get("name") or ""), ("", {})
-                )
-                current_url = str(http.get("url") or "").strip()
-                can_restore = current_url == previous_url
-                http_copy["headers"] = {
-                    str(name): (
-                        previous[str(name).lower()]
-                        if can_restore
-                        and value == MCP_REDACTED_HEADER
-                        and str(name).lower() in previous
-                        else str(value)
-                    )
-                    for name, value in headers.items()
-                    if value != MCP_REDACTED_HEADER
-                    or (can_restore and str(name).lower() in previous)
-                }
+            restored_headers = _restore_mcp_headers(item, http, existing)
+            if restored_headers is not None:
+                http_copy["headers"] = restored_headers
             copy["http"] = http_copy
         restored.append(copy)
     return restored
@@ -527,28 +571,7 @@ def _validate_candidate(cfg: SparkConfig) -> str | None:
     return None
 
 
-def _apply_validated_settings(
-    state,
-    fields: dict[str, Any],
-    numbers: dict[str, Any],
-    display_flags: dict[str, bool],
-    protected_paths_update: list[str] | None,
-    system_prompt: str,
-    context_updates: dict[str, Any],
-    memory_updates: dict[str, Any],
-    parsed_hooks: list[HookConfig] | None,
-    parsed_mcp: list | None = None,
-) -> None:
-    """全部校验通过后统一提交：任何失败都不会走到这里，不留下半改状态。"""
-    cfg = state.cfg
-    same_target = (
-        fields["provider_name"] == cfg.provider.name
-        and fields["base_url"] == cfg.provider.base_url
-    )
-    old_embedding_url = cfg.memory.embedding_base_url or cfg.provider.base_url
-    new_embedding_url = memory_updates.get("embedding_base_url", cfg.memory.embedding_base_url) or fields["base_url"]
-    if old_embedding_url.rstrip("/") != new_embedding_url.rstrip("/") and "embedding_api_key" not in memory_updates:
-        memory_updates["embedding_api_key"] = ""
+def _apply_provider_settings(cfg: SparkConfig, fields: dict[str, Any], same_target: bool) -> None:
     cfg.provider.name = cast(ProviderName, fields["provider_name"])
     cfg.provider.base_url = fields["base_url"]
     cfg.provider.model = fields["model"]
@@ -560,24 +583,33 @@ def _apply_validated_settings(
         cfg.provider.api_key_env = fields["api_key_env"]
     elif not same_target:
         cfg.provider.api_key_env = ""
-    # 供应商韧性（凭据池 / 回退链 / 小模型分工）：请求携带即覆盖
     resilience = fields.get("provider_resilience") or {}
     if "api_keys" in resilience and resilience["api_keys"] is not None:
         raw_keys = resilience["api_keys"]
         cfg.provider.api_keys = (
-            [str(x).strip() for x in raw_keys if str(x).strip()]
+            [str(item).strip() for item in raw_keys if str(item).strip()]
             if isinstance(raw_keys, list)
             else []
         )
     if "fallback_models" in resilience and resilience["fallback_models"] is not None:
-        raw_fb = resilience["fallback_models"]
+        raw_fallback = resilience["fallback_models"]
         cfg.provider.fallback_models = (
-            [str(x).strip() for x in raw_fb if str(x).strip()]
-            if isinstance(raw_fb, list)
+            [str(item).strip() for item in raw_fallback if str(item).strip()]
+            if isinstance(raw_fallback, list)
             else []
         )
     if resilience.get("small_model") is not None:
         cfg.provider.small_model = str(resilience["small_model"] or "").strip()
+
+
+def _apply_agent_settings(
+    cfg: SparkConfig,
+    fields: dict[str, Any],
+    numbers: dict[str, Any],
+    display_flags: dict[str, bool],
+    protected_paths_update: list[str] | None,
+    system_prompt: str,
+) -> None:
     cfg.agent.approval = cast(ApprovalMode, fields["approval"])
     cfg.agent.sandbox_mode = cast(SandboxMode, fields["sandbox_mode"])
     cfg.agent.effort = cast(Literal["low", "medium", "high"], fields["effort"])
@@ -607,6 +639,16 @@ def _apply_validated_settings(
         setattr(cfg.agent, key, value)
     if protected_paths_update is not None:
         cfg.agent.protected_paths = protected_paths_update
+
+
+def _apply_optional_sections(
+    cfg: SparkConfig,
+    fields: dict[str, Any],
+    context_updates: dict[str, Any],
+    memory_updates: dict[str, Any],
+    parsed_hooks: list[HookConfig] | None,
+    parsed_mcp: list | None,
+) -> None:
     for key, value in context_updates.items():
         # Field types were validated above; setattr keeps this version-tolerant
         # if a new context field is added to the model.
@@ -623,14 +665,67 @@ def _apply_validated_settings(
         cfg.hooks = parsed_hooks
     if parsed_mcp is not None:
         cfg.mcp_servers = parsed_mcp
-    state.sandbox = WorkdirSandbox(state.workdir, state.cfg)
+
+
+def _apply_queue_limits(state) -> None:
     queue = getattr(state, "queue", None)
-    if queue is not None and hasattr(queue, "set_daily_limit"):
-        queue.set_daily_limit(cfg.agent.queue_daily_limit)
-    if queue is not None and hasattr(queue, "set_daily_cost_limit"):
-        queue.set_daily_cost_limit(cfg.agent.queue_daily_cost_usd)
-    if queue is not None and hasattr(queue, "set_task_timeout"):
-        queue.set_task_timeout(cfg.agent.queue_task_timeout_sec)
+    if queue is None:
+        return
+    if hasattr(queue, "set_daily_limit"):
+        queue.set_daily_limit(state.cfg.agent.queue_daily_limit)
+    if hasattr(queue, "set_daily_cost_limit"):
+        queue.set_daily_cost_limit(state.cfg.agent.queue_daily_cost_usd)
+    if hasattr(queue, "set_task_timeout"):
+        queue.set_task_timeout(state.cfg.agent.queue_task_timeout_sec)
+
+
+def _apply_validated_settings(
+    state,
+    fields: dict[str, Any],
+    numbers: dict[str, Any],
+    display_flags: dict[str, bool],
+    protected_paths_update: list[str] | None,
+    system_prompt: str,
+    context_updates: dict[str, Any],
+    memory_updates: dict[str, Any],
+    parsed_hooks: list[HookConfig] | None,
+    parsed_mcp: list | None = None,
+) -> None:
+    """全部校验通过后统一提交：任何失败都不会走到这里，不留下半改状态。"""
+    cfg = state.cfg
+    same_target = (
+        fields["provider_name"] == cfg.provider.name
+        and fields["base_url"] == cfg.provider.base_url
+    )
+    old_embedding_url = cfg.memory.embedding_base_url or cfg.provider.base_url
+    new_embedding_url = (
+        memory_updates.get("embedding_base_url", cfg.memory.embedding_base_url)
+        or fields["base_url"]
+    )
+    if (
+        old_embedding_url.rstrip("/") != new_embedding_url.rstrip("/")
+        and "embedding_api_key" not in memory_updates
+    ):
+        memory_updates["embedding_api_key"] = ""
+    _apply_provider_settings(cfg, fields, same_target)
+    _apply_agent_settings(
+        cfg,
+        fields,
+        numbers,
+        display_flags,
+        protected_paths_update,
+        system_prompt,
+    )
+    _apply_optional_sections(
+        cfg,
+        fields,
+        context_updates,
+        memory_updates,
+        parsed_hooks,
+        parsed_mcp,
+    )
+    state.sandbox = WorkdirSandbox(state.workdir, state.cfg)
+    _apply_queue_limits(state)
 
 
 def _handle_settings(handler: HandlerBase, body: dict) -> None:
@@ -645,6 +740,234 @@ def _handle_settings(handler: HandlerBase, body: dict) -> None:
             _handle_settings_locked(handler, body)
         finally:
             state.turn_lock.release()
+
+
+@dataclass
+class _PreparedSettings:
+    fields: dict[str, Any]
+    numbers: dict[str, Any]
+    display_flags: dict[str, bool]
+    protected_paths_update: list[str] | None
+    system_prompt: str
+    context_updates: dict[str, Any]
+    memory_updates: dict[str, Any]
+    parsed_hooks: list[HookConfig] | None
+    parsed_mcp: list | None
+
+
+def _display_flags(agent_in: dict) -> dict[str, bool]:
+    return {
+        key: bool(agent_in[key])
+        for key in (
+            "show_thinking",
+            "show_tools",
+            "show_plan",
+            "show_context",
+            "show_keywords",
+            "show_notices",
+            # 安全开关与展示开关同为布尔，走同一条"缺省即保持现状"的路径。
+            "auto_review",
+            "network_access",
+            "format_on_write",
+        )
+        if key in agent_in
+    }
+
+
+def _protected_paths(agent_in: dict) -> list[str] | None:
+    if "protected_paths" not in agent_in:
+        return None
+    raw = agent_in.get("protected_paths")
+    if not isinstance(raw, list):
+        return None
+    return [str(item).strip() for item in raw if str(item).strip()]
+
+
+def _validate_provider_agent_browser(
+    state, fields: dict[str, Any]
+) -> tuple[str, str | None]:
+    """Resolve the persisted key and run the non-numeric field validators."""
+    resolved_key, provider_error = _resolve_provider_fields(
+        state,
+        fields["provider_name"],
+        fields["base_url"],
+        fields["model"],
+        fields["api_key"],
+        fields.get("api_key_env"),
+    )
+    if provider_error:
+        return "", provider_error
+    agent_error = _agent_validation_error(
+        fields["approval"], fields["sandbox_mode"], fields["effort"]
+    )
+    if agent_error:
+        return "", agent_error
+    if fields["tool_preset"] not in {"full", "coding"}:
+        return "", "tool_preset must be full or coding"
+    browser_error = _browser_validation_error(
+        fields["browser_engine"],
+        fields["browser_profile"],
+        fields["browser_cdp_endpoint"],
+        fields["browser_site_rules"],
+    )
+    if browser_error:
+        return "", browser_error
+    return resolved_key, None
+
+
+def _unchanged_mcp(state, parsed_mcp: list | None) -> list | None:
+    """Skip an MCP restart when the submitted config is byte-for-byte unchanged.
+
+    A previous failed startup is retried on save instead of being frozen until
+    the process restarts.
+    """
+    if parsed_mcp != state.cfg.mcp_servers:
+        return parsed_mcp
+    bridge = state.mcp_bridge
+    retry_failed = bool(parsed_mcp) and (
+        bridge is None or (bridge.startup_errors and not bridge.servers)
+    )
+    return None if not retry_failed else parsed_mcp
+
+
+def _prepare_settings(
+    state, body: dict
+) -> tuple[_PreparedSettings | None, str | None]:
+    """Validate the whole request without mutating ``state.cfg``."""
+    fields = _extract_request_fields(state, body)
+    agent_in: dict = fields["agent_in"]
+    resolved_key, error = _validate_provider_agent_browser(state, fields)
+    if error:
+        return None, error
+
+    display_flags = _display_flags(agent_in)
+    protected_paths_update = _protected_paths(agent_in)
+    numbers = _parse_agent_numbers(agent_in, state)
+    if isinstance(numbers, str):
+        return None, numbers
+    system_prompt = (
+        str(agent_in.get("system_prompt") or "")
+        if "system_prompt" in agent_in
+        else state.cfg.agent.system_prompt
+    )
+    context_updates, context_error = _context_updates(body.get("context"))
+    if context_error:
+        return None, context_error
+    memory_updates, memory_error = _memory_updates(fields["memory_in"])
+    if memory_error:
+        return None, memory_error
+
+    api_key_env = fields.get("api_key_env")
+    if api_key_env and not _ENV_NAME_RE.fullmatch(api_key_env):
+        return None, "api_key_env must be a valid environment variable name"
+    updater_mode = (fields.get("updater_in") or {}).get("mode")
+    if updater_mode is not None and updater_mode not in {"notify", "off"}:
+        return None, "updater.mode must be notify or off"
+    parsed_hooks, hooks_error = _parse_hooks(body.get("hooks"), state.cfg.hooks)
+    if hooks_error:
+        return None, hooks_error
+    parsed_mcp, mcp_error = _parse_mcp_servers_for_state(state, body.get("mcp_servers"))
+    if mcp_error:
+        return None, mcp_error
+    parsed_mcp = _unchanged_mcp(state, parsed_mcp)
+
+    same_target = (
+        fields["provider_name"] == state.cfg.provider.name
+        and fields["base_url"] == state.cfg.provider.base_url
+    )
+    # ``api_key`` 已由 _resolve_provider_fields 解析完毕：openai_compat 只写入用户
+    # 真正提交或同端点已存的密钥（环境变量的值绝不落盘）；mock/ollama 不需要凭据，
+    # 同端点保留旧值、跨端点清空，避免把旧端点的密钥带到新主机。
+    if fields["provider_name"] == "openai_compat":
+        fields["api_key"] = resolved_key
+    else:
+        fields["api_key"] = (state.cfg.provider.api_key or "") if same_target else ""
+    if not same_target and fields["provider_resilience"].get("api_keys") is None:
+        fields["provider_resilience"]["api_keys"] = []
+
+    return (
+        _PreparedSettings(
+            fields=fields,
+            numbers=numbers,
+            display_flags=display_flags,
+            protected_paths_update=protected_paths_update,
+            system_prompt=system_prompt,
+            context_updates=context_updates,
+            memory_updates=memory_updates,
+            parsed_hooks=parsed_hooks,
+            parsed_mcp=parsed_mcp,
+        ),
+        None,
+    )
+
+
+def _rollback_settings(state, old_cfg, old_sandbox, old_loop, old_session, old_approver, old_bridge, parsed_mcp, candidate) -> None:
+    for name in type(state.cfg).model_fields:
+        setattr(state.cfg, name, getattr(old_cfg, name))
+    state.sandbox, state.loop = old_sandbox, old_loop
+    state.session_id, state.approver = old_session, old_approver
+    state.mcp_bridge = old_bridge
+    if old_bridge is not None and old_loop is not None and parsed_mcp is None:
+        old_bridge.register_into(old_loop.registry)
+        old_bridge.set_sampling_handler(old_loop.provider)
+    if candidate is not None:
+        try:
+            run_coroutine_sync(candidate.close())
+        except Exception:  # aqg: top-level boundary
+            logging.getLogger(__name__).warning("MCP candidate cleanup failed", exc_info=True)
+
+
+def _commit_settings(state, prepared: _PreparedSettings) -> tuple[int, str] | None:
+    """Apply and persist; on any failure restore every mutated field."""
+    old_cfg = state.cfg.model_copy(deep=True)
+    old_sandbox, old_loop = state.sandbox, state.loop
+    old_session, old_approver = state.session_id, state.approver
+    old_bridge = state.mcp_bridge
+    candidate = None
+    try:
+        _apply_validated_settings(
+            state,
+            prepared.fields,
+            prepared.numbers,
+            prepared.display_flags,
+            prepared.protected_paths_update,
+            prepared.system_prompt,
+            prepared.context_updates,
+            prepared.memory_updates,
+            prepared.parsed_hooks,
+            prepared.parsed_mcp,
+        )
+        # 整份候选配置按 config.py 的模型规则复核：任何越界/非法值在这里变成
+        # 400 + 回滚，绝不落盘（此前越界值 200 落盘，下次启动被自愈重置）。
+        candidate_error = _validate_candidate(state.cfg)
+        if candidate_error:
+            raise ConfigError(candidate_error)
+        if prepared.parsed_mcp is not None:
+            candidate = state.prepare_mcp(prepared.parsed_mcp)
+            state.mcp_bridge = candidate
+        state.rebuild_loop(session_id=state.session_id)
+        _save_config(state.cfg)
+    except Exception as exc:  # aqg: top-level boundary
+        _rollback_settings(
+            state,
+            old_cfg,
+            old_sandbox,
+            old_loop,
+            old_session,
+            old_approver,
+            old_bridge,
+            prepared.parsed_mcp,
+            candidate,
+        )
+        if isinstance(exc, SparkError):
+            return 400, str(exc)
+        return 500, "settings update failed"
+    if prepared.parsed_mcp is not None and old_bridge is not None:
+        try:
+            run_coroutine_sync(old_bridge.close())
+        except Exception:  # aqg: top-level boundary
+            logging.getLogger(__name__).warning("Old MCP bridge cleanup failed", exc_info=True)
+    return None
 
 
 def _handle_settings_locked(handler: HandlerBase, body: dict) -> None:
@@ -666,170 +989,15 @@ def _handle_settings_locked(handler: HandlerBase, body: dict) -> None:
         )
         return
 
-    fields = _extract_request_fields(state, body)
-    agent_in: dict = fields["agent_in"]
-
-    api_key, provider_error = _resolve_provider_fields(
-        state, fields["provider_name"], fields["base_url"], fields["model"],
-        fields["api_key"], fields.get("api_key_env"),
-    )
-    if provider_error:
-        handler._json(400, {"error": provider_error})
+    prepared, error = _prepare_settings(state, body)
+    if error or prepared is None:
+        handler._json(400, {"error": error or "invalid settings"})
         return
-
-    agent_error = _agent_validation_error(
-        fields["approval"], fields["sandbox_mode"], fields["effort"]
-    )
-    if agent_error:
-        handler._json(400, {"error": agent_error})
+    commit_error = _commit_settings(state, prepared)
+    if commit_error is not None:
+        status, message = commit_error
+        handler._json(status, {"error": message})
         return
-    if fields["tool_preset"] not in {"full", "coding"}:
-        handler._json(400, {"error": "tool_preset must be full or coding"})
-        return
-
-    browser_error = _browser_validation_error(
-        fields["browser_engine"],
-        fields["browser_profile"],
-        fields["browser_cdp_endpoint"],
-        fields["browser_site_rules"],
-    )
-    if browser_error:
-        handler._json(400, {"error": browser_error})
-        return
-
-    display_flags = {
-        k: bool(agent_in[k])
-        for k in (
-            "show_thinking",
-            "show_tools",
-            "show_plan",
-            "show_context",
-            "show_keywords",
-            "show_notices",
-            # 安全开关与展示开关同为布尔，走同一条"缺省即保持现状"的路径。
-            "auto_review",
-            "network_access",
-            "format_on_write",
-        )
-        if k in agent_in
-    }
-    # Deferred until every validator below passes: applying early meant a request
-    # that later returned 400 had already cleared `protected_paths` and flipped
-    # display flags. A rejected save must change nothing.
-    protected_paths_update: list[str] | None = None
-    if "protected_paths" in agent_in:
-        pp = agent_in.get("protected_paths")
-        if isinstance(pp, list):
-            protected_paths_update = [str(x).strip() for x in pp if str(x).strip()]
-
-    numbers = _parse_agent_numbers(agent_in, state)
-    if isinstance(numbers, str):
-        handler._json(400, {"error": numbers})
-        return
-
-    if "system_prompt" in agent_in:
-        system_prompt = str(agent_in.get("system_prompt") or "")
-    else:
-        system_prompt = state.cfg.agent.system_prompt
-
-    # ── 上下文管理（Project 页）：此前前端编辑了却从不提交，改完刷新即丢 ──
-    context_updates, context_error = _context_updates(body.get("context"))
-    if context_error:
-        handler._json(400, {"error": context_error})
-        return
-
-    # ── 记忆配置（Memory 页）：开关 / 容量 / 嵌入模型 / 自动抽取 / 检索条数 ──
-    memory_updates, memory_error = _memory_updates(fields["memory_in"])
-    if memory_error:
-        handler._json(400, {"error": memory_error})
-        return
-
-    # 环境变量名会进入 require_api_key 的报错与子进程环境，必须是合法标识符。
-    api_key_env = fields.get("api_key_env")
-    if api_key_env and not _ENV_NAME_RE.fullmatch(api_key_env):
-        handler._json(400, {"error": "api_key_env must be a valid environment variable name"})
-        return
-    updater_mode = (fields.get("updater_in") or {}).get("mode")
-    if updater_mode is not None and updater_mode not in {"notify", "off"}:
-        handler._json(400, {"error": "updater.mode must be notify or off"})
-        return
-
-    parsed_hooks, hooks_error = _parse_hooks(body.get("hooks"), state.cfg.hooks)
-    if hooks_error:
-        handler._json(400, {"error": hooks_error})
-        return
-    parsed_mcp, mcp_error = _parse_mcp_servers_for_state(
-        state, body.get("mcp_servers")
-    )
-    if mcp_error:
-        handler._json(400, {"error": mcp_error})
-        return
-    if parsed_mcp == state.cfg.mcp_servers:
-        bridge = state.mcp_bridge
-        retry_failed = bool(parsed_mcp) and (
-            bridge is None or (bridge.startup_errors and not bridge.servers)
-        )
-        if not retry_failed:
-            parsed_mcp = None
-
-    same_target = (
-        fields["provider_name"] == state.cfg.provider.name
-        and fields["base_url"] == state.cfg.provider.base_url
-    )
-    # ``api_key`` 已由 _resolve_provider_fields 解析完毕：openai_compat 只写入用户
-    # 真正提交或同端点已存的密钥（环境变量的值绝不落盘）；mock/ollama 不需要凭据，
-    # 同端点保留旧值、跨端点清空，避免把旧端点的密钥带到新主机。
-    if fields["provider_name"] == "openai_compat":
-        fields["api_key"] = api_key
-    else:
-        fields["api_key"] = (state.cfg.provider.api_key or "") if same_target else ""
-    if not same_target and fields["provider_resilience"].get("api_keys") is None:
-        fields["provider_resilience"]["api_keys"] = []
-    old_cfg = state.cfg.model_copy(deep=True)
-    old_sandbox, old_loop = state.sandbox, state.loop
-    old_session, old_approver = state.session_id, state.approver
-    old_bridge = state.mcp_bridge
-    candidate = None
-    try:
-        _apply_validated_settings(
-            state, fields, numbers, display_flags, protected_paths_update,
-            system_prompt, context_updates, memory_updates, parsed_hooks,
-            parsed_mcp,
-        )
-        # 整份候选配置按 config.py 的模型规则复核：任何越界/非法值在这里变成
-        # 400 + 回滚，绝不落盘（此前越界值 200 落盘，下次启动被自愈重置）。
-        candidate_error = _validate_candidate(state.cfg)
-        if candidate_error:
-            raise ConfigError(candidate_error)
-        if parsed_mcp is not None:
-            candidate = state.prepare_mcp(parsed_mcp)
-            state.mcp_bridge = candidate
-        state.rebuild_loop(session_id=state.session_id)
-        _save_config(state.cfg)
-    except Exception as exc:  # aqg: top-level boundary
-        for name in type(state.cfg).model_fields:
-            setattr(state.cfg, name, getattr(old_cfg, name))
-        state.sandbox, state.loop = old_sandbox, old_loop
-        state.session_id, state.approver = old_session, old_approver
-        state.mcp_bridge = old_bridge
-        if old_bridge is not None and old_loop is not None and parsed_mcp is None:
-            old_bridge.register_into(old_loop.registry)
-            old_bridge.set_sampling_handler(old_loop.provider)
-        if candidate is not None:
-            try:
-                run_coroutine_sync(candidate.close())
-            except Exception:  # aqg: top-level boundary
-                logging.getLogger(__name__).warning("MCP candidate cleanup failed", exc_info=True)
-        if isinstance(exc, SparkError):
-            handler._json(400, {"error": str(exc)})
-        else:
-            handler._json(500, {"error": "settings update failed"})
-        return
-    if parsed_mcp is not None and old_bridge is not None:
-        try:
-            run_coroutine_sync(old_bridge.close())
-        except Exception:  # aqg: top-level boundary
-            logging.getLogger(__name__).warning("Old MCP bridge cleanup failed", exc_info=True)
 
     mcp_errors: list[str] = list(state.mcp_bridge.errors) if state.mcp_bridge else []
     handler._json(

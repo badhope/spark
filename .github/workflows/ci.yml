@@ -30,6 +30,12 @@ jobs:
         run: ruff check src/spark tests scripts
       - name: Type check (mypy)
         run: mypy src/spark --ignore-missing-imports
+      - name: Complexity gate (no new D/E/F)
+        # Legacy hotspots are pinned in scripts/complexity-baseline.json; this
+        # fails when a change adds one or grows an existing one by >3 points.
+        run: |
+          pip install radon
+          python scripts/check_complexity.py
       - name: Import layering (import-linter)
         run: lint-imports
       - name: Security scan (bandit)

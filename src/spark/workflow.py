@@ -138,13 +138,7 @@ def _safe_write_glob(pattern: str) -> str:
     return raw
 
 
-def load_workflow(
-    path: Path,
-    *,
-    workdir: Path | None = None,
-    available_agents: set[str] | None = None,
-) -> WorkflowSpec:
-    """Load and validate a YAML workflow file."""
+def _read_workflow_data(path: Path, workdir: Path | None) -> tuple[Path, dict[str, Any]]:
     target = path.expanduser()
     if not target.is_absolute() and workdir is not None:
         target = workdir / target
@@ -158,6 +152,110 @@ def load_workflow(
         raise WorkflowError(f"工作流 YAML 解析失败: {exc}") from exc
     if not isinstance(data, dict):
         raise WorkflowError("工作流必须是 YAML 对象")
+    return target, data
+
+
+def _parse_role(
+    role: str,
+    raw: Any,
+    available_agents: set[str] | None,
+) -> RoleSpec:
+    if not ROLE_NAME_RE.fullmatch(role):
+        raise WorkflowError(f"非法 role 名: {role}")
+    if isinstance(raw, str):
+        spec = RoleSpec(name=role, agent=raw.strip())
+    elif isinstance(raw, dict):
+        spec = RoleSpec(
+            name=role,
+            agent=str(raw.get("agent") or "").strip(),
+            description=str(raw.get("description") or "").strip(),
+            model=str(raw.get("model") or "").strip(),
+            tools=_as_tuple(raw.get("tools"), f"roles.{role}.tools"),
+        )
+    else:
+        raise WorkflowError(f"roles.{role} 必须是字符串或对象")
+    if available_agents is not None and spec.agent and spec.agent not in available_agents:
+        raise WorkflowError(f"roles.{role}.agent 未找到声明式 agent: {spec.agent}")
+    return spec
+
+
+def _parse_roles(raw_roles: Any, available_agents: set[str] | None) -> dict[str, RoleSpec]:
+    if not isinstance(raw_roles, dict) or not raw_roles:
+        raise WorkflowError("roles 必须是非空对象")
+    roles: dict[str, RoleSpec] = {}
+    for role_name, raw in raw_roles.items():
+        role = str(role_name)
+        roles[role] = _parse_role(role, raw, available_agents)
+    return roles
+
+
+def _parse_step(
+    raw: Any,
+    index: int,
+    roles: dict[str, RoleSpec],
+    seen: set[str],
+) -> StepSpec:
+    if not isinstance(raw, dict):
+        raise WorkflowError(f"steps[{index}] 必须是对象")
+    step_id = str(raw.get("id") or "").strip()
+    if not STEP_ID_RE.fullmatch(step_id):
+        raise WorkflowError(f"steps[{index}].id 非法: {step_id!r}")
+    if step_id in seen:
+        raise WorkflowError(f"重复的 step id: {step_id}")
+    role = str(raw.get("role") or "").strip()
+    if role not in roles:
+        raise WorkflowError(f"step {step_id} 引用了不存在的 role: {role}")
+    prompt = str(raw.get("prompt") or "").strip()
+    if not prompt:
+        raise WorkflowError(f"step {step_id} 的 prompt 不能为空")
+    needs = _as_tuple(raw.get("needs"), f"steps.{step_id}.needs")
+    if step_id in needs:
+        raise WorkflowError(f"step {step_id} 不能依赖自己")
+    writes = tuple(
+        _safe_write_glob(item)
+        for item in _as_tuple(raw.get("writes"), f"steps.{step_id}.writes")
+    )
+    max_attempts = raw.get("max_attempts", 1)
+    if not isinstance(max_attempts, int) or not 1 <= max_attempts <= 5:
+        raise WorkflowError(f"steps.{step_id}.max_attempts 必须是 1..5")
+    seen.add(step_id)
+    return StepSpec(
+        id=step_id,
+        role=role,
+        prompt=prompt,
+        needs=needs,
+        writes=writes,
+        max_attempts=max_attempts,
+    )
+
+
+def _parse_steps(raw_steps: Any, roles: dict[str, RoleSpec]) -> tuple[StepSpec, ...]:
+    if not isinstance(raw_steps, list) or not raw_steps:
+        raise WorkflowError("steps 必须是非空数组")
+    steps: list[StepSpec] = []
+    seen: set[str] = set()
+    for index, raw in enumerate(raw_steps):
+        steps.append(_parse_step(raw, index, roles, seen))
+    return tuple(steps)
+
+
+def _validate_dependencies(steps: tuple[StepSpec, ...]) -> None:
+    by_id = {step.id: step for step in steps}
+    for step in steps:
+        missing = [dep for dep in step.needs if dep not in by_id]
+        if missing:
+            raise WorkflowError(f"step {step.id} 缺少依赖: {', '.join(missing)}")
+    _topological_order(steps)  # validates cycles before returning
+
+
+def load_workflow(
+    path: Path,
+    *,
+    workdir: Path | None = None,
+    available_agents: set[str] | None = None,
+) -> WorkflowSpec:
+    """Load and validate a YAML workflow file."""
+    target, data = _read_workflow_data(path, workdir)
     name = str(data.get("name") or target.stem).strip()
     if not name:
         raise WorkflowError("工作流 name 不能为空")
@@ -165,87 +263,15 @@ def load_workflow(
     if not isinstance(version, int) or version < 1:
         raise WorkflowError("version 必须是正整数")
     description = str(data.get("description") or "").strip()
-
-    raw_roles = data.get("roles")
-    if not isinstance(raw_roles, dict) or not raw_roles:
-        raise WorkflowError("roles 必须是非空对象")
-    roles: dict[str, RoleSpec] = {}
-    for role_name, raw in raw_roles.items():
-        role = str(role_name)
-        if not ROLE_NAME_RE.fullmatch(role):
-            raise WorkflowError(f"非法 role 名: {role}")
-        if isinstance(raw, str):
-            roles[role] = RoleSpec(name=role, agent=raw.strip())
-        elif isinstance(raw, dict):
-            roles[role] = RoleSpec(
-                name=role,
-                agent=str(raw.get("agent") or "").strip(),
-                description=str(raw.get("description") or "").strip(),
-                model=str(raw.get("model") or "").strip(),
-                tools=_as_tuple(raw.get("tools"), f"roles.{role}.tools"),
-            )
-        else:
-            raise WorkflowError(f"roles.{role} 必须是字符串或对象")
-        if available_agents is not None and roles[role].agent:
-            if roles[role].agent not in available_agents:
-                raise WorkflowError(
-                    f"roles.{role}.agent 未找到声明式 agent: {roles[role].agent}"
-                )
-
-    raw_steps = data.get("steps")
-    if not isinstance(raw_steps, list) or not raw_steps:
-        raise WorkflowError("steps 必须是非空数组")
-    steps: list[StepSpec] = []
-    seen: set[str] = set()
-    for index, raw in enumerate(raw_steps):
-        if not isinstance(raw, dict):
-            raise WorkflowError(f"steps[{index}] 必须是对象")
-        step_id = str(raw.get("id") or "").strip()
-        if not STEP_ID_RE.fullmatch(step_id):
-            raise WorkflowError(f"steps[{index}].id 非法: {step_id!r}")
-        if step_id in seen:
-            raise WorkflowError(f"重复的 step id: {step_id}")
-        role = str(raw.get("role") or "").strip()
-        if role not in roles:
-            raise WorkflowError(f"step {step_id} 引用了不存在的 role: {role}")
-        prompt = str(raw.get("prompt") or "").strip()
-        if not prompt:
-            raise WorkflowError(f"step {step_id} 的 prompt 不能为空")
-        needs = _as_tuple(raw.get("needs"), f"steps.{step_id}.needs")
-        if step_id in needs:
-            raise WorkflowError(f"step {step_id} 不能依赖自己")
-        writes = tuple(
-            _safe_write_glob(item)
-            for item in _as_tuple(raw.get("writes"), f"steps.{step_id}.writes")
-        )
-        max_attempts = raw.get("max_attempts", 1)
-        if not isinstance(max_attempts, int) or not 1 <= max_attempts <= 5:
-            raise WorkflowError(f"steps.{step_id}.max_attempts 必须是 1..5")
-        seen.add(step_id)
-        steps.append(
-            StepSpec(
-                id=step_id,
-                role=role,
-                prompt=prompt,
-                needs=needs,
-                writes=writes,
-                max_attempts=max_attempts,
-            )
-        )
-    by_id = {step.id: step for step in steps}
-    for step in steps:
-        missing = [dep for dep in step.needs if dep not in by_id]
-        if missing:
-            raise WorkflowError(
-                f"step {step.id} 缺少依赖: {', '.join(missing)}"
-            )
-    _topological_order(tuple(steps))  # validates cycles before returning
+    roles = _parse_roles(data.get("roles"), available_agents)
+    steps = _parse_steps(data.get("steps"), roles)
+    _validate_dependencies(steps)
     return WorkflowSpec(
         name=name,
         version=version,
         description=description,
         roles=roles,
-        steps=tuple(steps),
+        steps=steps,
     )
 
 

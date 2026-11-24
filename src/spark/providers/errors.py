@@ -235,26 +235,89 @@ def provider_preflight(cfg: SparkConfig, live_provider: Any = None) -> ProviderE
     return None
 
 
-def classify_provider_error(
-    exc: Exception,
-    cfg: SparkConfig,
-    *,
-    stage: str = "llm",
-    live_provider: Any = None,
-) -> ProviderErrorInfo:
-    """Map a provider exception to a stable code and an actionable suggestion."""
-    provider, model, endpoint = _provider_fields(cfg)
-    api_key = str(cfg.provider.api_key or "")
-    detail = _clean_detail(exc, api_key)
-    lowered = detail.lower()
-    status = _status_code(exc)
-    params = {"provider": provider, "model": model, "endpoint": endpoint, "status": str(status or "")}
-    env_name = cfg.provider.api_key_env or "SPARK_API_KEY"
-    local = provider == "llama_cpp" or _is_local(str(cfg.provider.base_url or ""))
-    params["env"] = env_name
-    params["local"] = "1" if local else "0"
+_CONTEXT_WORDS = (
+    "context length",
+    "context_length_exceeded",
+    "maximum context",
+    "too many tokens",
+    "reduce the length",
+    "prompt is too long",
+    "memory slot",
+    "n_ctx",
+)
+_QUOTA_WORDS = ("insufficient_quota", "quota exceeded", "billing", "balance", "credit")
+_AUTH_WORDS = (
+    "authentication",
+    "invalid api key",
+    "incorrect api key",
+    "unauthorized",
+    "permission denied",
+)
+_MODEL_MISSING_WORDS = (
+    "model_not_found",
+    "model not found",
+    "does not exist",
+    "no such model",
+    "unknown model",
+)
+_CONNECTION_WORDS = (
+    "connection refused",
+    "connection error",
+    "connect error",
+    "failed to connect",
+    "name or service not known",
+    "nodename nor servname",
+    "getaddrinfo",
+    "network is unreachable",
+    "connection reset",
+    "ssl certificate",
+    "certificate verify",
+)
+
+
+def _contains_any(text: str, words: tuple[str, ...]) -> bool:
+    return any(word in text for word in words)
+
+
+class _ProviderErrorClassifier:
+    """Ordered rule chain for provider exceptions.
+
+    Each rule returns ``None`` when it does not apply, so the mapping stays
+    explicit and the public entry point remains a single ordered pass.
+    """
+
+    def __init__(
+        self,
+        exc: Exception,
+        cfg: SparkConfig,
+        *,
+        stage: str,
+        live_provider: Any,
+    ) -> None:
+        self.exc = exc
+        self.cfg = cfg
+        self.stage = stage
+        self.live_provider = live_provider
+        self.provider, self.model, self.endpoint = _provider_fields(cfg)
+        api_key = str(cfg.provider.api_key or "")
+        self.detail = _clean_detail(exc, api_key)
+        self.lowered = self.detail.lower()
+        self.status = _status_code(exc)
+        self.env_name = cfg.provider.api_key_env or "SPARK_API_KEY"
+        self.local = self.provider == "llama_cpp" or _is_local(
+            str(cfg.provider.base_url or "")
+        )
+        self.params = {
+            "provider": self.provider,
+            "model": self.model,
+            "endpoint": self.endpoint,
+            "status": str(self.status or ""),
+            "env": self.env_name,
+            "local": "1" if self.local else "0",
+        }
 
     def build(
+        self,
         code: str,
         title: str,
         message: str,
@@ -270,17 +333,18 @@ def classify_provider_error(
             hint=hint,
             retryable=retryable,
             action=action,
-            provider=provider,
-            model=model,
-            endpoint=endpoint,
-            status_code=status,
-            detail=detail,
-            params=params,
+            provider=self.provider,
+            model=self.model,
+            endpoint=self.endpoint,
+            status_code=self.status,
+            detail=self.detail,
+            params=self.params,
         )
 
-    # Cancellation is not a model failure and must not tell the user to edit settings.
-    if "turn cancelled" in lowered or stage == "cancelled":
-        return build(
+    def cancelled(self) -> ProviderErrorInfo | None:
+        if "turn cancelled" not in self.lowered and self.stage != "cancelled":
+            return None
+        return self.build(
             "cancelled",
             "请求已取消",
             "本轮生成被用户或客户端中断，没有产生完整回答。",
@@ -289,30 +353,21 @@ def classify_provider_error(
             action="none",
         )
 
-    # Context length is a 400 at most vendors; detect it before generic bad-request.
-    if any(
-        word in lowered
-        for word in (
-            "context length",
-            "context_length_exceeded",
-            "maximum context",
-            "too many tokens",
-            "reduce the length",
-            "prompt is too long",
-            "memory slot",
-            "n_ctx",
-        )
-    ):
-        return build(
+    def context_too_long(self) -> ProviderErrorInfo | None:
+        if not _contains_any(self.lowered, _CONTEXT_WORDS):
+            return None
+        return self.build(
             "context_too_long",
             "上下文超出模型窗口",
-            f"这轮请求超过了 {model or '当前模型'} 的上下文上限，模型拒绝了请求。",
+            f"这轮请求超过了 {self.model or '当前模型'} 的上下文上限，模型拒绝了请求。",
             "新建会话或清空较早消息；也可以在「设置 → Agent」调低历史预算 / 换用上下文更大的模型。",
             retryable=False,
         )
 
-    if any(word in lowered for word in ("insufficient_quota", "quota exceeded", "billing", "balance", "credit")):
-        return build(
+    def quota_exceeded(self) -> ProviderErrorInfo | None:
+        if not _contains_any(self.lowered, _QUOTA_WORDS):
+            return None
+        return self.build(
             "quota_exceeded",
             "模型额度不足",
             "服务商返回余额或配额不足，当前账号无法继续调用。",
@@ -320,59 +375,66 @@ def classify_provider_error(
             retryable=False,
         )
 
-    if status in {401, 403} or any(
-        word in lowered
-        for word in ("authentication", "invalid api key", "incorrect api key", "unauthorized", "permission denied")
-    ):
-        return build(
+    def auth_failed(self) -> ProviderErrorInfo | None:
+        if self.status not in {401, 403} and not _contains_any(self.lowered, _AUTH_WORDS):
+            return None
+        return self.build(
             "auth_failed",
             "模型鉴权失败",
-            f"{provider} 拒绝了这组凭据（HTTP {status or 401}）。",
-            f"检查 API Key 是否过期、是否复制完整，以及账号是否有 {model} 的权限；环境变量名应为 {env_name}。",
+            f"{self.provider} 拒绝了这组凭据（HTTP {self.status or 401}）。",
+            f"检查 API Key 是否过期、是否复制完整，以及账号是否有 {self.model} 的权限；环境变量名应为 {self.env_name}。",
             retryable=False,
         )
 
-    model_missing_text = any(
-        word in lowered
-        for word in ("model_not_found", "model not found", "does not exist", "no such model", "unknown model")
-    )
-    if model_missing_text or (status == 404 and "model" in lowered):
-        if local:
-            if provider == "ollama":
-                hint = (
-                    f"本地 Ollama 已响应，但没有找到模型「{model}」。用 `ollama list` 查看、"
-                    f"`ollama pull {model}` 拉取，然后重试。"
-                )
-            else:
-                hint = (
-                    f"本地 OpenAI 兼容服务已响应，但没有加载模型「{model}」。"
-                    "检查启动参数里的模型名/GGUF 文件，以及 /v1/models 返回的 id 是否与配置一致。"
-                )
+    def model_not_found(self) -> ProviderErrorInfo | None:
+        text_missing = _contains_any(self.lowered, _MODEL_MISSING_WORDS)
+        if not text_missing and not (self.status == 404 and "model" in self.lowered):
+            return None
+        if self.local:
+            hint = self._local_model_hint()
         else:
-            hint = f"核对模型 ID「{model}」的拼写；到服务商控制台确认该模型已开通，或换一个已开通的模型。"
-        return build(
+            hint = f"核对模型 ID「{self.model}」的拼写；到服务商控制台确认该模型已开通，或换一个已开通的模型。"
+        return self.build(
             "model_not_found",
             "模型不存在或无权访问",
-            f"服务端找不到模型「{model}」，请求没有进入推理。",
+            f"服务端找不到模型「{self.model}」，请求没有进入推理。",
             hint,
             retryable=False,
         )
 
-    if status == 429 or "rate limit" in lowered or "too many requests" in lowered:
-        return build(
+    def _local_model_hint(self) -> str:
+        if self.provider == "ollama":
+            return (
+                f"本地 Ollama 已响应，但没有找到模型「{self.model}」。用 `ollama list` 查看、"
+                f"`ollama pull {self.model}` 拉取，然后重试。"
+            )
+        return (
+            f"本地 OpenAI 兼容服务已响应，但没有加载模型「{self.model}」。"
+            "检查启动参数里的模型名/GGUF 文件，以及 /v1/models 返回的 id 是否与配置一致。"
+        )
+
+    def rate_limited(self) -> ProviderErrorInfo | None:
+        if self.status != 429 and "rate limit" not in self.lowered and "too many requests" not in self.lowered:
+            return None
+        return self.build(
             "rate_limited",
             "请求被限流",
             "模型服务暂时限流或并发超限，稍后重试通常可以恢复。",
             "等待几十秒后重试；持续限流时降低并发、换用其他模型档案，或升级服务商套餐。",
         )
 
-    if provider == "llama_cpp" and (
-        isinstance(exc, FileNotFoundError)
-        or "local model" in lowered
-        or "llama.cpp" in lowered
-        or "gguf" in lowered
-    ):
-        return build(
+    def local_model_load_failed(self) -> ProviderErrorInfo | None:
+        if not (
+            self.provider == "llama_cpp"
+            and (
+                isinstance(self.exc, FileNotFoundError)
+                or "local model" in self.lowered
+                or "llama.cpp" in self.lowered
+                or "gguf" in self.lowered
+            )
+        ):
+            return None
+        return self.build(
             "local_model_load_failed",
             "本地模型加载失败",
             "GGUF 文件存在，但 llama.cpp 没能加载它；常见原因是文件不完整、量化格式不支持或内存不足。",
@@ -380,90 +442,123 @@ def classify_provider_error(
             retryable=False,
         )
 
-    if isinstance(exc, (TimeoutError,)) or exc.__class__.__name__ in {
-        "Timeout",
-        "APITimeoutError",
-        "ReadTimeout",
-        "ConnectTimeout",
-    } or "timeout" in lowered or "timed out" in lowered:
-        return build(
+    def timeout(self) -> ProviderErrorInfo | None:
+        if not (
+            isinstance(self.exc, TimeoutError)
+            or self.exc.__class__.__name__
+            in {"Timeout", "APITimeoutError", "ReadTimeout", "ConnectTimeout"}
+            or "timeout" in self.lowered
+            or "timed out" in self.lowered
+        ):
+            return None
+        return self.build(
             "timeout",
             "模型响应超时",
             "请求在等待模型返回时超时，可能是网络慢、模型排队或本地机器负载过高。",
             "先重试一次；本地模型可减少上下文或线程数，远程模型检查网络与代理。",
         )
 
-    if isinstance(exc, ConnectionError) or any(
-        word in lowered
-        for word in (
-            "connection refused",
-            "connection error",
-            "connect error",
-            "failed to connect",
-            "name or service not known",
-            "nodename nor servname",
-            "getaddrinfo",
-            "network is unreachable",
-            "connection reset",
-            "ssl certificate",
-            "certificate verify",
-        )
-    ) or exc.__class__.__name__ in {"APIConnectionError", "ConnectError", "ConnectionError"}:
-        if local:
+    def connection_failed(self) -> ProviderErrorInfo | None:
+        if not (
+            isinstance(self.exc, ConnectionError)
+            or _contains_any(self.lowered, _CONNECTION_WORDS)
+            or self.exc.__class__.__name__
+            in {"APIConnectionError", "ConnectError", "ConnectionError"}
+        ):
+            return None
+        if self.local:
             hint = (
-                f"本地模型服务没有连上（{endpoint or '端点为空'}）。确认 Ollama / LM Studio / llama.cpp "
+                f"本地模型服务没有连上（{self.endpoint or '端点为空'}）。确认 Ollama / LM Studio / llama.cpp "
                 "已启动、端口正确；用浏览器或 curl 打开 /v1/models 验证。"
             )
         else:
-            hint = f"检查 Base URL「{endpoint}」、网络/代理和防火墙；用 curl 访问 /v1/models 验证端点可达。"
-        return build(
+            hint = f"检查 Base URL「{self.endpoint}」、网络/代理和防火墙；用 curl 访问 /v1/models 验证端点可达。"
+        return self.build(
             "connection_failed",
             "连接不上模型服务",
             "请求没有到达模型端点，通常是服务未启动、地址/端口写错或网络被拦截。",
             hint,
         )
 
-    if status == 404:
-        return build(
+    def endpoint_not_found(self) -> ProviderErrorInfo | None:
+        if self.status != 404:
+            return None
+        return self.build(
             "endpoint_not_found",
             "模型端点路径不对",
-            f"服务端返回 404，{endpoint or '当前 Base URL'} 可能不是正确的 OpenAI 兼容地址。",
+            f"服务端返回 404，{self.endpoint or '当前 Base URL'} 可能不是正确的 OpenAI 兼容地址。",
             "多数 OpenAI 兼容端点需要以 /v1 结尾（例如 http://127.0.0.1:8010/v1）；检查 Base URL 是否多写或少写路径。",
             retryable=False,
         )
 
-    if status is not None and 500 <= status <= 599:
-        return build(
+    def server_error(self) -> ProviderErrorInfo | None:
+        if self.status is None or not 500 <= self.status <= 599:
+            return None
+        return self.build(
             "server_error",
             "模型服务内部错误",
-            f"服务端返回 HTTP {status}，这次推理没有完成。",
+            f"服务端返回 HTTP {self.status}，这次推理没有完成。",
             "稍后重试；如果持续出现，查看模型服务日志，或切换到备用模型/端点。",
         )
 
-    if status in {400, 409, 422} or "bad request" in lowered or "invalid_request" in lowered:
-        return build(
+    def invalid_request(self) -> ProviderErrorInfo | None:
+        if self.status not in {400, 409, 422} and "bad request" not in self.lowered and "invalid_request" not in self.lowered:
+            return None
+        return self.build(
             "invalid_request",
             "模型拒绝了请求参数",
             "端点认为请求格式或参数不合法，常见于模型不支持当前工具/图片/参数组合。",
-            f"确认 {model or '当前模型'} 支持工具调用；在设置里关闭不兼容参数，或换用兼容模型。",
+            f"确认 {self.model or '当前模型'} 支持工具调用；在设置里关闭不兼容参数，或换用兼容模型。",
             retryable=False,
         )
 
-    # A provider that silently degraded to mock is a configuration problem, not a network one.
-    preflight = provider_preflight(cfg, live_provider)
-    if preflight is not None:
-        return preflight
+    def unknown(self) -> ProviderErrorInfo:
+        preflight = provider_preflight(self.cfg, self.live_provider)
+        if preflight is not None:
+            return preflight
+        reason = self.detail or "错误不在常见分类里。"
+        return self.build(
+            "unknown",
+            "模型调用失败",
+            f"模型请求没有完成：{reason}",
+            "展开技术细节查看原始错误；先重试一次，仍失败就到「设置 → 模型」点「测试连接」并检查服务日志。",
+        )
 
-    # Keep the sanitized original error in the user-visible text.  A generic
-    # "unknown" message makes provider crashes impossible to debug from the
-    # chat window and breaks clients that only render ``turn_error.text``.
-    reason = detail or "错误不在常见分类里。"
-    return build(
-        "unknown",
-        "模型调用失败",
-        f"模型请求没有完成：{reason}",
-        "展开技术细节查看原始错误；先重试一次，仍失败就到「设置 → 模型」点「测试连接」并检查服务日志。",
-    )
+    def classify(self) -> ProviderErrorInfo:
+        for rule in (
+            self.cancelled,
+            self.context_too_long,
+            self.quota_exceeded,
+            self.auth_failed,
+            self.model_not_found,
+            self.rate_limited,
+            self.local_model_load_failed,
+            self.timeout,
+            self.connection_failed,
+            self.endpoint_not_found,
+            self.server_error,
+            self.invalid_request,
+        ):
+            info = rule()
+            if info is not None:
+                return info
+        return self.unknown()
+
+
+def classify_provider_error(
+    exc: Exception,
+    cfg: SparkConfig,
+    *,
+    stage: str = "llm",
+    live_provider: Any = None,
+) -> ProviderErrorInfo:
+    """Map a provider exception to a stable code and an actionable suggestion."""
+    return _ProviderErrorClassifier(
+        exc,
+        cfg,
+        stage=stage,
+        live_provider=live_provider,
+    ).classify()
 
 
 __all__ = ["ProviderErrorInfo", "classify_provider_error", "provider_preflight", "missing_key_error"]

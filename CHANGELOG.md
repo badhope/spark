@@ -2,6 +2,24 @@
 
 本项目遵循语义化版本。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [0.15.7] - 2026-11-25
+
+### Changed
+
+- 第三轮复杂度拆分：`build_context` / `review_brief`、`load_workflow`、`classify_provider_error`、`repo_context`、设置保存与 MCP secret 恢复、`delivery_markdown`、`KnowledgeBase.search`、模型档案保存、聊天流入口全部拆为单一职责函数；校验顺序、错误文案、回退路径与副作用顺序保持不变。
+- 全仓历史 D/E/F 从 70 降到 **58（53 D / 5 E / 0 F）**，F 级清零；剩余 5 个 E 为 `run_workflow`、`AgentLoop._llm_round`、`spawn_subtasks_parallel`、`run_shell`、`TUI._render`。
+- 删除 `repo_context` 中只累加未读取的 `ext_counts`，以及 `_finalize_stream_turn` 的未使用 `turn_loop` / `collect_event` 参数。
+
+### Added
+
+- `scripts/check_complexity.py` 与 `scripts/complexity-baseline.json`：CI 拦截新增 D/E/F 与已有函数增长超过 3 点，防止“拆外层、内层继续长”。
+- `tests/test_mcp_settings_restore.py` 4 项：同命令 env 恢复、跨命令拒绝、同 URL header 恢复、跨 URL 丢弃 secret header、非 dict 原样保留。
+- `tests/test_workflow.py` 新增重复 step 校验顺序回归。
+
+### Docs
+
+- 新增 `docs/reviews/2026-11-25-complexity-second-pass.md`；`PROJECT_BASELINE`、`REMAINING` 与上一轮评审同步到 58 个 D/E/F 和 CI 基线门禁。
+
 ## [0.15.6] - 2026-11-24
 
 ### Fixed

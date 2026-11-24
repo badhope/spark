@@ -258,6 +258,73 @@ def build_delivery(
     return store.save_delivery(delivery)
 
 
+def _delivery_files_section(delivery: dict[str, Any]) -> list[str]:
+    lines = ["", "## 变更文件"]
+    files = delivery.get("files") or []
+    for item in files:
+        lines.append(f"- `{item.get('code', '')}` {item.get('path', '')}")
+    if not files:
+        lines.append("- （无工作区变更）")
+    return lines
+
+
+def _delivery_diff_section(delivery: dict[str, Any]) -> list[str]:
+    diff = str((delivery.get("diff_summary") or {}).get("diff") or "")
+    if not diff.strip():
+        return []
+    return ["", "## Diff（bounded）", "```diff", diff.rstrip(), "```"]
+
+
+def _delivery_tests_section(delivery: dict[str, Any]) -> list[str]:
+    lines = ["", "## 验证证据"]
+    tests = delivery.get("tests") or []
+    for test in tests:
+        mark = "✅" if test.get("ok") else "❌"
+        lines.append(
+            f"- {mark} `{test.get('command') or test.get('name')}` rc={test.get('returncode')}"
+        )
+        if test.get("output"):
+            lines.append("  ```")
+            lines.extend("  " + line for line in str(test["output"]).splitlines()[-8:])
+            lines.append("  ```")
+    if not tests:
+        lines.append("- （未记录测试/命令输出）")
+    return lines
+
+
+def _delivery_approvals_section(delivery: dict[str, Any]) -> list[str]:
+    lines = ["", "## 审批记录"]
+    approvals = delivery.get("approvals") or []
+    for approval in approvals:
+        lines.append(f"- {approval.get('action')} · `{approval.get('tool')}`")
+    if not approvals:
+        lines.append("- （无审批记录）")
+    return lines
+
+
+def _delivery_privacy_section(delivery: dict[str, Any]) -> list[str]:
+    privacy = delivery.get("privacy") or {}
+    return [
+        "",
+        "## 隐私回执",
+        f"- 模式：{privacy.get('mode')}；provider={privacy.get('provider')}；model={privacy.get('model')}",
+        f"- 发送 token：{privacy.get('tokens_sent')}；接收 token：{privacy.get('tokens_received')}",
+        f"- 读取文件：{', '.join(privacy.get('files_read') or []) or '无'}",
+        f"- 网络工具：{', '.join(privacy.get('network_tools') or []) or '无'}",
+    ]
+
+
+def _delivery_cost_section(delivery: dict[str, Any]) -> list[str]:
+    cost = delivery.get("cost") or {}
+    return [
+        "",
+        "## 成本",
+        f"- 口径：{cost.get('scope') or 'session'}；calls={cost.get('calls', 0)}",
+        f"- input={cost.get('input_tokens', 0)} output={cost.get('output_tokens', 0)}",
+        f"- cost_usd={cost.get('cost_usd')}",
+    ]
+
+
 def delivery_markdown(delivery: dict[str, Any]) -> str:
     lines = [
         f"# {delivery.get('title') or 'Delivery'}",
@@ -268,47 +335,13 @@ def delivery_markdown(delivery: dict[str, Any]) -> str:
         f"- 工作目录：`{delivery.get('workdir') or '-'}`",
         f"- 检查点：`{delivery.get('checkpoint_id') or '-'}`",
         f"- 代码出境：**{'否（本地模型）' if (delivery.get('privacy') or {}).get('mode') == 'local' else '是（远程端点）'}**",
-        "",
-        "## 变更文件",
     ]
-    for item in delivery.get("files") or []:
-        lines.append(f"- `{item.get('code', '')}` {item.get('path', '')}")
-    if not delivery.get("files"):
-        lines.append("- （无工作区变更）")
-    diff = str((delivery.get("diff_summary") or {}).get("diff") or "")
-    if diff.strip():
-        lines.extend(["", "## Diff（bounded）", "```diff", diff.rstrip(), "```"])
-    lines.extend(["", "## 验证证据"])
-    for test in delivery.get("tests") or []:
-        mark = "✅" if test.get("ok") else "❌"
-        lines.append(f"- {mark} `{test.get('command') or test.get('name')}` rc={test.get('returncode')}")
-        if test.get("output"):
-            lines.append("  ```")
-            lines.extend("  " + line for line in str(test["output"]).splitlines()[-8:])
-            lines.append("  ```")
-    if not delivery.get("tests"):
-        lines.append("- （未记录测试/命令输出）")
-    lines.extend(["", "## 审批记录"])
-    for approval in delivery.get("approvals") or []:
-        lines.append(f"- {approval.get('action')} · `{approval.get('tool')}`")
-    if not delivery.get("approvals"):
-        lines.append("- （无审批记录）")
-    lines.extend(["", "## 隐私回执"])
-    privacy = delivery.get("privacy") or {}
-    lines.append(f"- 模式：{privacy.get('mode')}；provider={privacy.get('provider')}；model={privacy.get('model')}")
-    lines.append(f"- 发送 token：{privacy.get('tokens_sent')}；接收 token：{privacy.get('tokens_received')}")
-    lines.append(f"- 读取文件：{', '.join(privacy.get('files_read') or []) or '无'}")
-    lines.append(f"- 网络工具：{', '.join(privacy.get('network_tools') or []) or '无'}")
-    cost = delivery.get("cost") or {}
-    lines.extend(
-        [
-            "",
-            "## 成本",
-            f"- 口径：{cost.get('scope') or 'session'}；calls={cost.get('calls', 0)}",
-            f"- input={cost.get('input_tokens', 0)} output={cost.get('output_tokens', 0)}",
-            f"- cost_usd={cost.get('cost_usd')}",
-        ]
-    )
+    lines.extend(_delivery_files_section(delivery))
+    lines.extend(_delivery_diff_section(delivery))
+    lines.extend(_delivery_tests_section(delivery))
+    lines.extend(_delivery_approvals_section(delivery))
+    lines.extend(_delivery_privacy_section(delivery))
+    lines.extend(_delivery_cost_section(delivery))
     return "\n".join(lines) + "\n"
 
 
