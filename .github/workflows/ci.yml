@@ -51,8 +51,9 @@ jobs:
     needs: quality
     runs-on: ${{ matrix.os }}
     # A hung test previously kept Windows runners alive for 40+ minutes with no
-    # signal. Cap the job so a deadlock fails fast and visibly.
-    timeout-minutes: 25
+    # signal. The full 2k-test suite now takes ~20-27 minutes on Windows, so cap
+    # it above that with enough room for a cold install.
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
