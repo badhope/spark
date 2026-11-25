@@ -1,8 +1,8 @@
 {
   "name": "spark-agent",
   "displayName": "Spark Agent",
-  "description": "Spark — API-first AI coding agent. Chat, review multi-file diffs and jump to diagnostics without leaving VS Code.",
-  "version": "0.15.8",
+  "description": "The Spark agent loop inside VS Code — chat, review multi-file diffs and jump to diagnostics without leaving the editor.",
+  "version": "0.15.9",
   "publisher": "badhope",
   "license": "MIT",
   "icon": "icon.png",
@@ -15,7 +15,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://gitcode.com/badhope/spark"
+    "url": "https://github.com/badhope/spark"
   },
   "activationEvents": [],
   "main": "./extension.js",

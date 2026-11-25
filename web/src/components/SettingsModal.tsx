@@ -17,6 +17,7 @@ import { McpRegistryModal } from "./McpRegistryModal"
 import type { McpRegistryItem } from "../api"
 import { PALETTES, type Palette, type Theme } from "../theme"
 import { Badge, Button, Field, IconButton, Select, Spinner, TextArea, TextInput, Toggle, cls } from "./ui"
+import { BrandMark } from "./BrandMark"
 import { RingGauge, StatCard } from "./Visuals"
 import { IconBrain, IconBug, IconCheck, IconClock, IconCommand, IconFile, IconFolder, IconGlobe, IconKey, IconLayers, IconMoon, IconPlus, IconRefresh, IconSearch, IconSettings, IconSpark, IconStethoscope, IconSun, IconTerminal, IconTrash, IconWrench, IconX } from "./icons"
 import { useSessionStore } from "../store/sessionStore"
@@ -1116,8 +1117,11 @@ export default function SettingsDrawer({ onClose, onSaved }: Props) {
             </div>
             <div className="px-3 pb-3 pt-1">
               <div className="rounded-lg border border-line bg-panel2 px-3 py-2">
-                <p className="text-[10px] font-bold tracking-wide text-ink3">SPARK</p>
-                <p className="mt-0.5 text-[11px] leading-snug text-ink2">{t("settings.brandDesc", lang)}</p>
+                <div className="flex items-center gap-1.5">
+                  <BrandMark size={15} />
+                  <p className="text-[10px] font-bold tracking-wide text-ink3">SPARK</p>
+                </div>
+                <p className="mt-1 text-[11px] leading-snug text-ink2">{t("settings.brandDesc", lang)}</p>
               </div>
             </div>
           </nav>

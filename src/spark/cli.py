@@ -152,7 +152,7 @@ app = typer.Typer(
     add_completion=True,
     invoke_without_command=True,
     no_args_is_help=False,
-    help="◆ Spark [Ember] — 本地编程智能体。新手从 spark init → spark doctor → spark web 开始。",
+    help="✦ Spark [Ember] — 本地编程智能体。新手从 spark init → spark doctor → spark web 开始。",
     epilog=(
         "常用流程：spark init 首次配置 · spark doctor 体检 · spark web 图形界面 · spark exec 脚本化"
     ),
@@ -243,7 +243,7 @@ def _common_cfg(
         try:
             require_api_key(cfg)
         except ConfigError:
-            typer.echo("◆ " + friendly_config_error(cfg), err=True)
+            typer.echo("✦ " + friendly_config_error(cfg), err=True)
     return cfg
 
 
@@ -1097,7 +1097,7 @@ def wiki_cmd(
     wiki_cfg = WikiConfig(max_files=max(1, max_files), summarize=summarize, out_dir=out_dir)
     stats = build_wiki(workdir, wiki_cfg, summarizer=summarizer, refresh=refresh)
     typer.echo(
-        f"◆ Repo Wiki · {stats['modules']} 文件 / {stats['symbols']} 符号 "
+        f"✦ Repo Wiki · {stats['modules']} 文件 / {stats['symbols']} 符号 "
         f"（新增或更新 {stats['built']}，命中缓存 {stats['cached']}）"
     )
     typer.echo(f"  {stats['index']}")
@@ -1232,7 +1232,7 @@ def review_cmd(
                 )
             )
         else:
-            header = f"◆ Spark Review（{target.mode}）"
+            header = f"✦ Spark Review（{target.mode}）"
             if stats:
                 header += f" — {stats.get('files', 0)} 文件 +{stats.get('added', 0)}/-{stats.get('removed', 0)}"
             typer.echo(render_review(result, header))
@@ -1303,7 +1303,7 @@ def sbom_cmd(
     from spark.sbom import write_sbom
 
     data = write_sbom(out)
-    typer.echo(f"◆ SBOM: {out} ({len(data['components'])} components, {data['metadata']['component']['version']})")
+    typer.echo(f"✦ SBOM: {out} ({len(data['components'])} components, {data['metadata']['component']['version']})")
 
 
 @app.command("update", help="检查并安装新版本（校验 SHA256；--check 只看不装）")
@@ -1423,19 +1423,19 @@ def web_cmd(
             port=port,
             public_url=public_url,
         )
-        typer.echo(f"◆ Spark Web  →  http://{host}:{port}")
+        typer.echo(f"✦ Spark Web  →  http://{host}:{port}")
         if public_url:
-            typer.echo(f"◆ 远程公网入口 → {state.remote_access.public_url}")
+            typer.echo(f"✦ 远程公网入口 → {state.remote_access.public_url}")
             typer.echo("  该入口必须由你的 HTTPS 反向代理转发到本服务，并保留原始 Host。")
         if host not in {"127.0.0.1", "localhost", "::1"}:
             pair = state.pairing.new_code()
             typer.echo(
-                f"◆ 远程配对码（5 分钟内有效）: {pair['code']}\n"
+                f"✦ 远程配对码（5 分钟内有效）: {pair['code']}\n"
                 f"  手机打开 http://{host}:{port}，在远程解锁页输入配对码；\n"
                 f"  配对成功后设备获得 7 天独立令牌。"
             )
             typer.echo(
-                f"◆ 破窗控制令牌（X-Spark-Token，仅应急）: {state.control_token}"
+                f"✦ 破窗控制令牌（X-Spark-Token，仅应急）: {state.control_token}"
             )
         try:
             server.serve_forever()
@@ -1883,7 +1883,7 @@ def _replay_detail(record: dict) -> None:
 
     t = record["turn"]
     status = t.get("status", "?")
-    typer.echo(f"◆ turn #{t.get('index')}  status={status}  {t.get('duration_ms')}ms  model={record.get('model')}")
+    typer.echo(f"✦ turn #{t.get('index')}  status={status}  {t.get('duration_ms')}ms  model={record.get('model')}")
     usage = t.get("usage") or {}
     typer.echo(
         f"  tokens: in={usage.get('input_tokens', 0)} out={usage.get('output_tokens', 0)}"
@@ -2478,7 +2478,7 @@ def a2a_serve_cmd(
     except OSError as exc:
         typer.echo(f"A2A server 启动失败：{exc}", err=True)
         raise typer.Exit(1) from exc
-    typer.echo(f"◆ Spark A2A  →  {base_url}")
+    typer.echo(f"✦ Spark A2A  →  {base_url}")
     typer.echo(f"  Agent Card: {base_url}/.well-known/agent-card.json")
     typer.echo("  Ctrl+C 停止")
     try:
@@ -2814,7 +2814,7 @@ def relay_serve_cmd(
         raise typer.Exit(2)
     typer.echo(f"Relay listening on http://{host}:{port}")
     if channel:
-        typer.echo(f"◆ Web 入口 →  http://{host}:{port}/  (channel={channel})")
+        typer.echo(f"✦ Web 入口 →  http://{host}:{port}/  (channel={channel})")
     try:
         serve_relay(
             host,
