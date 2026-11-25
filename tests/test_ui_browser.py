@@ -199,6 +199,11 @@ def test_settings_controls_are_clickable(page) -> None:
                     btn.click(timeout=2000)
                     clicked += 1
                     page.wait_for_timeout(80)
+                    # Some controls open a nested confirmation; dismiss it so the
+                    # next tab is not blocked by an invisible overlay.
+                    if page.get_by_role("dialog").count() > 1:
+                        page.keyboard.press("Escape")
+                        page.wait_for_timeout(150)
                 except Exception:  # noqa: BLE001 - disabled or overlay is fine
                     continue
     # A click may leave a nested dialog/pane open; Escape first, then the X.

@@ -6,7 +6,7 @@ from spark.cli import app
 
 
 def test_autopilot_help_is_registered() -> None:
-    result = CliRunner().invoke(app, ["autopilot", "--help"])
+    result = CliRunner().invoke(app, ["autopilot", "--help"], env={"COLUMNS": "120"})
     assert result.exit_code == 0
     assert "无人值守编程" in result.output
     assert "--max-turns" in result.output
