@@ -344,7 +344,7 @@ def _scan_repository(root: Path, sandbox: WorkdirSandbox, max_files: int) -> _Sc
             if filename in _MANIFESTS:
                 manifests.add(filename)
             if filename in _ENTRY_NAMES and len(entrypoints) < 30:
-                entrypoints.append(os.path.normpath(os.path.join(rel_dir, filename)))
+                entrypoints.append((Path(rel_dir) / filename).as_posix())
         if truncated and scanned >= max_files:
             break
 

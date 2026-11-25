@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -622,13 +623,14 @@ def test_uninstall_refuses_to_delete_home_directory_itself(tmp_path, monkeypatch
 
 
 def test_uninstall_refuses_system_temp_directory(monkeypatch) -> None:
-    """SPARK_HOME=/tmp 曾通过旧守卫并尝试 rmtree；必须在清点前拒绝。"""
-    monkeypatch.setattr(cli, "default_home", lambda: Path("/tmp"))
-    monkeypatch.setenv("SPARK_HOME", "/tmp")
+    """SPARK_HOME 指向平台临时目录时必须拒绝，且不能碰它。"""
+    temp_root = Path(tempfile.gettempdir())
+    monkeypatch.setattr(cli, "default_home", lambda: temp_root)
+    monkeypatch.setenv("SPARK_HOME", str(temp_root))
     r = runner.invoke(cli.app, ["uninstall", "--yes"])
     assert r.exit_code == 2, r.stdout
     assert "拒绝删除" in r.stdout + (r.stderr or "")
-    assert Path("/tmp").exists()
+    assert temp_root.exists()
     assert "数据目录：" not in r.stdout
 
 

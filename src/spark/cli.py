@@ -2386,7 +2386,14 @@ def _uninstall_refusal(home: Path) -> str:
     """返回拒绝删除的原因；空字符串表示可以继续。"""
     resolved = home.resolve()
     user_home = Path.home().resolve()
-    if resolved in _UNINSTALL_PROTECTED or resolved in (user_home, user_home.parent):
+    # ``/tmp`` is not a path that exists on Windows; protect the platform's
+    # actual temp root as well, or ``SPARK_HOME=%TEMP%`` could wipe it.
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    if (
+        resolved == temp_root
+        or resolved in _UNINSTALL_PROTECTED
+        or resolved in (user_home, user_home.parent)
+    ):
         return (
             f"拒绝删除：{resolved} 不是典型的 Spark 数据目录（应为 ~/.spark 或 "
             "$SPARK_HOME 指向的专用目录）。请核对 SPARK_HOME 后重试。"

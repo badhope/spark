@@ -1713,7 +1713,7 @@ class SessionStore:
     def list_agent_tasks(self, limit: int = 50) -> list[dict]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM agent_queue ORDER BY created_at DESC LIMIT ?",
+                "SELECT * FROM agent_queue ORDER BY created_at DESC, rowid DESC LIMIT ?",
                 (max(1, int(limit)),),
             ).fetchall()
             return [self._queue_task(row) for row in rows]

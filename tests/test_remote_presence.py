@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import threading
 import time
@@ -58,7 +59,8 @@ def test_audit_log_roundtrip(tmp_path: Path) -> None:
     path = tmp_path / "audit.jsonl"
     log = RemoteAuditLog(path)
     log.record("dev_1", "phone", "approval", detail="allow", source="device")
-    assert path.stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert path.stat().st_mode & 0o777 == 0o600
     reloaded = RemoteAuditLog(path)
     assert reloaded.tail(1)[0]["action"] == "approval"
 

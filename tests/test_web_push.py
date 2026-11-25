@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import threading
 import time
@@ -51,7 +52,8 @@ def test_manager_creates_private_key_and_subscription(tmp_path: Path) -> None:
     status = manager.status()
     assert status["public_key"]
     assert len(status["public_key"]) > 50
-    assert (tmp_path / "webpush.json").stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert (tmp_path / "webpush.json").stat().st_mode & 0o777 == 0o600
 
     record = manager.subscribe(_subscription(), device_id="dev_1", device_name="phone")
     assert record["device_name"] == "phone"

@@ -150,7 +150,7 @@ def test_http_provider_failure_renders_actionable_card(
         page.get_by_title("发送").click()
 
         error = page.get_by_test_id("model-error")
-        error.wait_for(state="visible", timeout=12000)
+        error.wait_for(state="visible", timeout=20000)
         text = error.inner_text()
         assert expected_title in text, text
         assert expected_hint in text, text

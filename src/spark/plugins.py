@@ -438,8 +438,18 @@ def set_plugin_require_signature(
 
 
 def sanitized_env() -> dict[str, str]:
-    """Return only benign process variables for plugin subprocesses."""
-    return {key: os.environ[key] for key in SAFE_ENV_KEYS if key in os.environ}
+    """Return only benign process variables for plugin subprocesses.
+
+    Plugin tools speak JSON on stdin/stdout. On Windows Python defaults to the
+    ANSI code page for pipes, so any non-ASCII finding turns into a
+    ``UnicodeEncodeError`` before the host can read it. Force UTF-8 for the
+    child interpreter on every platform; this is an output contract, not a
+    secret-bearing variable.
+    """
+    env = {key: os.environ[key] for key in SAFE_ENV_KEYS if key in os.environ}
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    return env
 
 
 def _plugin_command(

@@ -1,3 +1,5 @@
+import os
+
 from spark.builtin_content import ensure_workspace_defaults
 from spark.core.context import load_system_prompt
 from spark.plugins import build_plugin_tools, scan_plugins
@@ -20,7 +22,8 @@ def test_seed_repo_health_plugin_is_discoverable_and_executable(tmp_path):
     ensure_workspace_defaults(tmp_path)
     plugin = tmp_path / ".spark" / "plugins" / "repo-health"
     assert (plugin / "spark-plugin.json").is_file()
-    assert (plugin / "tool.py").stat().st_mode & 0o111
+    if os.name != "nt":
+        assert (plugin / "tool.py").stat().st_mode & 0o111
     assert (plugin / "commands" / "health.md").is_file()
 
     records = scan_plugins(tmp_path)

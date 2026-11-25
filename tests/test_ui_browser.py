@@ -339,14 +339,18 @@ def test_composer_vim_keys_are_real(page) -> None:
     ta.press("Escape")
     assert "VIM N" in button.inner_text().replace("\n", " ")
     ta.press("i")
+    page.wait_for_timeout(150)
     assert "VIM I" in button.inner_text().replace("\n", " ")
     ta.type("abc")
     assert ta.input_value() == "abc"
     ta.press("Escape")
+    page.wait_for_timeout(100)
     ta.press("0")
     ta.press("x")
     assert ta.input_value() == "bc"
     ta.press("i")
+    page.wait_for_timeout(150)
+    assert "VIM I" in button.inner_text().replace("\n", " ")
     ta.type("d")
     assert ta.input_value() == "dbc"
 
