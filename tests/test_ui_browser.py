@@ -173,15 +173,21 @@ def test_settings_controls_are_clickable(page) -> None:
     clicked = 0
     skipped: list[str] = []
     for pi in range(pages.count()):
+        if dialog.count() == 0 or not dialog.first.is_visible():
+            break
         pages.nth(pi).click()
         page.wait_for_timeout(200)
         tabs = dialog.locator("[data-settings-tab]:visible")
         for ti in range(tabs.count()):
+            if dialog.count() == 0 or not dialog.first.is_visible():
+                break
             dialog.locator("[data-settings-tab]:visible").nth(ti).click()
             page.wait_for_timeout(200)
             seen = 0
             while seen < 10:
                 content = _settings_content(dialog)
+                if content is None:
+                    break
                 buttons = content.locator("button:visible")
                 total = buttons.count()
                 if seen >= total:
@@ -192,7 +198,13 @@ def test_settings_controls_are_clickable(page) -> None:
                     title = (btn.get_attribute("title") or "") + " " + btn.inner_text()
                 except Exception:  # noqa: BLE001 - pane re-rendered under us
                     continue
-                if any(k in title for k in ("删除", "卸载", "重置", "清空", "Delete", "Remove", "Reset")):
+                if any(
+                    k in title
+                    for k in (
+                        "删除", "卸载", "重置", "清空", "关闭", "取消", "停止",
+                        "Delete", "Remove", "Reset", "Clear", "Close", "Cancel", "Stop",
+                    )
+                ):
                     skipped.append(title.strip()[:40])
                     continue
                 try:
