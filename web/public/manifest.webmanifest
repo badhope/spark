@@ -1,14 +1,14 @@
 {
   "name": "Spark · AI 编程智能体",
   "short_name": "Spark",
-  "description": "API-first 的 AI 编程智能体：代码、密钥、执行都在你的控制范围内。",
+  "description": "浏览器原生、本地优先的 AI 编程智能体：代码、密钥与执行都在你手里。",
   "lang": "zh-CN",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#f2f2f4",
-  "theme_color": "#f97316",
+  "theme_color": "#ff7a1a",
   "icons": [
     {
       "src": "/icon-192.png",

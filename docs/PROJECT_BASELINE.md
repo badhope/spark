@@ -9,7 +9,7 @@
 | 项 | 当前值 |
 |---|---|
 | 产品 | Spark |
-| 版本 | `0.15.8` |
+| 版本 | `0.15.9` |
 | 主分支 | `main`；本文随远程 `main` HEAD 同提交发布，具体哈希用 `git rev-parse --short HEAD` 核对 |
 | 许可 | MIT |
 | 包入口 | `spark` / `python -m spark` |
@@ -142,7 +142,7 @@ Spark 是 AI 编程应用，不是通用办公套件，也不是单一 IDE 插�
 | `ruff check src tests scripts` | 通过 |
 | `mypy src/spark --ignore-missing-imports` | 190 files，0 error |
 | `npm run build`（`web/`） | 通过；i18n 1119 keys、1069 calls |
-| 全量 pytest | 2006 passed、13 skipped、0 failed，14 warnings，1121.79s（2026-11-25 0.15.8 收口，见 `reviews/2026-11-25-complexity-clearance.md`） |
+| 全量 pytest | 2003 passed、16 skipped、0 failed，2 warnings，823.33s（2026-11-25 0.15.9 品牌刷新收口） |
 | 四社区发布 | 掘金、CSDN 已发布待审核；知乎、博客园已公开（链接与状态见 `COMMUNITY_LAUNCH.md`） |
 
 未验证：真实模型 + **外部仓库 ≥20 回合**；并发工作区；外部工具副作用下的长跑恢复。

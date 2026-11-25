@@ -15,7 +15,7 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 def _force_utf8_stdio() -> None:
     """Make console output survive a non-UTF-8 Windows code page.
 
-    Legacy Windows consoles default to cp1252/cp936, where ``print("◆ …")``
+    Legacy Windows consoles default to cp1252/cp936, where ``print("✦ …")``
     raises UnicodeEncodeError and kills the process. The frozen EXE hit exactly
     that on `spark.exe --version` (smoke test caught it); the same would happen
     to any Windows user typing the command in cmd.exe.

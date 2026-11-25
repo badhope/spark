@@ -2,6 +2,19 @@
 
 本项目遵循语义化版本。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [0.15.9] - 2026-11-25
+
+### Changed
+
+- 品牌系统重做：新的「轨道 + 火种」Mark、横版字标、favicon、PWA/桌面/VS Code 图标，以及 README hero、pillars、architecture 与社交预览图；`BrandMark` 与设置页品牌区同步。
+- 双语 README 重写：以真实截图、三条底线与「六个入口、一条循环」架构图替代功能清单，突出浏览器执行面、审批闸门、回滚与无人值守闭环。
+- CLI/TUI 品牌字形由 `◆` 改为 `✦`，与 Web 及 VSIX 统一。
+
+### Docs
+
+- 新增 `brand/README.md` 记录品牌几何、色板、字标与再生成流程；README 链接品牌规范。
+- VS Code 扩展 README 去掉过时版本与脚手架尾注，补充新图标和安装说明。
+
 ## [0.15.8] - 2026-11-25
 
 ### Changed

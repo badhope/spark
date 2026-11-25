@@ -1,7 +1,10 @@
+<p align="center"><img src="icon.png" width="96" alt="Spark"></p>
+
 # Spark Agent（VS Code 扩展）
 
-在编辑器内完成一次完整的 AI 编程闭环：选区上下文 → 流式对话 → 工具执行 →
-多文件 diff 审批 → 诊断回显 → `file:line` 跳转。
+在编辑器里跑完一整条 Agent 循环：选区上下文 → 流式对话 → 工具执行 → 多文件 diff 审批 → 诊断回显 → `file:line` 跳转。后端仍是 Spark 本体，规则、沙箱、回滚与账本和 Web / 桌面 / CLI 完全一致。
+
+## 命令
 
 | 命令 | 作用 |
 |------|------|
@@ -16,26 +19,21 @@
 
 - **选区上下文**：右键菜单 / `Ctrl+Alt+Shift+S` 发送 `file:line` + 代码块。
 - **SSE 流式**：直接消费 `/api/chat/stream`，文本、工具、计划、审批实时更新。
-- **内联 diff**：审批请求带 `diff` 时自动打开 `vscode.diff`（真实文件 vs 提案），
-  面板上的 **Apply / Allow** 让后端执行，**Reject** 拒绝。
+- **内联 diff**：审批请求带 `diff` 时自动打开 `vscode.diff`（真实文件 vs 提案），面板上的 **Apply / Allow** 让后端执行，**Reject** 拒绝。
 - **工具结果回显**：诊断写入 VS Code Problems；测试/命令输出摘要显示在工具卡片。
 - **file:line 跳转**：工具结果中的 `path:line` 变成可点击 chip。
 - **任务状态**：状态栏显示计划完成度 `Spark n/m`。
 
 ## 前置条件
 
-- 已安装 Spark（打包版 EXE，或 `pip install spark-agent`；扩展默认调 `spark`，
-  可在设置里改 `spark.executable` 指向可执行文件路径）。
+- 已安装 Spark（打包版 EXE，或 `pip install spark-agent`；扩展默认调 `spark`，可在设置里改 `spark.executable` 指向可执行文件路径）。
 - 审批模式可在设置里选（默认 `suggest`，写/执行逐条确认）。
-- 如果已有常驻 Web 服务，把 `spark.serverUrl` 指过去即可复用；非回环地址需同时配
-  `spark.token`。
+- 如果已有常驻 Web 服务，把 `spark.serverUrl` 指过去即可复用；非回环地址需同时配 `spark.token`。
 
 ## 安装
 
 ```bash
-code --install-extension vscode-spark/spark-agent-0.15.4.vsix
+code --install-extension vscode-spark/spark-agent-0.15.9.vsix
 ```
 
 （Marketplace 上架待签名与发布者账号，当前为本地 VSIX 分发。）
-
-> AI生成

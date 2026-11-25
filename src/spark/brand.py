@@ -6,7 +6,7 @@ Keeping these here means ``spark --version`` does not need ``spark.config``
 
 from __future__ import annotations
 
-BRAND = "◆ Spark"
+BRAND = "✦ Spark"
 TAGLINE = "本地编程智能体 · 代码在你手，密钥在你手"
 
 

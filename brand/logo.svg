@@ -1,23 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 248 64" width="248" height="64" role="img" aria-label="Spark agent">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 64" width="180" height="64" role="img" aria-label="Spark — AI coding agent">
+  <title>Spark — AI coding agent</title>
   <defs>
-    <linearGradient id="l-bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ffc48c"/>
-      <stop offset="0.45" stop-color="#f97316"/>
-      <stop offset="1" stop-color="#c2410c"/>
+    <linearGradient id="l-bg" x1="4" y1="2" x2="62" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffc786"/>
+      <stop offset="0.42" stop-color="#ff7a1a"/>
+      <stop offset="1" stop-color="#bc3d08"/>
     </linearGradient>
-    <radialGradient id="l-glow" cx="0.28" cy="0.18" r="1">
-      <stop offset="0" stop-color="#fffaf3" stop-opacity="0.32"/>
-      <stop offset="0.65" stop-color="#ffffff" stop-opacity="0.03"/>
+    <radialGradient id="l-glow" cx="0.24" cy="0.12" r="0.95">
+      <stop offset="0" stop-color="#fffaf0" stop-opacity="0.34"/>
       <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
     </radialGradient>
+    <linearGradient id="l-core" x1="22" y1="8" x2="42" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffdf8"/>
+      <stop offset="1" stop-color="#ffe3b8"/>
+    </linearGradient>
   </defs>
-  <rect x="1" y="5" width="54" height="54" rx="13" fill="url(#l-bg)"/>
-  <rect x="1" y="5" width="54" height="54" rx="13" fill="url(#l-glow)"/>
-  <g transform="translate(28 32) scale(0.78) translate(-32 -32)">
-    <path d="M32 4C33.9 21.2 42.8 30.1 60 32C42.8 33.9 33.9 42.8 32 60C30.1 42.8 21.2 33.9 4 32C21.2 30.1 30.1 21.2 32 4Z" fill="#fff"/>
+  <g transform="translate(1 4) scale(0.875)">
+    <rect width="64" height="64" rx="15" fill="url(#l-bg)"/>
+    <rect width="64" height="64" rx="15" fill="url(#l-glow)"/>
+    <rect x="0.8" y="0.8" width="62.4" height="62.4" rx="14.2" fill="none" stroke="#fff6e8" stroke-opacity="0.18" stroke-width="1.2"/>
+    <ellipse cx="32" cy="32" rx="24" ry="11.5" transform="rotate(-30 32 32)" fill="none" stroke="#fff6e8" stroke-opacity="0.42" stroke-width="1.3"/>
+    <circle cx="52.8" cy="20" r="1.6" fill="#fff8ec" fill-opacity="0.92"/>
+    <g transform="translate(32 32) scale(0.62) translate(-32 -32)">
+      <path d="M32 4C33.9 21.2 42.8 30.1 60 32C42.8 33.9 33.9 42.8 32 60C30.1 42.8 21.2 33.9 4 32C21.2 30.1 30.1 21.2 32 4Z" fill="url(#l-core)"/>
+    </g>
   </g>
-  <text x="70" y="41" font-family="ui-sans-serif, system-ui, 'Segoe UI', -apple-system, sans-serif"
-        font-size="29" font-weight="700" letter-spacing="-0.6" fill="#18181b">Spark</text>
-  <text x="164" y="41" font-family="ui-sans-serif, system-ui, 'Segoe UI', -apple-system, sans-serif"
-        font-size="29" font-weight="400" letter-spacing="-0.2" fill="#8e8e98">agent</text>
+  <g style="color:#17130f;fill:#17130f"><g fill="inherit" data-weight="700"><path transform="translate(70.00 38) scale(0.032000 -0.032000)" d="M242 -14C397 -14 479 67 479 172C479 275 400 316 329 343C270 364 221 377 221 411C221 438 240 452 281 452C318 452 358 433 399 404L478 510C430 547 364 583 275 583C142 583 55 510 55 403C55 308 132 262 200 235C258 212 313 196 313 162C313 134 293 117 246 117C201 117 154 138 102 177L23 66C81 18 168 -14 242 -14Z"/><path transform="translate(85.12 38) scale(0.032000 -0.032000)" d="M72 -207H250V-44L244 45C282 7 328 -14 376 -14C498 -14 615 98 615 294C615 469 529 583 393 583C334 583 278 554 233 514H230L217 569H72ZM334 132C307 132 278 140 250 165V390C280 423 307 438 340 438C403 438 432 391 432 291C432 177 388 132 334 132Z"/><path transform="translate(104.98 38) scale(0.032000 -0.032000)" d="M216 -14C279 -14 332 15 379 57H384L396 0H541V323C541 501 458 583 311 583C222 583 141 553 66 508L128 391C185 423 232 441 277 441C335 441 359 414 363 368C141 344 47 279 47 159C47 64 111 -14 216 -14ZM277 124C240 124 216 140 216 173C216 213 252 246 363 260V169C337 141 313 124 277 124Z"/><path transform="translate(123.17 38) scale(0.032000 -0.032000)" d="M72 0H250V325C279 400 330 427 372 427C397 427 414 423 435 418L464 571C448 578 429 583 395 583C338 583 275 546 233 470H230L217 569H72Z"/><path transform="translate(136.82 38) scale(0.032000 -0.032000)" d="M72 0H247V141L313 216L436 0H629L417 332L615 569H420L252 355H247V799H72Z"/></g></g>
+  <g style="color:#8a8178;fill:#8a8178"><g fill="inherit" data-weight="500"><path transform="translate(71.60 54) scale(0.007400 -0.007400)" d="M0 0H119L181 209H437L499 0H622L378 737H244ZM209 301 238 400C262 480 285 561 307 645H311C334 562 356 480 380 400L409 301Z"/><path transform="translate(78.40 54) scale(0.007400 -0.007400)" d="M97 0H213V737H97Z"/><path transform="translate(82.89 54) scale(0.007400 -0.007400)" d=""/><path transform="translate(86.75 54) scale(0.007400 -0.007400)" d="M384 -14C480 -14 554 24 614 93L551 167C507 119 456 88 389 88C259 88 176 196 176 370C176 543 265 649 392 649C451 649 497 621 536 583L598 657C553 706 481 750 390 750C203 750 56 606 56 367C56 125 199 -14 384 -14Z"/><path transform="translate(93.73 54) scale(0.007400 -0.007400)" d="M377 -14C567 -14 698 134 698 371C698 608 567 750 377 750C188 750 56 609 56 371C56 134 188 -14 377 -14ZM377 88C255 88 176 199 176 371C176 543 255 649 377 649C499 649 579 543 579 371C579 199 499 88 377 88Z"/><path transform="translate(101.51 54) scale(0.007400 -0.007400)" d="M97 0H294C514 0 643 131 643 371C643 612 514 737 288 737H97ZM213 95V642H280C438 642 523 555 523 371C523 188 438 95 280 95Z"/><path transform="translate(108.89 54) scale(0.007400 -0.007400)" d="M97 0H213V737H97Z"/><path transform="translate(113.37 54) scale(0.007400 -0.007400)" d="M97 0H207V346C207 427 198 512 193 588H197L274 434L518 0H637V737H526V393C526 313 536 224 542 149H537L460 304L216 737H97Z"/><path transform="translate(121.01 54) scale(0.007400 -0.007400)" d="M398 -14C498 -14 581 24 630 73V392H379V296H524V124C499 102 455 88 410 88C257 88 176 196 176 370C176 543 267 649 404 649C475 649 520 619 557 583L619 657C575 704 505 750 401 750C205 750 56 606 56 367C56 125 201 -14 398 -14Z"/><path transform="translate(128.39 54) scale(0.007400 -0.007400)" d=""/><path transform="translate(132.26 54) scale(0.007400 -0.007400)" d="M0 0H119L181 209H437L499 0H622L378 737H244ZM209 301 238 400C262 480 285 561 307 645H311C334 562 356 480 380 400L409 301Z"/><path transform="translate(139.06 54) scale(0.007400 -0.007400)" d="M398 -14C498 -14 581 24 630 73V392H379V296H524V124C499 102 455 88 410 88C257 88 176 196 176 370C176 543 267 649 404 649C475 649 520 619 557 583L619 657C575 704 505 750 401 750C205 750 56 606 56 367C56 125 201 -14 398 -14Z"/><path transform="translate(146.45 54) scale(0.007400 -0.007400)" d="M97 0H543V99H213V336H483V434H213V639H532V737H97Z"/><path transform="translate(153.09 54) scale(0.007400 -0.007400)" d="M97 0H207V346C207 427 198 512 193 588H197L274 434L518 0H637V737H526V393C526 313 536 224 542 149H537L460 304L216 737H97Z"/><path transform="translate(160.72 54) scale(0.007400 -0.007400)" d="M246 0H364V639H580V737H31V639H246Z"/></g></g>
 </svg>
