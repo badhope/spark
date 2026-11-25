@@ -6,6 +6,8 @@ repo_name: badhope/spark
 theme:
   name: material
   language: en
+  logo: assets/brand-mark.svg
+  favicon: assets/brand-mark.svg
   palette:
     - scheme: default
       primary: deep orange
