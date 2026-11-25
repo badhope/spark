@@ -24,7 +24,7 @@ dist\spark\spark.exe web
 ```
 
 Or grab the ready-made artifact from **GitHub Releases** — tag a version
-(`git tag v0.15.4 && git push --tags`) and the `Release` workflow builds
+(`git tag v0.15.9 && git push --tags`) and the `Release` workflow builds
 `spark-windows-x86_64.zip` (plus Linux/macOS archives) automatically.
 
 ### Linux / macOS

@@ -97,7 +97,7 @@ spark --version           # 版本号（与 pyproject / PyPI 同源）
 | 企业控制面 | 真实 PostgreSQL + Keycloak | OIDC 鉴权、Casbin 授权、会议/报告/审计、全格式导出 |
 | MCP | 官方 Python SDK 客户端 | 37 个工具，`list_dir` 真实执行 |
 | ACP | 官方 SDK `spawn_stdio_connection` | `initialize` 返回 agentInfo，`session/new` 返回会话与六档审批 |
-| VS Code | Extension Host + 真实 `spark web` | 面板 SSE、选区上下文、`vscode.diff` 审批、Problems 诊断、file:line 跳转；0.15.4 VSIX 与源码同版 |
+| VS Code | Extension Host + 真实 `spark web` | 面板 SSE、选区上下文、`vscode.diff` 审批、Problems 诊断、file:line 跳转；0.15.9 VSIX 与源码同版 |
 | JetBrains | 原生 ACP 配置写入 + JSON 校验 | 25.3+ `~/.jetbrains/acp.json` 合并/备份/幂等；真实 IDE 冒烟待有客户端环境 |
 | Neovim | 生成 Lua 模块 + `luac -p` | CodeCompanion ACP 适配器、独立文件、不覆盖 `init.lua`；真实 Neovim 冒烟待环境 |
 | A2A | 真实 HTTP | Agent Card、`message/send`、`message/stream` 四帧协议 |
